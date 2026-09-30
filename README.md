@@ -1,45 +1,74 @@
 # Gram Framework
 
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-258%20passed-success.svg)](https://github.com/GrandKenzy/Gram)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Dependencies](https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg)](https://github.com/GrandKenzy/Gram)
+<p align="center">
+  <strong>Framework de Meta-Interpretación y Diseño de Lenguajes en Python 3.10+</strong><br>
+  Parser por combinadores, análisis AST, sandbox de plugins, compilador GLANG y soporte de extensiones VS Code con Language Server Protocol (LSP).
+</p>
 
-**Gram** es un framework moderno, modular y fuertemente tipado para el diseño de Lenguajes de Dominio Específico (DSLs), análisis léxico y sintáctico con combinadores, construcción de Árboles de Sintaxis Abstracta (AST), plugins con auditoría de seguridad y generación de extensiones para editores con soporte de Language Server Protocol (LSP).
-
----
-
-## Características Principales
-
-- **Motor de Combinadores Declarativos:**
-  Primitivas sintácticas (`Seq`, `Alt`, `Many`, `Some`, `Opt`, `Sep`, `Delim`, `Repeat`, `Not`, `MatchToken`, `MatchKeyword`, `Ref`) y combinadores de plugins (`ChainL`, `ChainR`, `ExpressionBuilder`, `Save`, `Load`, `Tag`, `If`, `Error`, `Req`, `Peek`, `Until`).
-
-- **Parser con Backtracking Atómico e Inmutable:**
-  Manejo determinista del estado mediante `savepoint` y `restore`, eliminando efectos secundarios y permitiendo backtracking seguro ante ramas sintácticas alternativas.
-
-- **Árbol de Sintaxis Abstracta (AST) y Telemetría:**
-  Nodos `ASTNode` y `ASTProgram` estructurados jerárquicamente, con soporte de análisis semántico, extracción de símbolos y visualización en árbol legible.
-
-- **Sistema de Plugins con Auditoría de Seguridad:**
-  - Arquitectura modular basada en `PluginBase` y `manifest.json`.
-  - Auditoría estática mediante análisis AST (`gram check`) para detectar llamadas peligrosas (`eval`, `exec`, subprocesos no autorizados).
-  - Entorno de ejecución con permisos de usuario aprobados explícitamente y soporte de entorno virtual dedicado (`gram env`).
-  - Tres plugins oficiales incluidos: `expressions`, `storage` y `GRAM_ESSENCIAL_PACK`.
-
-- **GLANG (Gram Language DSL):**
-  Lenguaje declarativo para definir gramáticas en archivos `.glang` sin necesidad de escribir diccionarios de Python.
-
-- **Generador de Extensiones VS Code (VSIX) y Servidor LSP:**
-  Generación automática de esquemas TextMate, autocompletado en tiempo real, servidor Language Server Protocol (LSP), marcado de errores en vivo, compilador objetivo e ID canónico universal de Gram para instalación/desinstalación sin redundancias.
-
-- **Cero Dependencias Externas:**
-  Todo el núcleo, motor léxico, combinadores, plugins oficiales, GLANG y servidor LSP funcionan exclusivamente con la biblioteca estándar de Python (3.10+).
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
+  <a href="https://github.com/GrandKenzy/Gram/actions"><img src="https://img.shields.io/badge/tests-258%20passed-success.svg" alt="Tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://github.com/GrandKenzy/Gram"><img src="https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg" alt="Zero External Dependencies"></a>
+</p>
 
 ---
 
-## Instalación Rápida
+## ¿Qué es Gram?
 
-Instalación en modo desarrollo:
+**Gram** es un framework en Python puro diseñado para crear lenguajes de programación, DSLs (*Domain-Specific Languages*) y formatos de datos estructurados de manera declarativa y fuertemente tipada.
+
+A diferencia de los generadores de parsers monolíticos o dependientes de dependencias C complejas, Gram implementa un motor de **combinadores sintácticos con backtracking atómico**, construcción de árboles de sintaxis abstracta (**AST**), un **sistema de plugins con sandbox de seguridad**, un lenguaje declarativo propio (**GLANG**) y un generador de extensiones para editores (**VSIX**) con servidor de lenguaje (**LSP**) integrado.
+
+---
+
+## Arquitectura y Componentes Clave
+
+```
+                    ┌─────────────────────────┐
+                    │    Código Fuente        │
+                    └───────────┬─────────────┘
+                                │
+                                ▼
+                    ┌─────────────────────────┐
+                    │      Lexer Léxico       │  <-- Palabras clave, indentación, comentarios
+                    └───────────┬─────────────┘
+                                │ Tokens
+                                ▼
+                    ┌─────────────────────────┐
+                    │   Parser & Combinators  │  <-- Seq, Alt, Many, Sep, Opt, MatchToken, etc.
+                    └───────────┬─────────────┘      (Backtracking atómico con savepoint/restore)
+                                │
+                                ▼
+                    ┌─────────────────────────┐
+                    │       ASTAnalyzer       │  <-- Nodos tipados (ASTProgram, ASTNode)
+                    └───────────┬─────────────┘
+                                │
+       ┌────────────────────────┼────────────────────────┐
+       ▼                        ▼                        ▼
+┌──────────────┐         ┌──────────────┐         ┌──────────────┐
+│ Plugins &    │         │ GLANG DSL    │         │ VSIX & LSP   │
+│ Sandbox AST  │         │ Compilador   │         │ para VS Code │
+└──────────────┘         └──────────────┘         └──────────────┘
+```
+
+1. **Motor Léxico (`gram.core.lexer`):** Tokenizador modular que gestiona palabras clave coloreadas (`words`), operadores, símbolos, literales, comentarios de una línea (`//` o `#`) y bloques de indentación/dedentación.
+2. **Parser y Combinadores (`gram.core.parser` & `gram.core.combinators`):** Motor descendente recursivo basado en combinadores (`Seq`, `Alt`, `Many`, `Some`, `Sep`, `Delim`, `Opt`, `MatchToken`, `MatchKeyword`, `Ref`). Utiliza puntos de control inmutables (`savepoint` / `restore`) para revertir el estado del parser de forma atómica y sin efectos secundarios ante ramas que fallan.
+3. **Árbol de Sintaxis Abstracta (`gram.core.ast`):** Construcción estructurada del AST con `ASTProgram` y `ASTNode`, con telemetría de análisis (`Watcher`) e impresión jerárquica legible.
+4. **Sistema de Plugins con Sandbox (`gram.plugins`):**
+   - Manifiesto estándar `manifest.json` para declarar capacidades (`load`, `process`, `cli`), permisos y dependencias.
+   - Auditoría estática mediante AST (`gram check`) antes de la carga de código para detectar llamadas inseguras (`eval`, `exec`, accesos no autorizados a subprocesos).
+   - Aislamiento de entorno virtual con comandos de gestión (`gram env`).
+   - Tres plugins oficiales incluidos: `expressions` (operadores y precedencia), `storage` (memoria de tokens) y `GRAM_ESSENCIAL_PACK` (combinadores de control avanzado).
+5. **DSL GLANG (`gram.glang`):** Lenguaje declarativo que permite escribir la gramática en archivos de texto `.glang` (mediante palabras clave como `rule`, `token`, `keyword`, `seq`, `alt`, `many`) en lugar de diccionarios de Python manuales.
+6. **Integración con VS Code (`gram.vsix`):** Generador de extensiones para editores que produce gramáticas TextMate con paleta de colores, servidor en vivo con el protocolo Language Server Protocol (LSP), autocompletado, marcado de errores en tiempo real y asignación a un compilador destino mediante el ID canónico de Gram.
+7. **Cero Dependencias Externas:** 100% implementado con la biblioteca estándar de Python (3.10+).
+
+---
+
+## Instalación
+
+### Desde el repositorio:
 
 ```bash
 git clone https://github.com/GrandKenzy/Gram.git
@@ -47,15 +76,19 @@ cd Gram
 pip install -e .
 ```
 
-O verificar directamente con Python:
+### Verificación:
 
 ```bash
 python -m gram --version
+# o directamente con el comando de consola:
+gram --version
 ```
 
 ---
 
-## Inicio Rápido (Python API)
+## Inicio Rápido (API en Python)
+
+El siguiente ejemplo muestra cómo definir una regla sintáctica, registrar palabras clave y construir un AST con Gram:
 
 ```python
 from gram.core.ast.analyzer import ASTAnalyzer
@@ -73,10 +106,10 @@ from gram.core.combinators import (
 from gram.core.lexer import Lexer, Token, words
 from gram.core.parser import Parser
 
-# 1. Registrar palabras clave personalizadas
+# 1. Registrar palabras clave y colores de sintaxis
 words.add_keyword("let", hex_color="#569CD6")
 
-# 2. Definir una regla sintáctica como RuleItem
+# 2. Definir una regla sintáctica como subclase de RuleItem
 class LetStatement(RuleItem):
     name = "LetStatement"
     grammar = Seq(
@@ -86,44 +119,49 @@ class LetStatement(RuleItem):
         MatchToken(Token.NUMBER),
     )
 
-# 3. Definir la gramática formal con PROGRAM y DECLARATION
+# 3. Vincular la gramática formal con PROGRAM y DECLARATION
 grammar = {
     PROGRAM: Many(Ref(DECLARATION)),
     DECLARATION: Alt(Ref(LetStatement)),
     LetStatement: LetStatement.grammar,
 }
 
-# 4. Tokenizar código fuente
-lexer = Lexer("let x = 42")
+# 4. Tokenizar el código fuente
+source_code = "let total = 100"
+lexer = Lexer(source_code)
 tokens = [t for t in lexer.process() if t.token != Token.EOF]
 
-# 5. Analizar y construir el AST
+# 5. Analizar sintácticamente y construir el AST
 parser = Parser(tokens)
 analyzer = ASTAnalyzer(parser, grammar)
 ast = analyzer.process()
 
-# 6. Inspeccionar el árbol generado
+# 6. Inspeccionar el árbol jerárquico
 for node in ast.body:
     print(node.format())
-    # Salida: └── [L0] LetStatement (code=0) -> values=['let', 'x', 42]
+    # Salida: └── [L0] LetStatement (code=0) -> values=['let', 'total', 100]
 ```
 
 ---
 
 ## Interfaz de Línea de Comandos (CLI)
 
-Gram proporciona una CLI completa accesible mediante `gram` o `python -m gram`:
+Gram incluye una herramienta CLI completa accesible mediante `gram` o `python -m gram`:
 
 ```bash
-# Validar un plugin antes de instalarlo (auditoría estática AST)
+# Validar un plugin con auditoría estática AST antes de instalarlo
 gram check gram/plugins/source/expressions
 
-# Instalar y listar plugins del catálogo
+# Instalar y listar plugins en el catálogo
 gram install gram/plugins/source/expressions
 gram list
 
-# Compilar un archivo de gramática GLANG (.glang)
-gram glang compile mi_lenguaje.glang
+# Administrar el entorno virtual aislado de Gram
+gram env create
+gram env list
+
+# Compilar una gramática GLANG a Python
+gram glang compile mi_gramatica.glang
 
 # Generar e instalar la extensión VSIX para VS Code
 gram vsix install
@@ -131,44 +169,60 @@ gram vsix install
 
 ---
 
-## Proyectos de Ejemplo Incluidos
+## Plugins Oficiales Incluidos
 
-En el directorio [`examples/`](examples/) encontrarás implementaciones completas de producción:
+En `gram/plugins/source/` se encuentran tres plugins nativos sanitizados y verificados:
 
-1. **[`CExample`](examples/CExample/README.md):**
-   Motor mínimo de análisis sintáctico de C que reconoce variables, punteros, prototipos, funciones recursivas, bucles `while`/`for`, expresiones aritméticas y directivas `#include`.
-   ```bash
-   python examples/CExample/main.py
-   ```
-
-2. **[`cjson`](examples/cjson/README.md):**
-   Compilador de C-Style JSON / SJSON que añade variables tipadas (números y strings), cálculos con precedencia de operadores, comentarios `//` y herencia modular `{ extend: "ruta" }` compilando a JSON estándar.
-   ```bash
-   python examples/cjson/main.py
-   ```
+| Plugin | Descripción | Combinadores y Funcionalidades |
+| :--- | :--- | :--- |
+| **[`expressions`](gram/plugins/source/expressions/)** | Manejo de expresiones complejas con precedencia de operadores. | `ChainL` (asociatividad izquierda), `ChainR` (asociatividad derecha), `ExpressionBuilder` y evaluador aritmético/lógico. |
+| **[`storage`](gram/plugins/source/storage/)** | Almacenamiento y recuperación contextual de tokens durante el parseo. | `Save` (guarda token en registro), `Load` (compara contra token guardado), `Tag` (etiqueta nodos AST). |
+| **[`GRAM_ESSENCIAL_PACK`](gram/plugins/source/GRAM_ESSENCIAL_PACK/)** | Combinadores avanzados de control de flujo sintáctico. | `SimpleCombinator` (creación fluida), `If` (parseo condicional), `ErrorCombinator`, `Req`, `Peek` y `Until`. |
 
 ---
 
-## Centro de Documentación Técnica
+## Proyectos de Ejemplo
 
-La documentación detallada se encuentra en [`docs/`](docs/):
+Dentro de la carpeta [`examples/`](examples/) se incluyen implementaciones reales que demuestran el potencial del framework:
+
+1. **[`CExample`](examples/CExample/):**
+   Un analizador sintáctico para un subconjunto expresivo del lenguaje C implementado puramente con combinadores de Gram.
+   - Reconoce tipos primitivos (`int`, `char`, `float`, etc.), punteros escalares (`int*`), prototipos, funciones recursivas, bucles `while`/`for`, directivas `#include` y construye la tabla de símbolos y el árbol AST completo.
+   - Ejecución:
+     ```bash
+     python examples/CExample/main.py
+     ```
+
+2. **[`cjson`](examples/cjson/):**
+   Un compilador de Super JSON (SJSON / CJSON) implementado sobre Gram.
+   - Soporta variables numéricas y cadenas, cálculos aritméticos con precedencia, comentarios con `//` y herencia de archivos mediante `{ extend: "ruta.json" }`, compilando determinísticamente a JSON estándar (RFC 8259).
+   - Ejecución:
+     ```bash
+     python examples/cjson/main.py
+     ```
+
+---
+
+## Documentación Técnica Completa
+
+La documentación detallada se encuentra en la carpeta [`docs/`](docs/):
 
 - **[Índice Maestro de Documentación](docs/README.md)**
-- **[Catálogo Completo de Combinadores](docs/combinators.md)**
-- **[Arquitectura y Seguridad de Plugins](docs/plugins.md)**
-- **[Especificación del DSL GLANG](docs/glang.md)**
-- **[Infraestructura VSIX y Servidor LSP para VS Code](docs/vsix.md)**
-- **[Árbol de Sintaxis Abstracta (AST)](docs/ast.md)**
-- **[Motor Léxico (Lexer)](docs/lexer.md)**
-- **[Parser y Backtracking Atómico](docs/parser.md)**
-- **[Catálogo Formal de Errores OSGDC](docs/errors.md)**
-- **[Tokens y Tipos Léxicos](docs/tokens.md)**
+- **[Catálogo Completo de Combinadores](docs/combinators.md):** Manual de todos los combinadores nativos y de plugins con ejemplos prácticos.
+- **[Arquitectura y Seguridad de Plugins](docs/plugins.md):** Especificación de manifiestos, auditoría estática AST y modelo de permisos.
+- **[Especificación del DSL GLANG](docs/glang.md):** Guía de sintaxis y compilación declarativa de gramáticas.
+- **[Infraestructura VSIX y Servidor LSP](docs/vsix.md):** Generación de temas TextMate, autocompletado y servidor Language Server Protocol.
+- **[Árbol de Sintaxis Abstracta (AST)](docs/ast.md):** Nodos `ASTNode`, `ASTProgram` y telemetría de ejecución.
+- **[Motor Léxico (Lexer)](docs/lexer.md):** Tokenización, palabras clave y grupos léxicos.
+- **[Parser y Backtracking](docs/parser.md):** Pipeline de análisis sintáctico con puntos de control atómicos.
+- **[Catálogo Formal de Errores OSGDC](docs/errors.md):** Estándar de 5 dimensiones para clasificación y trazabilidad de fallos.
+- **[Tokens y Tipos Léxicos](docs/tokens.md):** Especificación de tokens y su representación interna.
 
 ---
 
 ## Suite de Pruebas Unitarias
 
-Gram incluye una suite exhaustiva de 258 pruebas unitarias automatizadas con cobertura total de los subsistemas:
+Gram cuenta con una suite integral de 258 pruebas automatizadas que cubren el 100% de los subsistemas (Lexer, Parser, AST, Errores OSGDC, Plugins, GLANG, VSIX, SJSON y CExample):
 
 ```bash
 python -m unittest discover -s gram/tests
