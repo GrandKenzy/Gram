@@ -1,0 +1,10 @@
+{
+  "app_name": "GramService",
+  "environment": "production",
+  "debug": false,
+  "default_timeout": 30,
+  "cluster": {
+    "name": "primary-node",
+    "datacenter": "us-east-1"
+  }
+}

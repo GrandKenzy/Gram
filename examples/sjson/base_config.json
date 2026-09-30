@@ -1,0 +1,14 @@
+{
+  "project_name": "Gram Core Ecosystem",
+  "organization": "Gram Framework",
+  "license": "MIT",
+  "network": {
+    "host": "0.0.0.0",
+    "timeout": 30,
+    "keep_alive": true
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "json"
+  }
+}

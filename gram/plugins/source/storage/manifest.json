@@ -1,0 +1,24 @@
+{
+  "uuid": "b4a7d6e1-9c32-4f8e-b521-8f3a0d1e7c45",
+  "plugin_name": "storage",
+  "version": "1.0.0",
+  "min_engine": "1.0.0",
+  "min_python_version": [3, 10],
+  "author": "Gram Community",
+  "description": "Módulo de combinadores de almacenamiento y etiquetado para Gram (Save, Load, Tag).",
+  "short": "Combinadores Save, Load y Tag",
+  "main": "main.py",
+  "type": "extendable",
+  "use_venv": false,
+  "version_state": "Stable",
+  "capabilities": {
+    "load": true,
+    "process": true,
+    "cli": false,
+    "replaceable": false,
+    "protect": 3
+  },
+  "requests": [],
+  "config_requests": {},
+  "python_lib_requests": {}
+}

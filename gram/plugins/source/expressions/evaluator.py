@@ -1,0 +1,535 @@
+"""
+Motor de análisis y evaluación de expresiones para Gram Framework.
+===================================================================
+Soporta:
+- Números enteros y flotantes
+- Identificadores / variables con entorno (env)
+- Funciones matemáticas integradas en entorno (sqrt, sin, cos, abs, min, max, etc.)
+- Operadores unarios: +, -, ~ (con encadenamiento arbitrario: --5, -+3, etc.)
+- Operadores binarios:
+  * Aritmética: +, -, *, /, //, %, **
+  * Bits: &, |, ^, <<, >>
+  * Comparación: ==, !=, <, <=, >, >=
+  * Asignación: = (asociatividad derecha)
+- Asociatividad correcta (+, -, *, / izquierda; **, = derecha)
+- Precedencia estándar de operadores
+- Paréntesis y anidamiento a profundidad arbitraria
+"""
+from __future__ import annotations
+
+import math
+from typing import Any
+from gram.core.lexer.tokens import Token, TokenType
+from gram.core.ast.nodes import ASTNode
+
+
+class ArithmeticSyntaxError(Exception):
+    """Error de sintaxis en expresión de expresiones / aritmética."""
+    pass
+
+
+# ============================================================================
+# Entorno Matemático Predeterminado
+# ============================================================================
+
+DEFAULT_ENV: dict[str, Any] = {
+    "pi": math.pi,
+    "e": math.e,
+    "tau": math.tau,
+    "sqrt": math.sqrt,
+    "abs": abs,
+    "sin": math.sin,
+    "cos": math.cos,
+    "tan": math.tan,
+    "min": min,
+    "max": max,
+    "round": round,
+    "floor": math.floor,
+    "ceil": math.ceil,
+    "log": math.log,
+    "exp": math.exp,
+    "pow": math.pow,
+}
+
+
+# ============================================================================
+# Nodos del Árbol de Sintaxis de Expresiones
+# ============================================================================
+
+class ArithmeticNode:
+    """Clase base para nodos de la expresión sintáctica."""
+    def evaluate(self, env: dict[str, Any] | None = None) -> Any:
+        raise NotImplementedError
+
+    def to_tokens(self) -> list[TokenType]:
+        raise NotImplementedError
+
+    def to_ast_node(self, rule: Any = None, level: int = 0) -> ASTNode:
+        name = getattr(rule, "name", self.__class__.__name__)
+        code = getattr(rule, "code", 7000)
+        node = ASTNode(name=name, rule=rule, code=code, level=level)
+        node.tokens = self.to_tokens()
+        return node
+
+
+def to_arithmetic_node(val: Any) -> ArithmeticNode:
+    """Convierte de forma segura cualquier valor (TokenType, número o string) a un ArithmeticNode."""
+    if isinstance(val, ArithmeticNode):
+        return val
+    if isinstance(val, TokenType):
+        if val.token == Token.NUMBER or isinstance(val.value, (int, float)):
+            return NumberNode(val)
+        return VariableNode(val)
+    if isinstance(val, (int, float)):
+        return NumberNode(TokenType(token=Token.NUMBER, value=val, line=1, col=0))
+    if isinstance(val, str):
+        return VariableNode(TokenType(token=Token.IDENT, value=val, line=1, col=0))
+    if isinstance(val, list) and len(val) == 1 and isinstance(val[0], TokenType):
+        return to_arithmetic_node(val[0])
+    return VariableNode(TokenType(token=Token.IDENT, value=str(val), line=1, col=0))
+
+
+class NumberNode(ArithmeticNode):
+    def __init__(self, token: TokenType):
+        self.token = token
+        raw_val = token.value
+        if isinstance(raw_val, (int, float)):
+            self.value: int | float = raw_val
+        else:
+            str_val = str(raw_val).strip()
+            if "." in str_val or "e" in str_val.lower():
+                self.value = float(str_val)
+            else:
+                self.value = int(str_val)
+
+    def evaluate(self, env: dict[str, Any] | None = None) -> int | float:
+        return self.value
+
+    def to_tokens(self) -> list[TokenType]:
+        return [self.token]
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+    def __repr__(self) -> str:
+        return str(self.value)
+
+
+class VariableNode(ArithmeticNode):
+    def __init__(self, token: TokenType):
+        self.token = token
+        self.name: str = str(token.value)
+
+    def evaluate(self, env: dict[str, Any] | None = None) -> Any:
+        active_env = {**DEFAULT_ENV, **(env or {})}
+        if self.name in active_env:
+            val = active_env[self.name]
+            if isinstance(val, (int, float)):
+                return val
+            try:
+                return float(val) if "." in str(val) else int(val)
+            except (ValueError, TypeError):
+                return val
+        raise NameError(f"Variable '{self.name}' no definida en el entorno aritmético.")
+
+    def to_tokens(self) -> list[TokenType]:
+        return [self.token]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def __repr__(self) -> str:
+        return self.name
+
+
+class UnaryOpNode(ArithmeticNode):
+    def __init__(self, op_token: TokenType, operand: ArithmeticNode):
+        self.op_token = op_token
+        self.op: str = str(op_token.value) if op_token.value is not None else ("+" if op_token.token == Token.PLUS else "-")
+        self.operand = to_arithmetic_node(operand)
+
+    def evaluate(self, env: dict[str, Any] | None = None) -> Any:
+        val = self.operand.evaluate(env)
+        if self.op_token.token == Token.MINUS or self.op == "-":
+            return -val
+        if self.op_token.token == Token.NOT or self.op == "~":
+            return ~int(val)
+        return +val
+
+    def to_tokens(self) -> list[TokenType]:
+        return [self.op_token] + self.operand.to_tokens()
+
+    def __str__(self) -> str:
+        return f"{self.op}{self.operand}"
+
+    def __repr__(self) -> str:
+        return f"Unary({self.op}, {self.operand!r})"
+
+
+class BinaryOpNode(ArithmeticNode):
+    def __init__(self, op_token: Any, left: Any, right: Any):
+        if isinstance(op_token, TokenType):
+            self.op_token = op_token
+            self.op = str(op_token.value) if op_token.value is not None else op_token.token.name
+        else:
+            self.op = str(getattr(op_token, "value", op_token))
+            self.op_token = TokenType(token=Token.IDENT, value=self.op, line=1, col=0)
+
+        self.left = to_arithmetic_node(left)
+        self.right = to_arithmetic_node(right)
+
+    def evaluate(self, env: dict[str, Any] | None = None) -> Any:
+        active_env = env if env is not None else {}
+        left_val = self.left.evaluate(active_env) if self.op != "=" else None
+        right_val = self.right.evaluate(active_env)
+        tok = self.op_token.token
+        op = self.op
+
+        # Asignación (a = b)
+        if tok == Token.ASSIGN or op == "=":
+            if isinstance(self.left, VariableNode):
+                active_env[self.left.name] = right_val
+            return right_val
+
+        # Aritmética
+        if tok == Token.PLUS or op == "+":
+            return left_val + right_val
+        elif tok == Token.MINUS or op == "-":
+            return left_val - right_val
+        elif tok == Token.STAR or op == "*":
+            return left_val * right_val
+        elif tok == Token.SLASH or op == "/":
+            if right_val == 0:
+                raise ZeroDivisionError("División por cero en expresión aritmética.")
+            return left_val / right_val
+        elif tok == Token.FLOOR_DIV or op == "//":
+            if right_val == 0:
+                raise ZeroDivisionError("División entera por cero en expresión aritmética.")
+            return left_val // right_val
+        elif tok == Token.PERCENT or op == "%":
+            if right_val == 0:
+                raise ZeroDivisionError("Módulo por cero en expresión aritmética.")
+            return left_val % right_val
+        elif tok == Token.POW or op in ("**", "^"):
+            return left_val ** right_val
+
+        # Comparaciones relacionales
+        elif tok == Token.EQUAL or op == "==":
+            return 1 if left_val == right_val else 0
+        elif tok == Token.NOT_EQUAL or op == "!=":
+            return 1 if left_val != right_val else 0
+        elif tok == Token.LESS or op == "<":
+            return 1 if left_val < right_val else 0
+        elif tok == Token.LESS_EQUAL or op == "<=":
+            return 1 if left_val <= right_val else 0
+        elif tok == Token.GREATER or op == ">":
+            return 1 if left_val > right_val else 0
+        elif tok == Token.GREATER_EQUAL or op == ">=":
+            return 1 if left_val >= right_val else 0
+
+        # Operaciones a nivel de bits
+        elif tok == Token.AND or op == "&":
+            return int(left_val) & int(right_val)
+        elif tok == Token.OR or op == "|":
+            return int(left_val) | int(right_val)
+        elif tok == Token.XOR or op == "^":
+            return int(left_val) ^ int(right_val)
+        elif tok == Token.SHL or op == "<<":
+            return int(left_val) << int(right_val)
+        elif tok == Token.SHR or op == ">>":
+            return int(left_val) >> int(right_val)
+        else:
+            raise ArithmeticSyntaxError(f"Operador binario desconocido '{self.op}'.")
+
+    def to_tokens(self) -> list[TokenType]:
+        return self.left.to_tokens() + [self.op_token] + self.right.to_tokens()
+
+    def __str__(self) -> str:
+        return f"({self.left} {self.op} {self.right})"
+
+    def __repr__(self) -> str:
+        return f"({self.left} {self.op} {self.right})"
+
+
+class FunctionCallNode(ArithmeticNode):
+    """Nodo para llamadas a funciones matemáticas en expresiones: sqrt(16), max(1, 2)."""
+    def __init__(self, func_token: TokenType, args: list[ArithmeticNode]):
+        self.func_token = func_token
+        self.name: str = str(func_token.value)
+        self.args: list[ArithmeticNode] = [to_arithmetic_node(a) for a in args]
+
+    def evaluate(self, env: dict[str, Any] | None = None) -> Any:
+        active_env = {**DEFAULT_ENV, **(env or {})}
+        if self.name not in active_env:
+            raise NameError(f"Función matemática '{self.name}' no encontrada en el entorno.")
+        func = active_env[self.name]
+        evaluated_args = [arg.evaluate(active_env) for arg in self.args]
+        return func(*evaluated_args)
+
+    def to_tokens(self) -> list[TokenType]:
+        toks = [self.func_token, TokenType(token=Token.LPAREN, value="(", line=1, col=0)]
+        for i, a in enumerate(self.args):
+            if i > 0:
+                toks.append(TokenType(token=Token.COMMA, value=",", line=1, col=0))
+            toks.extend(a.to_tokens())
+        toks.append(TokenType(token=Token.RPAREN, value=")", line=1, col=0))
+        return toks
+
+    def __str__(self) -> str:
+        args_str = ", ".join(str(a) for a in self.args)
+        return f"{self.name}({args_str})"
+
+    def __repr__(self) -> str:
+        return str(self)
+
+
+class GroupNode(ArithmeticNode):
+    def __init__(self, lparen: TokenType, expr: ArithmeticNode, rparen: TokenType):
+        self.lparen = lparen
+        self.expr = to_arithmetic_node(expr)
+        self.rparen = rparen
+
+    def evaluate(self, env: dict[str, Any] | None = None) -> Any:
+        return self.expr.evaluate(env)
+
+    def to_tokens(self) -> list[TokenType]:
+        return [self.lparen] + self.expr.to_tokens() + [self.rparen]
+
+    def __str__(self) -> str:
+        return f"({self.expr})"
+
+    def __repr__(self) -> str:
+        return f"({self.expr})"
+
+
+# ============================================================================
+# Precedencias de Operadores
+# ============================================================================
+
+BINARY_PRECEDENCE: dict[Token, int] = {
+    Token.ASSIGN: 5,
+    Token.OR: 6,
+    Token.XOR: 6,
+    Token.AND: 6,
+    Token.EQUAL: 7,
+    Token.NOT_EQUAL: 7,
+    Token.LESS: 8,
+    Token.LESS_EQUAL: 8,
+    Token.GREATER: 8,
+    Token.GREATER_EQUAL: 8,
+    Token.SHL: 9,
+    Token.SHR: 9,
+    Token.PLUS: 10,
+    Token.MINUS: 10,
+    Token.STAR: 20,
+    Token.SLASH: 20,
+    Token.FLOOR_DIV: 20,
+    Token.PERCENT: 20,
+    Token.POW: 30,
+}
+
+UNARY_PRECEDENCE = 25
+
+
+def is_binary_op(tok: Token) -> bool:
+    return tok in BINARY_PRECEDENCE
+
+
+def is_right_associative(tok: Token) -> bool:
+    return tok in (Token.POW, Token.ASSIGN)
+
+
+# ============================================================================
+# Parser de Expresiones Aritméticas (Pratt Parsing)
+# ============================================================================
+
+class ArithmeticParser:
+    """
+    Parser descendente recursivo con algoritmo de precedencia de operadores
+    (Pratt Parser) para consumir expresiones aritméticas desde una lista de tokens.
+    """
+
+    def __init__(self, tokens: list[TokenType], pos: int = 0):
+        self.tokens = tokens
+        self.pos = pos
+
+    def peek(self) -> TokenType | None:
+        if self.pos < len(self.tokens):
+            return self.tokens[self.pos]
+        return None
+
+    def consume(self) -> TokenType:
+        tok = self.tokens[self.pos]
+        self.pos += 1
+        return tok
+
+    def parse_expression(self, min_prec: int = 0) -> ArithmeticNode:
+        left = self.parse_prefix()
+
+        while True:
+            current = self.peek()
+            if current is None:
+                break
+
+            tok_type = current.token
+            if not is_binary_op(tok_type):
+                break
+
+            prec = BINARY_PRECEDENCE[tok_type]
+            if prec < min_prec:
+                break
+
+            op_tok = self.consume()
+            next_prec = prec if is_right_associative(tok_type) else prec + 1
+            right = self.parse_expression(next_prec)
+            left = BinaryOpNode(op_tok, left, right)
+
+        return left
+
+    def parse_prefix(self) -> ArithmeticNode:
+        current = self.peek()
+        if current is None:
+            raise ArithmeticSyntaxError("Fin inesperado de entrada en expresión aritmética.")
+
+        tok_type = current.token
+
+        if tok_type in (Token.PLUS, Token.MINUS, Token.NOT):
+            op_tok = self.consume()
+            operand = self.parse_expression(UNARY_PRECEDENCE)
+            return UnaryOpNode(op_tok, operand)
+
+        if tok_type == Token.DECREMENT:
+            dec_tok = self.consume()
+            minus1 = TokenType(token=Token.MINUS, value="-", line=dec_tok.line - 1, col=dec_tok.col)
+            minus2 = TokenType(token=Token.MINUS, value="-", line=dec_tok.line - 1, col=dec_tok.col + 1)
+            operand = self.parse_expression(UNARY_PRECEDENCE)
+            return UnaryOpNode(minus1, UnaryOpNode(minus2, operand))
+
+        if tok_type == Token.INCREMENT:
+            inc_tok = self.consume()
+            plus1 = TokenType(token=Token.PLUS, value="+", line=inc_tok.line - 1, col=inc_tok.col)
+            plus2 = TokenType(token=Token.PLUS, value="+", line=inc_tok.line - 1, col=inc_tok.col + 1)
+            operand = self.parse_expression(UNARY_PRECEDENCE)
+            return UnaryOpNode(plus1, UnaryOpNode(plus2, operand))
+
+        if tok_type == Token.LPAREN:
+            lparen = self.consume()
+            expr = self.parse_expression(0)
+            closing = self.peek()
+            if closing is None or closing.token != Token.RPAREN:
+                col = closing.col if closing else "EOF"
+                line = closing.line if closing else "EOF"
+                raise ArithmeticSyntaxError(
+                    f"Se esperaba ')' para cerrar paréntesis abierto en lín {lparen.line}, col {lparen.col}. "
+                    f"Encontrado: {closing.token.name if closing else 'EOF'} en lín {line}, col {col}."
+                )
+            rparen = self.consume()
+            return GroupNode(lparen, expr, rparen)
+
+        if tok_type == Token.NUMBER or isinstance(current.value, (int, float)):
+            num_tok = self.consume()
+            return NumberNode(num_tok)
+
+        if tok_type == Token.IDENT:
+            var_tok = self.consume()
+            if self.peek() and self.peek().token == Token.LPAREN:
+                self.consume()  # '('
+                args: list[ArithmeticNode] = []
+                if self.peek() and self.peek().token != Token.RPAREN:
+                    args.append(self.parse_expression(0))
+                    while self.peek() and self.peek().token == Token.COMMA:
+                        self.consume()  # ','
+                        args.append(self.parse_expression(0))
+                if not self.peek() or self.peek().token != Token.RPAREN:
+                    raise ArithmeticSyntaxError(f"Se esperaba ')' tras argumentos de '{var_tok.value}'.")
+                self.consume()  # ')'
+                return FunctionCallNode(var_tok, args)
+            return VariableNode(var_tok)
+
+        raise ArithmeticSyntaxError(
+            f"Token inesperado '{current.value}' ({tok_type.name}) al inicio de término aritmético en lín {current.line}, col {current.col}."
+        )
+
+
+def parse_tokens(tokens: list[TokenType], start_pos: int = 0) -> tuple[ArithmeticNode, int]:
+    """
+    Parsea una expresión aritmética desde una lista de tokens a partir de start_pos.
+    Retorna (nodo_ast, nueva_posicion).
+    """
+    clean_tokens: list[TokenType] = []
+    idx = start_pos
+    while idx < len(tokens):
+        t = tokens[idx]
+        if t.token in (Token.EOF, Token.NEWLINE, Token.EMPTY_LINE):
+            break
+        clean_tokens.append(t)
+        idx += 1
+
+    parser = ArithmeticParser(clean_tokens, 0)
+    ast = parser.parse_expression(0)
+    return ast, start_pos + parser.pos
+
+
+def evaluate(
+    expr: str | ASTNode | ArithmeticNode | list[TokenType],
+    env: dict[str, Any] | None = None,
+) -> Any:
+    """
+    Evalúa una expresión aritmética en texto, tokens o ASTNode, retornando el valor numérico.
+    """
+    active_env = {**DEFAULT_ENV, **(env or {})}
+
+    if isinstance(expr, ArithmeticNode):
+        return expr.evaluate(active_env)
+
+    if isinstance(expr, str):
+        from gram.core.lexer import Lexer, word
+        if word.count_keywords() == 0:
+            word.add_keyword("math_expr_kw", "#ffffff")
+        lines = expr.splitlines() or [expr]
+        lexer = Lexer(lines)
+        tokens = lexer.process()
+        usable_tokens = [t for t in tokens if t.token not in (Token.EOF, Token.NEWLINE, Token.EMPTY_LINE)]
+        if not usable_tokens:
+            raise ArithmeticSyntaxError("La expresión aritmética está vacía.")
+        parser = ArithmeticParser(usable_tokens)
+        node = parser.parse_expression(0)
+        if parser.pos < len(usable_tokens):
+            remaining = usable_tokens[parser.pos]
+            raise ArithmeticSyntaxError(f"Tokens no consumidos tras expresión: {remaining.token.name} ({remaining.value})")
+        return node.evaluate(active_env)
+
+    if isinstance(expr, list) and all(isinstance(t, TokenType) for t in expr):
+        usable_tokens = [t for t in expr if t.token not in (Token.EOF, Token.NEWLINE, Token.EMPTY_LINE)]
+        parser = ArithmeticParser(usable_tokens)
+        node = parser.parse_expression(0)
+        return node.evaluate(active_env)
+
+    if isinstance(expr, ASTNode):
+        tokens = list(expr.tokens)
+        if not tokens:
+            for child in expr.walk():
+                if child is not expr and child.tokens:
+                    tokens.extend(child.tokens)
+        if tokens:
+            return evaluate(tokens, active_env)
+        raise ArithmeticSyntaxError(f"ASTNode '{expr.name}' no contiene tokens para evaluar.")
+
+    raise TypeError(f"Tipo no soportado para evaluación aritmética: {type(expr)}")
+
+
+__all__ = [
+    "ArithmeticNode",
+    "NumberNode",
+    "VariableNode",
+    "UnaryOpNode",
+    "BinaryOpNode",
+    "FunctionCallNode",
+    "GroupNode",
+    "ArithmeticParser",
+    "ArithmeticSyntaxError",
+    "DEFAULT_ENV",
+    "evaluate",
+    "parse_tokens",
+    "to_arithmetic_node",
+]

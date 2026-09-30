@@ -1,0 +1,31 @@
+{
+    "project_name": "Gram Core Ecosystem",
+    "organization": "Gram Framework",
+    "license": "MIT",
+    "network": {
+        "host": "0.0.0.0",
+        "timeout": 30,
+        "keep_alive": true,
+        "port": 8080,
+        "ssl_port": 8443,
+        "timeout_ms": 15000,
+        "retries": 5
+    },
+    "logging": {
+        "level": "INFO",
+        "format": "json"
+    },
+    "service_id": "gateway-gram.dev",
+    "version": 2.5,
+    "is_production": true,
+    "cluster_node": null,
+    "resources": {
+        "max_workers": 60,
+        "buffer_size_kb": 64
+    },
+    "endpoints": [
+        "https://gram.dev/api/v1",
+        "https://gram.dev/api/v2",
+        "https://gram.dev/metrics"
+    ]
+}

@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gram-framework"
+version = "1.0.0"
+description = "Meta-interpretation framework and DSL engine with combinator parsing, AST analysis, security sandbox, and VS Code extension generator."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Gram Framework Team" }
+]
+keywords = [
+    "dsl",
+    "parser",
+    "combinators",
+    "lexer",
+    "ast",
+    "language-server",
+    "lsp",
+    "vsix",
+    "glang",
+    "grammar"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Interpreters",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.scripts]
+gram = "gram.cli.core:main"
+sjson = "sjson.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/gram-framework/gram"
+Documentation = "https://github.com/gram-framework/gram/tree/main/docs"
+Repository = "https://github.com/gram-framework/gram"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gram*", "sjson*"]
+exclude = ["examples*", "docs*", "scratch*", "tests*"]
+
+[tool.setuptools.package-data]
+gram = ["**/*.json", "*.json"]

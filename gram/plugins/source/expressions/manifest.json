@@ -1,0 +1,24 @@
+{
+  "uuid": "a8f3b612-4c28-4e1a-9f5b-7d312c5e89a1",
+  "plugin_name": "expressions",
+  "version": "1.0.0",
+  "min_engine": "1.0.0",
+  "min_python_version": [3, 10],
+  "author": "Gram Community",
+  "description": "Plugin de expresiones completas para Gram: asociatividad izquierda (ChainL), derecha (ChainR), ExpressionBuilder, aritmética, unarios, bits, comparaciones y funciones matemáticas.",
+  "short": "Expresiones completas, ChainL/R y evaluador",
+  "main": "main.py",
+  "type": "extendable",
+  "use_venv": false,
+  "version_state": "Stable",
+  "capabilities": {
+    "load": true,
+    "process": true,
+    "cli": false,
+    "replaceable": false,
+    "protect": 3
+  },
+  "requests": [],
+  "config_requests": {},
+  "python_lib_requests": {}
+}

@@ -1,0 +1,24 @@
+{
+  "uuid": "00000000-0000-0000-0000-000000000001",
+  "plugin_name": "GRAM_ESSENCIAL_PACK",
+  "version": "1.0.0",
+  "min_engine": "1.0.0",
+  "min_python_version": [3, 10],
+  "author": "Gram Community",
+  "description": "Pack esencial para creación y abstracción de plugins en Gram: SimpleCombinator, If, ErrorCombinator, Req, Skip, Peek, Not, Until.",
+  "short": "Pack esencial y combinadores utilitarios",
+  "main": "main.py",
+  "type": "extendable",
+  "use_venv": false,
+  "version_state": "Stable",
+  "capabilities": {
+    "load": true,
+    "process": true,
+    "cli": false,
+    "replaceable": false,
+    "protect": 3
+  },
+  "requests": [],
+  "config_requests": {},
+  "python_lib_requests": {}
+}
