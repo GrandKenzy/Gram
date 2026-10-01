@@ -73,6 +73,7 @@ class Enclosed(Combinator):
         Activa el modo *bracket-aware* durante el análisis del contenido para suprimir
         automáticamente saltos de línea e indentaciones en colecciones y listas de argumentos.
     """
+    header_class: bool = True
 
     def __init__(
         self,
@@ -95,6 +96,7 @@ class Enclosed(Combinator):
             skip_whitespace: If True, activates bracket-aware mode suppressing NEWLINE/INDENT/DEDENT.
                              Si True, activa el modo bracket-aware suprimiendo saltos e indentación.
         """
+        self.header_class: bool = True
         self.open_token: Token = _resolve_delimiter(open, _OPEN_MAP)
         self.close_token: Token = _resolve_delimiter(close, _CLOSE_MAP)
         self.content: Combinator = content

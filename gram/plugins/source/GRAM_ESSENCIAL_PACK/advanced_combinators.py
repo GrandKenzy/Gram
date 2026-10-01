@@ -364,6 +364,7 @@ class If(Combinator):
     code: int = 2005
     name: str = "If"
     description: str = "Combinador condicional: afirma una secuencia de condiciones y bifurca entre ok y fail."
+    header_class: bool = True
 
     def __init__(
         self,
@@ -374,6 +375,7 @@ class If(Combinator):
         restore: bool = False,
     ):
         super().__init__()
+        self.header_class = True
         if not isinstance(conditions, (list, tuple)):
             self.conditions = [conditions]
         else:

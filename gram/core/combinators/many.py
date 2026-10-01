@@ -44,6 +44,7 @@ class Many(Combinator):
         Retorna una lista con todos los resultados acumulados. Si no hay ocurrencias,
         retorna una lista vacía `[]` con éxito.
     """
+    header_class: bool = True
 
     def __init__(self, combinator: Combinator) -> None:
         """
@@ -54,6 +55,7 @@ class Many(Combinator):
             combinator: Syntactic child combinator to repeat.
                         Combinador sintáctico a repetir.
         """
+        self.header_class: bool = True
         self.combinator: Combinator = combinator
 
     def parse(

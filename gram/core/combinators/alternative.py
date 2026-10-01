@@ -46,6 +46,7 @@ class Alt(Combinator):
         Si una alternativa no empareja, realiza backtracking automático restaurando
         el estado del cursor y prueba la alternativa siguiente.
     """
+    header_class: bool = True
 
     def __init__(self, *combinators: Combinator) -> None:
         """
@@ -60,6 +61,7 @@ class Alt(Combinator):
             ParserError: If no candidate combinator is provided.
                          Si no se proporciona ninguna alternativa.
         """
+        self.header_class: bool = True
         if not combinators:
             error.ParserError(
                 "Alternativas vacías",

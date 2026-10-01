@@ -581,5 +581,88 @@ class TestModsAndAdditionalStack(BaseCombinatorTestCase):
         self.assertTrue(handler_called[0])
 
 
+class TestHeaderClassAttribute(BaseCombinatorTestCase):
+    """Valida el atributo header_class en la clase base Combinator y sus subclases."""
+
+    def test_combinator_base_defaults_to_false(self) -> None:
+        from gram.core.combinators.base import Combinator
+        self.assertFalse(Combinator.header_class)
+        base_inst = Combinator()
+        self.assertFalse(base_inst.header_class)
+
+    def test_unconfigured_subclass_defaults_to_false(self) -> None:
+        from gram.core.combinators.base import Combinator
+
+        class CustomLeafCombinator(Combinator):
+            pass
+
+        self.assertFalse(CustomLeafCombinator.header_class)
+        inst = CustomLeafCombinator()
+        self.assertFalse(inst.header_class)
+
+    def test_header_combinators_have_header_class_true(self) -> None:
+        """Los combinadores que actúan como cabeceras de regla deben tener header_class = True."""
+        header_classes = [
+            Alt,
+            Seq,
+            Many,
+            Some,
+            Opt,
+            Separator,
+            Sep,
+            Enclosed,
+            Bracketed,
+            Tokenize,
+            AnyGrammar,
+        ]
+        for cls in header_classes:
+            self.assertTrue(
+                cls.header_class,
+                f"El combinador de cabecera {cls.__name__} debe tener header_class = True a nivel de clase."
+            )
+
+        # Probar instancias
+        dummy = MatchToken(Token.IDENT)
+        self.assertTrue(Alt(dummy).header_class)
+        self.assertTrue(Seq(dummy).header_class)
+        self.assertTrue(Many(dummy).header_class)
+        self.assertTrue(Some(dummy).header_class)
+        self.assertTrue(Opt(dummy).header_class)
+        self.assertTrue(Sep(dummy).header_class)
+        self.assertTrue(Enclosed("(", dummy, ")").header_class)
+        self.assertTrue(Tokenize(dummy).header_class)
+        self.assertTrue(AnyGrammar().header_class)
+
+    def test_non_header_combinators_have_header_class_false(self) -> None:
+        """Los combinadores atómicos u hoja deben tener header_class = False."""
+        self.assertFalse(MatchToken.header_class)
+        self.assertFalse(MatchToken(Token.IDENT).header_class)
+        self.assertFalse(MatchKeyword.header_class)
+        self.assertFalse(MatchKeyword("test").header_class)
+        self.assertFalse(MatchGroup.header_class)
+        self.assertFalse(MatchGroup("TEST_GROUP").header_class)
+        self.assertFalse(MatchSeqSymbol.header_class)
+        self.assertFalse(Ref.header_class)
+        self.assertFalse(Ref("regla").header_class)
+        self.assertFalse(Item.header_class)
+        self.assertFalse(Item(MatchToken(Token.IDENT)).header_class)
+        self.assertFalse(Literal.header_class)
+        self.assertFalse(Literal("valor").header_class)
+
+    def test_plugin_header_combinators(self) -> None:
+        """Verifica header_class en combinadores de plugins conocidos."""
+        from gram.plugins.source.expressions.combinators.chain import ChainL, ChainR
+        from gram.plugins.source.GRAM_ESSENCIAL_PACK.advanced_combinators import If
+
+        dummy = MatchToken(Token.IDENT)
+        self.assertTrue(ChainL.header_class)
+        self.assertTrue(ChainL(dummy, dummy).header_class)
+        self.assertTrue(ChainR.header_class)
+        self.assertTrue(ChainR(dummy, dummy).header_class)
+        self.assertTrue(If.header_class)
+        self.assertTrue(If(dummy).header_class)
+
+
 if __name__ == "__main__":
     unittest.main()
+

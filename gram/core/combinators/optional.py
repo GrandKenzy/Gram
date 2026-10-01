@@ -75,6 +75,7 @@ class Opt(Combinator):
         Evalúa el combinador interno; si fracasa, restaura atómicamente el estado del
         parser y retorna un OptResult indicando falta de coincidencia pero sin error.
     """
+    header_class: bool = True
 
     def __init__(self, combinator: Combinator) -> None:
         """
@@ -85,6 +86,7 @@ class Opt(Combinator):
             combinator: Inner combinator to evaluate optionally.
                         Combinador interno a evaluar opcionalmente.
         """
+        self.header_class: bool = True
         self.combinator: Combinator = combinator
 
     def parse(

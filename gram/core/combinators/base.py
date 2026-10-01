@@ -35,6 +35,10 @@ class Combinator:
         Cada combinador encapsula una estrategia declarativa de reconocimiento,
         consumo, bifurcación o repetición de tokens en el flujo del parser.
     """
+    header_class: bool = False
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.header_class: bool = getattr(self.__class__, "header_class", False)
 
     def parse(
         self,

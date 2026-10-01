@@ -97,9 +97,10 @@ ES:
     Combinador que procesa secuencias de elementos delimitados por un separador.
     Soporta separadores finales opcionales (trailing separator) y límites min/max.
 
-EN:
-    Delimited repetition combinator matching elements separated by a delimiter token.
-"""
+    EN:
+        Delimited repetition combinator matching elements separated by a delimiter token.
+    """
+    header_class: bool = True
 
     def __init__(
         self,
@@ -119,6 +120,7 @@ EN:
             max: Cantidad máxima permitida de elementos (o None para ilimitado).
             allow_trailing: Permite un separador colgante al final de la secuencia.
         """
+        self.header_class: bool = True
         if isinstance(values, (list, tuple)):
             self.values = tuple(_normalize_value(v) for v in values)
         else:

@@ -38,6 +38,7 @@ class ChainL(Combinator):
     code: int = 7010
     name: str = "ChainL"
     description: str = "Parsea elementos separados por operadores con asociatividad izquierda: a - b - c -> ((a - b) - c)."
+    header_class: bool = True
 
     def __init__(
         self,
@@ -46,6 +47,7 @@ class ChainL(Combinator):
         reducer: Callable[[Any, Any, Any], Any] | None = None,
     ):
         super().__init__()
+        self.header_class = True
         self.element = element
         self.operator = operator
         self.reducer = reducer
@@ -173,6 +175,7 @@ class ChainR(Combinator):
     code: int = 7011
     name: str = "ChainR"
     description: str = "Parsea elementos separados por operadores con asociatividad derecha: a = b = c -> (a = (b = c))."
+    header_class: bool = True
 
     def __init__(
         self,
@@ -181,6 +184,7 @@ class ChainR(Combinator):
         reducer: Callable[[Any, Any, Any], Any] | None = None,
     ):
         super().__init__()
+        self.header_class = True
         self.element = element
         self.operator = operator
         self.reducer = reducer

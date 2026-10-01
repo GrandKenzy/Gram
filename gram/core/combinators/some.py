@@ -43,6 +43,7 @@ class Some(Combinator):
         Exige al menos una coincidencia obligatoria del combinador interno.
         Acumula subsecuentes coincidencias mientras existan en el flujo de tokens.
     """
+    header_class: bool = True
 
     def __init__(self, combinator: Combinator) -> None:
         """
@@ -53,6 +54,7 @@ class Some(Combinator):
             combinator: Syntactic combinator to repeat.
                         Combinador sintáctico a repetir.
         """
+        self.header_class: bool = True
         self.combinator: Combinator = combinator
 
     def parse(

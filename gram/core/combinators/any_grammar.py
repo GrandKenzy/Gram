@@ -31,9 +31,11 @@ class AnyGrammar(Combinator):
     EN:
         Experimental wildcard combinator raising ANY_NOT_IMPLEMENTED by design.
     """
+    header_class: bool = True
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__()
+        self.header_class: bool = True
         self.args: tuple[Any, ...] = args
         self.kwargs: dict[str, Any] = kwargs
 

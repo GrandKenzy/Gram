@@ -30,6 +30,7 @@ class Tokenize(Combinator):
     EN:
         Combinator fusing tokens matched by an inner sequence into a single CustomToken TokenType.
     """
+    header_class: bool = True
 
     def __init__(
         self,
@@ -50,6 +51,7 @@ class Tokenize(Combinator):
         Raises:
             ParserError: Si no se proporciona al menos un combinador.
         """
+        self.header_class: bool = True
         if not combinators:
             error.ParserError(
                 "Tokenize requiere al menos un combinador.",

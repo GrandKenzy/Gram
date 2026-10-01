@@ -43,6 +43,7 @@ class Seq(Combinator):
         Todos deben coincidir. Si cualquiera falla, la secuencia retrocede
         atómicamente el parser al estado previo al inicio de la secuencia.
     """
+    header_class: bool = True
 
     def __init__(self, *combinators: Combinator) -> None:
         """
@@ -57,6 +58,7 @@ class Seq(Combinator):
             ParserError: If no child combinator is provided.
                          Si no se proporciona ningún combinador.
         """
+        self.header_class: bool = True
         if not combinators:
             error.ParserError(
                 "Secuencia vacía",
