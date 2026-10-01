@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "Meta-interpretation framework and DSL engine with combinator parsing, AST analysis, security sandbox, and VS Code extension generator."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [
     { name = "Gram Framework Team" }
 ]
@@ -35,7 +35,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = []
@@ -45,9 +44,9 @@ gram = "gram.cli.core:main"
 sjson = "sjson.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/gram-framework/gram"
-Documentation = "https://github.com/gram-framework/gram/tree/main/docs"
-Repository = "https://github.com/gram-framework/gram"
+Homepage = "https://github.com/GrandKenzy/Gram"
+Documentation = "https://github.com/GrandKenzy/Gram/tree/main/docs"
+Repository = "https://github.com/GrandKenzy/Gram"
 
 [tool.setuptools.packages.find]
 where = ["."]

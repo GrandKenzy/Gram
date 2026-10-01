@@ -1,21 +1,111 @@
-MIT License
+================================================================================
+GRAM FRAMEWORK LICENSE / LICENCIA DE GRAM FRAMEWORK
+================================================================================
 
-Copyright (c) 2026 Gram Framework Contributors
+[ENGLISH VERSION]
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Gram Framework License
+Version 1.0.0 (2026)
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Copyright (c) 2026 GrandKenzy / Gram Framework Contributors.
+Contact: kencv3002003@gmail.com
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+1. GRANT OF USE (FREE OF CHARGE):
+   Permission is hereby granted, free of charge, to any person or organization
+   obtaining a copy of the Gram Framework software and associated documentation
+   files (the "Software"), to use, run, and execute the Software for personal,
+   educational, academic, research, internal, or commercial purposes.
+
+2. COMMERCIALIZATION OF OUTPUT AND DERIVED PRODUCTS:
+   Any software, product, language, Domain-Specific Language (DSL), compiler,
+   transpiler, interpreter, parser, abstract syntax tree (AST), data format,
+   or application created, built, or processed through the use of Gram is the
+   exclusive property of its creator. You are expressly authorized to sell,
+   commercialize, monetize, license, and distribute any product resulting from
+   the use of Gram, without paying royalties or licensing fees to the authors
+   of Gram.
+
+3. RESTRICTIONS ON MODIFICATION:
+   The core source code, internal architecture, and files of the Gram Framework
+   itself may NOT be modified, altered, patched, or reverse-engineered directly,
+   WITH THE SOLE EXCEPTION of extensions developed through Gram's official
+   Plugin Architecture (via `gram.plugins` and `*.glang.py` extension points).
+   Any custom behavior, combinator, keyword, or rule must be introduced through
+   the official plugin system rather than altering the core codebase.
+
+4. RESTRICTION ON COMMERCIALIZATION OF THE FRAMEWORK:
+   The Gram Framework itself, in whole or in part, cannot be sold, rented, leased,
+   sublicensed, rebranded, or commercialized as a standalone software package,
+   library, or framework. You may not claim ownership or original authorship
+   of Gram.
+
+5. ATTRIBUTION:
+   The above copyright notice and this permission notice shall be retained in all
+   copies or substantial portions of the Software.
+
+6. DISCLAIMER OF WARRANTY:
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+================================================================================
+[VERSIÓN EN ESPAÑOL]
+
+Licencia de Gram Framework
+Versión 1.0.0 (2026)
+
+Copyright (c) 2026 GrandKenzy / Contribuidores de Gram Framework.
+Contacto: kencv3002003@gmail.com
+
+TÉRMINOS Y CONDICIONES DE USO, REPRODUCCIÓN Y DISTRIBUCIÓN
+
+1. CONCESIÓN DE USO (GRATUITO):
+   Por la presente se concede permiso, de manera totalmente gratuita, a cualquier
+   persona u organización que obtenga una copia del software Gram Framework y de
+   sus archivos de documentación asociados (el "Software"), para usar, ejecutar
+   y operar el Software con propósitos personales, educativos, académicos,
+   de investigación, internos o comerciales.
+
+2. COMERCIALIZACIÓN DE PRODUCTOS DERIVADOS DE SU USO:
+   Cualquier software, producto, lenguaje, Lenguaje de Dominio Específico (DSL),
+   compilador, transpilador, intérprete, analizador sintáctico (parser), árbol de
+   sintaxis abstracta (AST), formato de datos o aplicación creada, desarrollada
+   o procesada mediante el uso de Gram es propiedad exclusiva de su creador.
+   Se autoriza expresamente a vender, comercializar, monetizar, licenciar y
+   distribuir cualquier producto resultante del uso de Gram, sin obligación de
+   pagar regalías ni tarifas de licencia a los autores de Gram.
+
+3. RESTRICCIÓN DE MODIFICACIÓN:
+   El código fuente base, la arquitectura interna y los archivos propios de Gram
+   Framework NO pueden ser modificados, alterados, parcheados ni sometidos a
+   ingeniería inversa de forma directa, CON LA ÚNICA EXCEPCIÓN de las extensiones
+   creadas a través del sistema oficial de Plugins de Gram (mediante `gram.plugins`
+   y puntos de extensión `*.glang.py`). Cualquier comportamiento personalizado,
+   combinador, palabra clave o regla adicional debe implementarse exclusivamente
+   a través del mecanismo oficial de plugins.
+
+4. RESTRICCIÓN DE COMERCIALIZACIÓN DEL FRAMEWORK:
+   Gram Framework en sí mismo, de manera total o parcial, no puede ser vendido,
+   revendido, alquilado, sublicenciado, redistribuido con fines comerciales bajo
+   otra marca, ni comercializado como paquete, librería o framework independiente.
+   No está permitido atribuirse la autoría original de Gram.
+
+5. ATRIBUCIÓN:
+   El aviso de copyright anterior y este aviso de licencia deberán incluirse en
+   todas las copias o partes sustanciales del Software.
+
+6. EXENCIÓN DE RESPONSABILIDAD:
+   EL SOFTWARE SE PROPORCIONA "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O
+   IMPLÍCITA, INCLUYENDO, ENTRE OTRAS, LAS GARANTÍAS DE COMERCIABILIDAD, IDONEIDAD
+   PARA UN FIN DETERMINADO Y NO INFRACCIÓN. EN NINGÚN CASO LOS AUTORES O TITULARES
+   DEL COPYRIGHT SERÁN RESPONSABLES DE NINGUNA RECLAMACIÓN, DAÑO U OTRA
+   RESPONSABILIDAD, YA SEA EN UNA ACCIÓN CONTRACTUAL, EXTRACONTRACTUAL O DE OTRO
+   TIPO, QUE SURJA DE, O ESTÉ RELACIONADA CON EL SOFTWARE O EL USO U OTROS TRATOS
+   EN EL SOFTWARE.
+================================================================================

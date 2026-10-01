@@ -7,10 +7,14 @@
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
-  <a href="https://github.com/GrandKenzy/Gram/actions"><img src="https://img.shields.io/badge/tests-261%20passed-success.svg" alt="Tests"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/version-1.0.0-informational.svg" alt="Version 1.0.0">
+  <a href="https://github.com/GrandKenzy/Gram/actions"><img src="https://img.shields.io/badge/tests-266%20passed-success.svg" alt="Tests: 266 passed"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Free%20Use%20%26%20Commercial%20Output-brightgreen.svg" alt="License"></a>
   <a href="https://github.com/GrandKenzy/Gram"><img src="https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg" alt="Zero External Dependencies"></a>
 </p>
+
+> **Nota sobre el estado del proyecto (Versión 1.0.0):**  
+> Gram se encuentra en desarrollo activo y constante evolución. Esta es la versión **1.0.0**. Cualquier feedback, sugerencia de mejora o reporte de incidencias es profundamente bienvenido y agradecido para continuar enriqueciendo el framework.
 
 ---
 
@@ -232,19 +236,53 @@ La documentación detallada se encuentra en la carpeta [`docs/`](docs/):
 
 ## Suite de Pruebas Unitarias
 
-Gram cuenta con una suite integral de 261 pruebas automatizadas que cubren el 100% de los subsistemas (Lexer, Parser, AST, Errores OSGDC, Plugins, GLANG, VSIX, SJSON y CExample):
+Gram cuenta con una suite integral de 266 pruebas automatizadas que cubren el 100% de los subsistemas (Lexer, Parser, AST, Errores OSGDC, Plugins, GLANG, VSIX, SJSON y CExample):
 
 ```bash
 python -m unittest discover -s gram/tests
 ```
 
 ```text
-Ran 261 tests in 24.7s
+Ran 266 tests in 17.8s
 OK
 ```
 
 ---
 
-## Licencia
+## 🤝 Colaboración y Contacto
 
-Distribuido bajo la Licencia **MIT**. Consulta el archivo [LICENSE](LICENSE) para más detalles.
+¿Te interesa colaborar en el desarrollo de Gram, aportar ideas o proponer integraciones?
+- Puedes ponerte en contacto directamente enviando un mensaje a:  
+  📫 **[kencv3002003@gmail.com](mailto:kencv3002003@gmail.com)**
+- Cualquier feedback, sugerencia o reporte de incidencias ayuda muchísimo al crecimiento del proyecto.
+
+---
+
+## ☕ Donaciones y Apoyo al Proyecto
+
+Gram es un proyecto desarrollado con dedicación para ofrecer herramientas de compilación, parsing y meta-interpretación de lenguajes de alto rendimiento, modulares y con cero dependencias externas.
+
+Cualquier donación es profundamente bienvenida y se agradecería y apoyaría mucho para continuar su mantenimiento y evolución:
+- Donaciones vía PayPal / transferencia:  
+  💖 **[kencv3002003@gmail.com](mailto:kencv3002003@gmail.com)**
+
+¡Muchas gracias por apoyar el desarrollo de software libre y educativo!
+
+---
+
+## 📄 Licencia
+
+Gram se distribuye bajo una **Licencia de Uso Gratuito y Explotación Comercial de Productos Derivados** (disponible en versión completa en español e inglés en el archivo [LICENSE](LICENSE)).
+
+### Resumen de Términos / Terms Summary:
+
+- **Uso Gratuito (Free of Charge):**  
+  Gram puede ser utilizado de forma completamente libre y gratuita para cualquier propósito personal, educativo, académico o comercial.
+- **Venta de Productos Derivados (Commercial Output Allowed):**  
+  Cualquier persona u organización puede comercializar, vender, licenciar y monetizar los productos resultantes del uso de Gram (lenguajes, DSLs, compiladores, parsers, herramientas de análisis o programas generados). El producto de tu trabajo te pertenece al 100%.
+- **Prohibición de Modificación Directa (Core Immutability):**  
+  Gram Framework no puede ser modificado directamente en su código base central. Cualquier extensión, nuevo combinador, sintaxis o comportamiento debe realizarse exclusivamente a través del sistema oficial de **Plugins** (`gram.plugins` y archivos `*.glang.py`).
+- **Prohibición de Venta del Framework (Non-commercial Framework Resale):**  
+  Gram Framework no puede ser vendido, sublicenciado, revendido ni comercializado como paquete o librería propia de forma independiente.
+
+Para el texto legal formal completo en ambos idiomas, consulta el archivo [LICENSE](LICENSE).
