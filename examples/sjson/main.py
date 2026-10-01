@@ -1,7 +1,7 @@
 """
-Ejecutable de Demostración de CJSON (C-Style JSON con Gram).
-=============================================================
-Compila un archivo .cjson / .sjson a JSON estándar utilizando el motor Gram.
+Ejecutable de Demostración de SJSON (Super JSON con Gram Framework).
+===================================================================
+Compila un archivo .sjson a JSON estándar utilizando el motor Gram.
 """
 from __future__ import annotations
 
@@ -13,20 +13,19 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from gram.sjson import compile_file
+from gram.sjson import compile, compile_file
 
 
 def main() -> None:
-    sample_file = Path(__file__).parent / "sample.cjson"
+    sample_file = Path(__file__).parent / "sample.sjson"
     target = sys.argv[1] if len(sys.argv) > 1 else str(sample_file)
 
     print("=" * 60)
-    print("Compilador CJSON / SJSON (Gram Engine)")
+    print("Compilador SJSON (Super JSON - Gram Framework)")
     print(f"Archivo de entrada: {target}")
     print("=" * 60)
 
     try:
-        from gram.sjson import compile
         content = Path(target).read_text(encoding="utf-8")
         compiled_json = compile(content, base_dir=Path(target).parent, indent=2)
         print("\n[OK] Documento JSON Estándar Resultante:\n")

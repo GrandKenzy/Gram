@@ -248,6 +248,49 @@ MY_RULE Seq:
                 errors.GLANG_IMMUTABILITY_VIOLATION,
             ).raise_error()
 
+    # =========================================================================
+    # PRUEBAS DE VSIX Y EXTENSIBILIDAD DE PLUGINS (*.glang.py)
+    # =========================================================================
+
+    def test_glang_discover_plugin_files(self) -> None:
+        """Verifica el descubrimiento de archivos *.glang.py en los plugins oficiales."""
+        from gram.glang.vsix import discover_glang_plugin_files
+        found = discover_glang_plugin_files()
+        self.assertGreaterEqual(len(found), 3, "Deben descubrirse al menos 3 extensiones .glang.py")
+        plugin_names = [p_name for p_name, _ in found]
+        self.assertIn("expressions", plugin_names)
+        self.assertIn("storage", plugin_names)
+        self.assertIn("GRAM_ESSENCIAL_PACK", plugin_names)
+
+    def test_glang_safe_loader_resilience_to_errors(self) -> None:
+        """Un plugin con error sintáctico o de ejecución en *.glang.py debe ser ignorado sin congelar."""
+        from gram.glang.vsix import load_glang_extension_file
+
+        broken_plugin_file = Path(self.temp_dir) / "corrupt.glang.py"
+        broken_plugin_file.write_text("raise RuntimeError('Fallo forzado para prueba')\n", encoding="utf-8")
+
+        report = load_glang_extension_file("plugin_danado", broken_plugin_file)
+        self.assertFalse(report["loaded"])
+        self.assertIn("Fallo forzado para prueba", report["error"])
+
+    def test_glang_generate_vsix_produces_package(self) -> None:
+        """Verifica la generación completa del paquete VSIX de GLANG."""
+        from gram.glang.vsix import generate_glang_vsix
+        import zipfile
+
+        out_vsix = Path(self.temp_dir) / "glang-test.vsix"
+        result_path = generate_glang_vsix(output_path=out_vsix, force=True, install_after=False)
+        self.assertTrue(result_path.exists())
+        self.assertGreater(result_path.stat().st_size, 1000)
+
+        # Verificar contenido interno del paquete VSIX
+        with zipfile.ZipFile(result_path, "r") as zf:
+            namelist = zf.namelist()
+            self.assertIn("extension/package.json", namelist)
+            self.assertIn("extension/syntaxes/gram.tmLanguage.json", namelist)
+            self.assertIn("extension/themes/gram-theme.json", namelist)
+
 
 if __name__ == "__main__":
     unittest.main()
+

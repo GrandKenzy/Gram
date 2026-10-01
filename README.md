@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
-  <a href="https://github.com/GrandKenzy/Gram/actions"><img src="https://img.shields.io/badge/tests-258%20passed-success.svg" alt="Tests"></a>
+  <a href="https://github.com/GrandKenzy/Gram/actions"><img src="https://img.shields.io/badge/tests-261%20passed-success.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://github.com/GrandKenzy/Gram"><img src="https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg" alt="Zero External Dependencies"></a>
 </p>
@@ -53,16 +53,17 @@ A diferencia de los generadores de parsers monolíticos o dependientes de depend
 ```
 
 1. **Motor Léxico (`gram.core.lexer`):** Tokenizador modular que gestiona palabras clave coloreadas (`words`), operadores, símbolos, literales, comentarios de una línea (`//` o `#`) y bloques de indentación/dedentación.
-2. **Parser y Combinadores (`gram.core.parser` & `gram.core.combinators`):** Motor descendente recursivo basado en combinadores (`Seq`, `Alt`, `Many`, `Some`, `Sep`, `Delim`, `Opt`, `MatchToken`, `MatchKeyword`, `Ref`). Utiliza puntos de control inmutables (`savepoint` / `restore`) para revertir el estado del parser de forma atómica y sin efectos secundarios ante ramas que fallan.
+2. **Parser y Combinadores (`gram.core.parser` & `gram.core.combinators`):** Motor descendente recursivo basado en combinadores (`Seq`, `Alt`, `Many`, `Some`, `Sep`, `Enclosed`, `Opt`, `MatchToken`, `MatchKeyword`, `Ref`). Utiliza puntos de control inmutables (`savepoint` / `restore`) para revertir el estado del parser de forma atómica y sin efectos secundarios ante ramas que fallan.
 3. **Árbol de Sintaxis Abstracta (`gram.core.ast`):** Construcción estructurada del AST con `ASTProgram` y `ASTNode`, con telemetría de análisis (`Watcher`) e impresión jerárquica legible.
 4. **Sistema de Plugins con Sandbox (`gram.plugins`):**
    - Manifiesto estándar `manifest.json` para declarar capacidades (`load`, `process`, `cli`), permisos y dependencias.
    - Auditoría estática mediante AST (`gram check`) antes de la carga de código para detectar llamadas inseguras (`eval`, `exec`, accesos no autorizados a subprocesos).
    - Aislamiento de entorno virtual con comandos de gestión (`gram env`).
    - Tres plugins oficiales incluidos: `expressions` (operadores y precedencia), `storage` (memoria de tokens) y `GRAM_ESSENCIAL_PACK` (combinadores de control avanzado).
-5. **DSL GLANG (`gram.glang`):** Lenguaje declarativo que permite escribir la gramática en archivos de texto `.glang` (mediante palabras clave como `rule`, `token`, `keyword`, `seq`, `alt`, `many`) en lugar de diccionarios de Python manuales.
+5. **DSL GLANG (`gram.glang`):** Lenguaje declarativo que permite escribir gramáticas en archivos de texto `.glang` (mediante palabras clave como `rule`, `token`, `keyword`, `seq`, `alt`, `many`) en lugar de diccionarios de Python manuales. Los plugins pueden extender GLANG mediante archivos `*.glang.py`, cargados de forma resiliente con aislamiento de errores.
 6. **Integración con VS Code (`gram.vsix`):** Generador de extensiones para editores que produce gramáticas TextMate con paleta de colores, servidor en vivo con el protocolo Language Server Protocol (LSP), autocompletado, marcado de errores en tiempo real y asignación a un compilador destino mediante el ID canónico de Gram.
 7. **Cero Dependencias Externas:** 100% implementado con la biblioteca estándar de Python (3.10+).
+
 
 ---
 
@@ -163,7 +164,16 @@ gram env list
 # Compilar una gramática GLANG a Python
 gram glang compile mi_gramatica.glang
 
-# Generar e instalar la extensión VSIX para VS Code
+# Generar la extensión VSIX para GLANG buscando extensiones de plugins (*.glang.py)
+gram glang generate vsix
+
+# Generar e instalar la extensión VSIX de GLANG en VS Code
+gram glang --install vsix
+
+# Desinstalar la extensión de GLANG de VS Code
+gram glang --uninstall vsix
+
+# Generar e instalar la extensión oficial VSIX de Gram para VS Code
 gram vsix install
 ```
 
@@ -175,9 +185,9 @@ En `gram/plugins/source/` se encuentran tres plugins nativos sanitizados y verif
 
 | Plugin | Descripción | Combinadores y Funcionalidades |
 | :--- | :--- | :--- |
-| **[`expressions`](gram/plugins/source/expressions/)** | Manejo de expresiones complejas con precedencia de operadores. | `ChainL` (asociatividad izquierda), `ChainR` (asociatividad derecha), `ExpressionBuilder` y evaluador aritmético/lógico. |
-| **[`storage`](gram/plugins/source/storage/)** | Almacenamiento y recuperación contextual de tokens durante el parseo. | `Save` (guarda token en registro), `Load` (compara contra token guardado), `Tag` (etiqueta nodos AST). |
-| **[`GRAM_ESSENCIAL_PACK`](gram/plugins/source/GRAM_ESSENCIAL_PACK/)** | Combinadores avanzados de control de flujo sintáctico. | `SimpleCombinator` (creación fluida), `If` (parseo condicional), `ErrorCombinator`, `Req`, `Peek` y `Until`. |
+| **[`expressions`](gram/plugins/source/expressions/)** | Manejo de expresiones complejas con precedencia de operadores. | `ChainL` (asociatividad izquierda), `ChainR` (asociatividad derecha), `ExpressionBuilder` y evaluador aritmético/lógico. Extiende GLANG con `expressions.glang.py`. |
+| **[`storage`](gram/plugins/source/storage/)** | Almacenamiento y recuperación contextual de tokens durante el parseo. | `Save` (guarda token en registro), `Load` (compara contra token guardado), `Tag` (etiqueta nodos AST). Extiende GLANG con `storage.glang.py`. |
+| **[`GRAM_ESSENCIAL_PACK`](gram/plugins/source/GRAM_ESSENCIAL_PACK/)** | Combinadores avanzados de control de flujo sintáctico. | `SimpleCombinator` (creación fluida), `If` (parseo condicional), `ErrorCombinator`, `Req`, `Peek` y `Until`. Extiende GLANG con `essencial.glang.py`. |
 
 ---
 
@@ -193,12 +203,12 @@ Dentro de la carpeta [`examples/`](examples/) se incluyen implementaciones reale
      python examples/CExample/main.py
      ```
 
-2. **[`cjson`](examples/cjson/):**
-   Un compilador de Super JSON (SJSON / CJSON) implementado sobre Gram.
-   - Soporta variables numéricas y cadenas, cálculos aritméticos con precedencia, comentarios con `//` y herencia de archivos mediante `{ extend: "ruta.json" }`, compilando determinísticamente a JSON estándar (RFC 8259).
+2. **[`sjson`](examples/sjson/):**
+   Compilador de **SJSON (Super JSON)** implementado sobre Gram.
+   - Soporta variables numéricas y cadenas (`let` / `var`), cálculos aritméticos con precedencia, comentarios con `//` y herencia modular `{ extend: "ruta.json" }`, compilando determinísticamente a JSON estándar (RFC 8259).
    - Ejecución:
      ```bash
-     python examples/cjson/main.py
+     python examples/sjson/main.py
      ```
 
 ---
@@ -222,14 +232,14 @@ La documentación detallada se encuentra en la carpeta [`docs/`](docs/):
 
 ## Suite de Pruebas Unitarias
 
-Gram cuenta con una suite integral de 258 pruebas automatizadas que cubren el 100% de los subsistemas (Lexer, Parser, AST, Errores OSGDC, Plugins, GLANG, VSIX, SJSON y CExample):
+Gram cuenta con una suite integral de 261 pruebas automatizadas que cubren el 100% de los subsistemas (Lexer, Parser, AST, Errores OSGDC, Plugins, GLANG, VSIX, SJSON y CExample):
 
 ```bash
 python -m unittest discover -s gram/tests
 ```
 
 ```text
-Ran 258 tests in 17.8s
+Ran 261 tests in 24.7s
 OK
 ```
 

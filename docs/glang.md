@@ -208,15 +208,49 @@ resultado_ast = compilador_dsl.parse("mi_variable = 42;")
 
 ## 5. Comandos GLANG en Gram CLI
 
-Gram incluye soporte para manipular archivos `.glang` desde la línea de comandos:
+Gram incluye soporte para manipular archivos `.glang`, generar extensiones de editor e instalar extensiones VSIX en VS Code directamente desde la línea de comandos:
 
 ```bash
-# Compilar un archivo .glang e inspeccionar su gramática resultante
-python -m gram.cli glang compile calculadora.glang
+# 1. Compilar un archivo .glang y validar su gramática
+gram glang calculadora.glang
+# o equivalentemente:
+gram glang compile calculadora.glang
 
-# Compilar y exportar el diccionario Python equivalente
-python -m gram.cli glang compile calculadora.glang --out gramatica_generada.py
+# 2. Parsear un archivo fuente utilizando una especificación .glang e imprimir el AST
+gram glang calculadora.glang --source entrada.calc --print-ast
 
-# Parsear un archivo fuente (.calc) utilizando una especificación .glang
-python -m gram.cli glang parse --grammar calculadora.glang --source entrada.calc
+# 3. Generar la extensión VSIX de VS Code para GLANG buscando extensiones en plugins (*.glang.py)
+gram glang generate vsix
+
+# 4. Generar e instalar la extensión VSIX directamente en Visual Studio Code
+gram glang --install vsix
+# o también:
+gram glang install vsix
+
+# 5. Desinstalar la extensión de GLANG de Visual Studio Code
+gram glang --uninstall vsix
+# o también:
+gram glang uninstall vsix
 ```
+
+---
+
+## 6. Extensibilidad de GLANG mediante Plugins (`*.glang.py`)
+
+Cualquier plugin instalado o empaquetado en Gram puede extender las capacidades sintácticas y léxicas de GLANG incluyendo archivos con el patrón `*.glang.py` o `.glang.py` (por ejemplo: `expressions.glang.py`, `storage.glang.py`, `essencial.glang.py`).
+
+### Estructura de un Archivo `*.glang.py`:
+```python
+# mi_plugin/mi_plugin.glang.py
+from gram.core.lexer.words import add_group, add_keyword
+
+def setup_glang() -> None:
+    """Registra palabras clave, colores y combinadores en GLANG."""
+    add_group("CUSTOM_OPS", color_group="#DCDCAA", allow_override=True)
+    add_keyword("CustomCombinator", "#DCDCAA", group="CUSTOM_OPS", description="Mi nuevo combinador.", allow_override=True)
+```
+
+### Tolerancia a Fallos y Aislamiento:
+Al ejecutar `gram glang generate vsix` o `gram glang --install vsix`, Gram escanea automáticamente todos los plugins en busca de archivos `*.glang.py`. 
+- Si un plugin contiene un error sintáctico, una importación rota o una excepción en tiempo de ejecución en su `.glang.py`, **Gram captura el error, muestra una advertencia informativa e ignora ese plugin**.
+- El generador **nunca se congela ni corrompe el VSIX generado**, garantizando máxima resiliencia en entornos de desarrollo con múltiples plugins de terceros.

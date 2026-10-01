@@ -16,8 +16,7 @@ Bienvenido al centro de documentación técnica de **Gram Framework** (v1.0.0). 
 | **[Motor Léxico (Lexer)](lexer.md)** | Tokenización de código fuente, gestión de palabras clave (`words`), grupos léxicos (`WordGroup`) y manejo de indentación. |
 | **[Parser y Backtracking](parser.md)** | Pipeline de análisis sintáctico con `savepoint` y `restore` inmutables como única fuente de verdad. |
 | **[Catálogo Formal de Errores](errors.md)** | Estándar de 5 dimensiones OSGDC (`[O]rigen`, `[S]ubsistema`, `[G]ravedad`, `[D]ocumentación`, `[C]ondición`) y códigos de error centralizados. |
-| **[Tokens](tokens.md)** | Definición de enumeraciones `Token`, instancias `TokenType` y tokens personalizados. |
-| **[Proyectos de Ejemplo](../examples/)** | Motores de demostración en producción: **CExample** (motor mínimo de parsing de C: funciones, variables, control de flujo y AST) y **cjson** (C-Style JSON con comentarios `//`, cálculos, variables y herencia `extend`). |
+| **[Proyectos de Ejemplo](../examples/)** | Motores de demostración en producción: **CExample** (motor mínimo de parsing de C: funciones, variables, control de flujo y AST) y **sjson** (SJSON: Super JSON con variables numéricas y strings, comentarios `//`, cálculos aritméticos y herencia `extend`). |
 
 ---
 

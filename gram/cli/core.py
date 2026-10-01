@@ -538,16 +538,70 @@ def cmd_run(args: argparse.Namespace) -> int:
 # ==============================================================================
 
 def cmd_glang(args: argparse.Namespace) -> int:
-    """Compila o analiza código con una especificación GLANG (.glang)."""
-    import gram.glang
+    """Gestiona el lenguaje declarativo GLANG (.glang), extensiones y compilación VSIX."""
+    import gram.glang as glang
+    from gram.glang.vsix import (
+        generate_glang_vsix,
+        install_glang_vsix,
+        uninstall_glang_vsix,
+    )
 
-    glang_file = Path(args.file).resolve()
+    action = getattr(args, "action", None) or ""
+    target = getattr(args, "target", None) or ""
+    opt_install = getattr(args, "install_vsix", None)
+    opt_uninstall = getattr(args, "uninstall_vsix", None)
+    output_path = getattr(args, "output", None)
+
+    # 1. Comprobación de desinstalación: --uninstall vsix o comando 'uninstall vsix'
+    if opt_uninstall or action in ("uninstall", "--uninstall"):
+        print_banner("GLANG — Desinstalación de Extensión VS Code")
+        ok, msg = uninstall_glang_vsix()
+        if ok:
+            print(f"[OK GLANG] {msg}")
+            return 0
+        else:
+            print(f"[ERROR GLANG] {msg}")
+            return 1
+
+    # 2. Comprobación de instalación: --install vsix o comando 'install vsix'
+    if opt_install or action in ("install", "--install"):
+        print_banner("GLANG — Generación e Instalación de Extensión VS Code")
+        try:
+            target_vsix = generate_glang_vsix(output_path=output_path, force=True, install_after=True)
+            print(f"\n[OK GLANG] Extensión VSIX generada e instalada exitosamente:")
+            print(f"           Archivo: {target_vsix}")
+            return 0
+        except Exception as exc:
+            print(f"[ERROR GLANG] Falló la instalación de VSIX: {exc}")
+            return 1
+
+    # 3. Comprobación de generación: 'generate vsix'
+    if action == "generate" and (target.lower() == "vsix" or not target):
+        print_banner("GLANG — Generación de Extensión VSIX para VS Code")
+        try:
+            target_vsix = generate_glang_vsix(output_path=output_path, force=True, install_after=False)
+            print(f"\n[OK GLANG] Paquete VSIX de GLANG compilado exitosamente:")
+            print(f"           Ruta: {target_vsix}")
+            print(f"           Tamaño: {target_vsix.stat().st_size:,} bytes")
+            print("           Para instalarlo en VS Code use: gram glang --install vsix")
+            return 0
+        except Exception as exc:
+            print(f"[ERROR GLANG] Falló la generación de VSIX: {exc}")
+            return 1
+
+    # 4. Compilación o análisis de archivo .glang
+    file_to_parse = target if action == "compile" else action
+    if not file_to_parse:
+        print("[ERROR GLANG] Debe especificar un archivo .glang o un comando ('generate vsix', '--install vsix', '--uninstall vsix').")
+        return 1
+
+    glang_file = Path(file_to_parse).resolve()
     if not glang_file.is_file():
         print(f"[ERROR] Archivo GLANG no encontrado: {glang_file}")
         return 1
 
     try:
-        compiler = gram.glang.parse_glang_file(glang_file)
+        compiler = glang.parse_glang_file(glang_file)
         print_banner(f"GLANG — Compilación de Gramática: '{glang_file.name}'")
         print(f"  * Reglas definidas: {len(compiler.grammar)}")
         for rule in compiler.grammar.keys():
@@ -581,6 +635,7 @@ def cmd_glang(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"[ERROR GLANG] {exc}")
         return 1
+
 
 
 # ==============================================================================
@@ -865,10 +920,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.set_defaults(func=cmd_run)
 
     # 13. glang
-    p_glang = subparsers.add_parser("glang", help="Compila o analiza código con especificaciones GLANG (.glang)")
-    p_glang.add_argument("file", help="Ruta al archivo de gramática .glang")
+    p_glang = subparsers.add_parser("glang", help="Compila gramáticas GLANG (.glang) o genera/instala extensiones VSIX")
+    p_glang.add_argument("action", nargs="?", default=None, help="Acción ('generate', 'compile', 'install', 'uninstall') o ruta al archivo .glang")
+    p_glang.add_argument("target", nargs="?", default=None, help="Objetivo ('vsix' o archivo .glang)")
     p_glang.add_argument("--source", "-s", default=None, help="Archivo fuente a parsear con la gramática compilada")
     p_glang.add_argument("--print-ast", "-a", action="store_true", help="Imprimir árbol sintáctico (AST)")
+    p_glang.add_argument("-o", "--output", default=None, help="Ruta de salida del paquete .vsix al generar")
+    p_glang.add_argument("--install", dest="install_vsix", nargs="?", const="vsix", default=None, help="Genera e instala la extensión en VS Code (--install vsix)")
+    p_glang.add_argument("--uninstall", dest="uninstall_vsix", nargs="?", const="vsix", default=None, help="Desinstala la extensión de VS Code (--uninstall vsix)")
     p_glang.set_defaults(func=cmd_glang)
 
     # 14. vsix

@@ -16,6 +16,16 @@ from gram.glang.reinterpreter import (
 )
 
 
+from gram.glang.vsix import (
+    discover_glang_plugin_files,
+    generate_glang_vsix,
+    install_glang_vsix,
+    load_all_glang_extensions,
+    load_glang_extension_file,
+    uninstall_glang_vsix,
+)
+
+
 def version_info() -> str:
     """Retorna la información de versión y soporte de GLang."""
     return """\
@@ -48,4 +58,10 @@ __all__ = [
     'combinator_builders',
     'version_info',
     'show_version_info',
+    'discover_glang_plugin_files',
+    'load_glang_extension_file',
+    'load_all_glang_extensions',
+    'generate_glang_vsix',
+    'install_glang_vsix',
+    'uninstall_glang_vsix',
 ]
