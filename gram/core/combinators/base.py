@@ -226,6 +226,8 @@ class RuleItem(metaclass=RuleMeta):
     suggestions: dict[int, Any] = {}
     suggestions_autocomplete: bool = False
     is_structural: bool = False
+    queries: Any = None
+    hints: dict[int, Any] = {}
 
     @classmethod
     def contain_grammar(cls) -> bool:
@@ -257,6 +259,36 @@ class RuleItem(metaclass=RuleMeta):
         r_sugg = dict(raw_sugg) if isinstance(raw_sugg, dict) else {}
         r_auto = getattr(cls, "suggestions_autocomplete", False)
 
+        # Determinar queries de autocompletado dinámico
+        raw_queries = getattr(cls, "queries", None)
+        r_queries: list[Any] = []
+        if raw_queries is not None:
+            if isinstance(raw_queries, (list, tuple, set)):
+                r_queries = list(raw_queries)
+            else:
+                r_queries = [raw_queries]
+
+        # Extraer palabras clave asociadas a la gramática si existen
+        auto_keywords: list[str] = []
+        def _collect_keywords(comb: Any) -> None:
+            if comb is None:
+                return
+            if hasattr(comb, "keyword") and isinstance(comb.keyword, str):
+                auto_keywords.append(comb.keyword)
+            if hasattr(comb, "combinators") and isinstance(comb.combinators, (list, tuple)):
+                for sub in comb.combinators:
+                    _collect_keywords(sub)
+            if hasattr(comb, "combinator"):
+                _collect_keywords(getattr(comb, "combinator"))
+            if hasattr(comb, "values") and isinstance(comb.values, (list, tuple)):
+                for sub in comb.values:
+                    _collect_keywords(sub)
+
+        _collect_keywords(cls.grammar)
+        for q in r_queries:
+            if hasattr(q, "trigger_keywords") and not q.trigger_keywords and auto_keywords:
+                q.trigger_keywords = list(auto_keywords)
+
         # Determinar color primario de la regla
         color_val = "#FFFFFF"
         if 0 in r_colors:
@@ -267,6 +299,10 @@ class RuleItem(metaclass=RuleMeta):
         # Formato de scope TextMate sanitizado
         clean_name = re.sub(r"[^a-zA-Z0-9_]", "_", r_name).lower()
         scope_name = f"entity.name.rule.gram.{clean_name}"
+
+        # Determinar hints virtuales declarados
+        raw_hints = getattr(cls, "hints", {}) or {}
+        r_hints = dict(raw_hints) if isinstance(raw_hints, dict) else {}
 
         return {
             "name": r_name,
@@ -279,6 +315,8 @@ class RuleItem(metaclass=RuleMeta):
             "is_structural": r_struct,
             "suggestions": r_sugg,
             "suggestions_autocomplete": r_auto,
+            "queries": r_queries,
+            "hints": r_hints,
             "contain_grammar": cls.contain_grammar(),
             "grammar": cls.grammar,
         }

@@ -355,29 +355,31 @@ class ASTNode:
         indent: int = 0,
         prefix: str = "",
         is_last: bool = True,
+        ascii_only: bool = False,
     ) -> str:
         """
-        EN: Recursively formats the node and its children into a visual Unicode ASCII tree.
+        EN: Recursively formats the node and its children into a visual Unicode/ASCII tree.
         ES: Formatea el nodo y sus hijos recursivamente en una representación visual de árbol.
 
         Args:
             indent (int): Current indentation depth.
             prefix (str): Visual connection line prefix.
             is_last (bool): Whether this node is the last among its siblings.
+            ascii_only (bool): If True, uses pure ASCII characters (+--, \\--, |). Defaults to False.
 
         Returns:
-            str: Human-readable tree representation with Unicode connectors.
+            str: Human-readable tree representation.
         """
-        connector = "└── " if is_last else "├── "
+        connector = ("\\-- " if is_last else "+-- ") if ascii_only else ("└── " if is_last else "├── ")
         block_tag = " [BLOCK]" if self.is_block else ""
         val_tag = f" -> values={self.values!r}" if self.values else ""
         line = f"{prefix}{connector}[L{self.level}] {self.name} (code={self.code}){block_tag}{val_tag}"
 
-        child_prefix = prefix + ("    " if is_last else "│   ")
+        child_prefix = prefix + ("    " if is_last else ("|   " if ascii_only else "│   "))
         children_lines: list[str] = []
         for i, child in enumerate(self.children):
             last = i == len(self.children) - 1
-            children_lines.append(child.format(indent + 1, child_prefix, last))
+            children_lines.append(child.format(indent + 1, child_prefix, last, ascii_only=ascii_only))
 
         if children_lines:
             return line + "\n" + "\n".join(children_lines)
@@ -459,6 +461,9 @@ class ASTNode:
             if item is None:
                 return
             if isinstance(item, ASTNode):
+                # Descartar nodos hijos vacíos (reglas opcionales no coincidentes)
+                if not item.tokens and not item.children and not getattr(item, "is_block", False):
+                    return
                 children.append(item)
             elif isinstance(item, TokenType):
                 tokens.append(item)
@@ -538,6 +543,18 @@ class ASTProgram:
         ES: Declaraciones principales de nivel 0 del programa.
         """
         return self.body
+
+    def prune_empty(self) -> ASTProgram:
+        """
+        EN: Recursively removes empty leaf nodes that contain no tokens, values, or children.
+        ES: Elimina recursivamente nodos hoja vacíos que no contienen tokens, valores ni hijos.
+        """
+        def _prune(node: ASTNode) -> bool:
+            node.children = [c for c in node.children if _prune(c)]
+            return bool(node.tokens or node.children or getattr(node, "is_block", False))
+
+        self.body = [n for n in self.body if _prune(n)]
+        return self
 
     def by_level(self, level: int, recursive: bool = True) -> list[ASTNode]:
         """
@@ -687,14 +704,26 @@ class ASTProgram:
             ],
         }
 
-    def dump(self) -> str:
+    def dump(self, ascii_only: bool | None = None) -> str:
         """
         EN: Returns a clear, formatted textual hierarchy dump of the entire syntax tree.
         ES: Devuelve una visualización formateada y clara del árbol sintáctico completo.
 
+        Args:
+            ascii_only (bool | None): If True, uses pure ASCII connectors (+--, \\--, |).
+                                      If None, auto-detects console encoding capabilities.
+
         Returns:
             str: Tree representation with levels and statements.
         """
+        if ascii_only is None:
+            try:
+                encoding = getattr(sys.stdout, "encoding", "utf-8") or "utf-8"
+                "├──".encode(encoding)
+                ascii_only = False
+            except Exception:
+                ascii_only = True
+
         lvls = list(self.levels().keys())
         header = f"<ASTProgram statements={len(self.body)}, levels={lvls}, comments={len(self.comments)}>:"
         if not self.body:
@@ -703,7 +732,7 @@ class ASTProgram:
         nodes_str: list[str] = []
         for i, node in enumerate(self.body):
             is_last = i == len(self.body) - 1
-            nodes_str.append(node.format(indent=0, prefix="", is_last=is_last))
+            nodes_str.append(node.format(indent=0, prefix="", is_last=is_last, ascii_only=ascii_only))
 
         return header + "\n" + "\n".join(nodes_str)
 

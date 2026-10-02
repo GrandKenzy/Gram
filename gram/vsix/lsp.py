@@ -12,10 +12,13 @@ from __future__ import annotations
 
 import io
 import json
+from pathlib import Path
 import re
 import sys
 from typing import Any
+from urllib.parse import unquote, urlparse
 
+from gram.core.hints import Hints, InlayHintKind, VirtualHint, VirtualHintManager
 from gram.core.lexer import Lexer, Token, words
 from gram.core.parser import Parser
 from gram.utilities import error
@@ -38,6 +41,7 @@ class GramLanguageServer:
         self.stream_out = stream_out or sys.stdout
         self.metadata = metadata or extract_metadata()
         self.documents: dict[str, str] = {}
+        self.hint_managers: dict[str, VirtualHintManager] = {}
         self.is_running: bool = True
 
     def run(self) -> None:
@@ -139,18 +143,25 @@ class GramLanguageServer:
             self.handle_completion(msg_id, params)
         elif method == "textDocument/hover":
             self.handle_hover(msg_id, params)
+        elif method == "textDocument/inlayHint":
+            self.handle_inlay_hint(msg_id, params)
         elif msg_id is not None:
             self.send_response({"jsonrpc": "2.0", "id": msg_id, "result": None})
 
     def handle_initialize(self, msg_id: Any, params: dict[str, Any]) -> None:
         """Responde a la negociación de capacidades iniciales del cliente."""
+        self.workspace_root = (
+            params.get("rootUri")
+            or params.get("rootPath")
+        )
         capabilities = {
             "textDocumentSync": 1,  # 1 = Full
             "completionProvider": {
                 "resolveProvider": False,
-                "triggerCharacters": [".", ":", " ", '"', "'"],
+                "triggerCharacters": [".", ":", " ", '"', "'", "/", "\\"],
             },
             "hoverProvider": True,
+            "inlayHintProvider": True,
         }
         res = {
             "jsonrpc": "2.0",
@@ -243,7 +254,80 @@ class GramLanguageServer:
         """Retorna la lista de autocompletado para la posición del cursor."""
         items: list[dict[str, Any]] = []
 
-        # 1. Sugerencias extraídas de metadatos de Gram
+        # 0. Contexto de posición y documento para consultas dinámicas (Query)
+        pos = params.get("position", {})
+        line_idx = pos.get("line", 0)
+        col_idx = pos.get("character", 0)
+        uri = params.get("textDocument", {}).get("uri", "")
+
+        doc_text = self.documents.get(uri, "")
+        lines = doc_text.splitlines()
+
+        # Determinar directorio base del documento o espacio de trabajo
+        doc_dir: Path | None = None
+        if uri:
+            try:
+                parsed_uri = urlparse(uri)
+                if parsed_uri.scheme == "file":
+                    p_str = unquote(parsed_uri.path)
+                    if len(p_str) > 2 and p_str[0] == "/" and p_str[2] == ":":
+                        p_str = p_str[1:]
+                    doc_dir = Path(p_str).parent
+            except Exception:
+                pass
+        if not doc_dir and getattr(self, "workspace_root", None):
+            try:
+                parsed_ws = urlparse(str(self.workspace_root))
+                ws_path = unquote(parsed_ws.path) if parsed_ws.scheme == "file" else str(self.workspace_root)
+                if len(ws_path) > 2 and ws_path[0] == "/" and ws_path[2] == ":":
+                    ws_path = ws_path[1:]
+                doc_dir = Path(ws_path)
+            except Exception:
+                pass
+
+        # 1. Ejecución de queries dinámicos configurados en reglas (Query.query_roots)
+        if 0 <= line_idx < len(lines):
+            line_prefix = lines[line_idx][:col_idx]
+            quote_match = re.search(r'["\']([^"\']*)$', line_prefix)
+            if quote_match:
+                current_token_val = quote_match.group(1)
+            else:
+                word_match = re.search(r'(\S+)$', line_prefix)
+                current_token_val = word_match.group(1) if word_match else ""
+
+            line_words = set(re.findall(r'[a-zA-Z_0-9]+', line_prefix.lower()))
+
+            for r_name, r_meta in self.metadata.rules.items():
+                r_queries = getattr(r_meta, "queries", None)
+                if not r_queries:
+                    continue
+
+                r_clean = r_name.lower().replace("_stmt", "").replace("_rule", "").replace("_decl", "")
+
+                for q in r_queries:
+                    triggers = [t.lower() for t in getattr(q, "trigger_keywords", [])]
+                    matches = False
+                    if triggers:
+                        matches = any(t in line_words for t in triggers)
+                    else:
+                        matches = (r_clean in line_words or r_name.lower() in line_words)
+
+                    if matches and hasattr(q, "execute") and callable(q.execute):
+                        q_items = q.execute(token_text=current_token_val, base_dir=doc_dir)
+                        for q_idx, item in enumerate(q_items):
+                            items.append({
+                                "label": item["label"],
+                                "kind": item.get("kind", 17),
+                                "detail": item.get("detail", ""),
+                                "documentation": {
+                                    "kind": "markdown",
+                                    "value": item.get("documentation", ""),
+                                },
+                                "insertText": item.get("insertText", item["label"]),
+                                "sortText": f"0000_{q_idx:04d}_{item['label']}",
+                            })
+
+        # 2. Sugerencias extraídas de metadatos de Gram
         all_sug = self.metadata.get_all_suggestions()
         for idx, sug in enumerate(all_sug):
             kind_map = {
@@ -261,10 +345,10 @@ class GramLanguageServer:
                     "value": sug.get("documentation", ""),
                 },
                 "insertText": sug.get("insertText", sug["label"]),
-                "sortText": f"{idx:04d}",
+                "sortText": f"{idx + 1000:04d}",
             })
 
-        # 2. Sugerencias de tokens disponibles
+        # 3. Sugerencias de tokens disponibles
         for tok_name in self.metadata.token_types:
             items.append({
                 "label": f"tokens.{tok_name}",
@@ -272,6 +356,7 @@ class GramLanguageServer:
                 "detail": f"Token Gram: {tok_name}",
                 "documentation": f"Coincidencia con token léxico `{tok_name}`.",
                 "insertText": f"tokens.{tok_name}",
+                "sortText": f"9000_{tok_name}",
             })
 
         res = {
@@ -320,6 +405,126 @@ class GramLanguageServer:
             }
 
         self.send_response({"jsonrpc": "2.0", "id": msg_id, "result": result})
+
+    def get_hint_manager(self, uri: str) -> VirtualHintManager:
+        """Obtiene o crea el VirtualHintManager asignado al documento."""
+        if uri not in self.hint_managers:
+            self.hint_managers[uri] = VirtualHintManager()
+        return self.hint_managers[uri]
+
+    def populate_rule_hints(self, uri: str, text: str, manager: VirtualHintManager) -> None:
+        """Calcula dinámicamente las pistas virtuales asociadas a reglas RuleItem con hints."""
+        if not text:
+            manager.clear()
+            return
+
+        rules_with_hints = {
+            r_name: r_meta
+            for r_name, r_meta in self.metadata.rules.items()
+            if getattr(r_meta, "hints", None)
+        }
+        if not rules_with_hints:
+            return
+
+        # Limpiar únicamente pistas calculadas automáticamente por el AST
+        ast_ids = [hid for hid in list(manager._hints.keys()) if hid.startswith("ast_")]
+        for hid in ast_ids:
+            manager.remove_virtual(hid)
+
+        from gram import config
+
+        old_hide = getattr(config, "ERROR_HIDE_CONSOLE", False)
+        config.ERROR_HIDE_CONSOLE = True
+
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                lex = Lexer(text)
+                tokens = lex.process()
+
+                from gram.native.rules import DECLARATION, PROGRAM, RULES_BY_NAME
+                from gram.core.combinators import Alt, Many, Ref
+                from gram.core.ast.nodes import ASTNode
+
+            available_refs = [
+                Ref(r) for r in RULES_BY_NAME.values()
+                if getattr(r, "grammar", None) is not None and getattr(r, "name", "") != "PROGRAM"
+            ]
+            decl_comb = Alt(*available_refs) if available_refs else DECLARATION.grammar
+
+            if decl_comb is not None:
+                base_grammar = {
+                    PROGRAM: Many(Ref(DECLARATION)),
+                    DECLARATION: decl_comb,
+                }
+                for r in RULES_BY_NAME.values():
+                    if getattr(r, "grammar", None) is not None:
+                        base_grammar[r] = r.grammar
+
+                p = Parser(tokens)
+                ast = p.parse(base_grammar)
+
+            def _visit(node: Any) -> None:
+                if not isinstance(node, ASTNode):
+                    return
+                r_name = getattr(node, "name", "")
+                r_meta = self.metadata.rules.get(r_name)
+                hints_map = getattr(r_meta, "hints", {}) if r_meta else {}
+                if not hints_map and hasattr(node, "rule"):
+                    hints_map = getattr(node.rule, "hints", {}) or {}
+
+                if hints_map and getattr(node, "tokens", None):
+                    for tok_idx, hint_spec in hints_map.items():
+                        if 0 <= tok_idx < len(node.tokens):
+                            target_tok = node.tokens[tok_idx]
+                            proc_res = None
+                            if hasattr(hint_spec, "process") and callable(hint_spec.process):
+                                proc_res = hint_spec.process(target_tok)
+                            elif callable(hint_spec):
+                                proc_res = hint_spec(target_tok)
+
+                            if proc_res:
+                                lsp_line = max(0, getattr(target_tok, "line", 1) - 1)
+                                tok_val = str(getattr(target_tok, "value", "") or "")
+                                lsp_col = getattr(target_tok, "col", 0) + len(tok_val)
+                                h_kind = getattr(hint_spec, "kind", InlayHintKind.Type)
+                                h_p_left = getattr(hint_spec, "padding_left", True)
+                                h_p_right = getattr(hint_spec, "padding_right", False)
+                                h_desc = getattr(hint_spec, "description", "")
+                                manager.insert_virtual(
+                                    id=f"ast_{r_name}_{tok_idx}_{target_tok.line}_{target_tok.col}",
+                                    line=lsp_line,
+                                    character=lsp_col,
+                                    text=proc_res,
+                                    kind=h_kind,
+                                    padding_left=h_p_left,
+                                    padding_right=h_p_right,
+                                    description=h_desc,
+                                )
+
+                for child in getattr(node, "children", []):
+                    _visit(child)
+
+            if ast and hasattr(ast, "body"):
+                for stmt in ast.body:
+                    _visit(stmt)
+        except Exception:
+            pass
+        finally:
+            config.ERROR_HIDE_CONSOLE = old_hide
+
+    def handle_inlay_hint(self, msg_id: Any, params: dict[str, Any]) -> None:
+        """Retorna las pistas visuales virtuales (Inlay Hints) para el documento y rango dados."""
+        uri = params.get("textDocument", {}).get("uri", "")
+        range_info = params.get("range", {})
+        start_line = range_info.get("start", {}).get("line", 0)
+        end_line = range_info.get("end", {}).get("line", 100000)
+
+        manager = self.get_hint_manager(uri)
+        doc_text = self.documents.get(uri, "")
+
+        self.populate_rule_hints(uri, doc_text, manager)
+        hints = manager.to_lsp_inlay_hints(start_line=start_line, end_line=end_line)
+        self.send_response({"jsonrpc": "2.0", "id": msg_id, "result": hints})
 
 
 def start_lsp_server() -> None:

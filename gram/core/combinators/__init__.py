@@ -25,6 +25,7 @@ from gram.core.combinators import (
     match,
     mods,
     optional,
+    query,
     reference,
     separator,
     sequence,
@@ -40,6 +41,13 @@ from gram.core.combinators.base import (
     RuleItem,
     RuleMeta,
     RuleType,
+)
+from gram.core.combinators.query import Query, query
+from gram.core.hints import (
+    Hints,
+    InlayHintKind,
+    VirtualHint,
+    VirtualHintManager,
 )
 from gram.core.combinators.defaults import (
     BLOCK,
@@ -100,6 +108,7 @@ __all__ = [
     "match",
     "mods",
     "optional",
+    "query",
     "reference",
     "separator",
     "sequence",
@@ -111,6 +120,11 @@ __all__ = [
     "RuleItem",
     "RuleMeta",
     "RuleType",
+    "Query",
+    "Hints",
+    "InlayHintKind",
+    "VirtualHint",
+    "VirtualHintManager",
     # Combinadores de Control y Estructura
     "Alt",
     "Alternative",

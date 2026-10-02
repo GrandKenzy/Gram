@@ -225,23 +225,27 @@ class Error(Exception):
             except Exception:
                 print(f"ERROR: {self.name} - {self.caution}")
 
-    def raise_error(self, exit: bool = False) -> None:
+    def raise_error(self, exit: bool | None = None) -> None:
         """
         ES:
             Imprime el formato visual del error en la consola si no está silenciado.
-            Si `exit` es True y `ERROR_EXIT_ON_ERROR` es True, detiene el proceso con sys.exit(1).
+            Si `ERROR_EXIT_ON_ERROR` es True (y `exit` no es explícitamente False),
+            detiene el proceso limpiamente con sys.exit(1) evitando trazas de excepción.
             En caso contrario, lanza la excepción actual (`raise self`).
 
         EN:
             Prints the visual format of the error to the console if not muted.
-            If `exit` is True and `ERROR_EXIT_ON_ERROR` is True, exits the process with sys.exit(1).
+            If `ERROR_EXIT_ON_ERROR` is True (and `exit` is not explicitly False),
+            exits cleanly with sys.exit(1) without throwing a Python traceback.
             Otherwise, raises the current exception (`raise self`).
         """
         import sys
         from gram import config
         if not getattr(config, 'ERROR_HIDE_CONSOLE', False):
             self.print()
-        if exit and getattr(config, 'ERROR_EXIT_ON_ERROR', False):
+
+        should_exit = getattr(config, 'ERROR_EXIT_ON_ERROR', False) if exit is None else exit
+        if should_exit:
             sys.exit(1)
         raise self
 

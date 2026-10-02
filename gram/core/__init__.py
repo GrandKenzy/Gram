@@ -19,8 +19,9 @@ ES:
 """
 from __future__ import annotations
 
-from gram.core import ast, combinators, lexer, parser
+from gram.core import ast, combinators, lexer, parser, process
 from gram.core.parser import Checkpoint, ParseControl, Parser
+from gram.core.process import process
 from gram.core.watcher import FileWatcher, PluginWatcher, Watcher
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "combinators",
     "lexer",
     "parser",
+    "process",
 ]

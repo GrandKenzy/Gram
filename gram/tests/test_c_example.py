@@ -164,7 +164,7 @@ class TestCExample(unittest.TestCase):
 
     def test_format_tree_ascii(self) -> None:
         """Verifica que el formateo de árbol ASCII funcione de manera limpia y sin errores."""
-        code = "int a = 10;"
+        code = "int a = 10;\nint b = 20;"
         ast = self.parser.parse(code)
         tree = self.parser.format_tree(ast, ascii_only=True)
         self.assertIn("ASTProgram", tree)

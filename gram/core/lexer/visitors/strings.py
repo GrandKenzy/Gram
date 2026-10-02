@@ -196,7 +196,7 @@ def process_escape(char: str, lexer: Any = None) -> str:
         except ValueError:
             pass
 
-    return escapes.get(char, char)
+    return escapes.get(char, f"\\{char}")
 
 
 __all__ = [

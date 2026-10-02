@@ -41,6 +41,8 @@ class RuleMetadata:
     is_structural: bool = False
     suggestions: dict[int, Any] = field(default_factory=dict)
     suggestions_autocomplete: bool = True
+    queries: list[Any] = field(default_factory=list)
+    hints: dict[int, Any] = field(default_factory=dict)
     source_plugin: str = "native"
 
 
@@ -224,6 +226,8 @@ def extract_metadata(
                             is_structural=compiled["is_structural"],
                             suggestions=compiled["suggestions"],
                             suggestions_autocomplete=compiled.get("suggestions_autocomplete", True),
+                            queries=compiled.get("queries", []),
+                            hints=compiled.get("hints", {}),
                             source_plugin="native",
                         )
                     else:
@@ -234,6 +238,8 @@ def extract_metadata(
                             description=getattr(attr, "description", ""),
                             colors=dict(getattr(attr, "colors", {}) or {}),
                             is_structural=getattr(attr, "is_structural", False),
+                            queries=list(getattr(attr, "queries", []) or []),
+                            hints=dict(getattr(attr, "hints", {}) or {}),
                             source_plugin="native",
                         )
         except Exception:
@@ -271,6 +277,8 @@ def extract_metadata(
                                 is_structural=compiled["is_structural"],
                                 suggestions=compiled["suggestions"],
                                 suggestions_autocomplete=compiled.get("suggestions_autocomplete", True),
+                                queries=compiled.get("queries", []),
+                                hints=compiled.get("hints", {}),
                                 source_plugin=p_name,
                             )
             except Exception:
