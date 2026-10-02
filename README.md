@@ -219,18 +219,27 @@ Dentro de la carpeta [`examples/`](examples/) se incluyen implementaciones reale
 
 ## Documentación Técnica Completa
 
-La documentación detallada se encuentra en la carpeta [`docs/`](docs/):
+La documentación detallada se encuentra estructurada en la carpeta [`docs/`](docs/):
 
-- **[Índice Maestro de Documentación](docs/README.md)**
-- **[Catálogo Completo de Combinadores](docs/combinators.md):** Manual de todos los combinadores nativos y de plugins con ejemplos prácticos.
-- **[Arquitectura y Seguridad de Plugins](docs/plugins.md):** Especificación de manifiestos, auditoría estática AST y modelo de permisos.
-- **[Especificación del DSL GLANG](docs/glang.md):** Guía de sintaxis y compilación declarativa de gramáticas.
-- **[Infraestructura VSIX y Servidor LSP](docs/vsix.md):** Generación de temas TextMate, autocompletado y servidor Language Server Protocol.
-- **[Árbol de Sintaxis Abstracta (AST)](docs/ast.md):** Nodos `ASTNode`, `ASTProgram` y telemetría de ejecución.
-- **[Motor Léxico (Lexer)](docs/lexer.md):** Tokenización, palabras clave y grupos léxicos.
-- **[Parser y Backtracking](docs/parser.md):** Pipeline de análisis sintáctico con puntos de control atómicos.
-- **[Catálogo Formal de Errores OSGDC](docs/errors.md):** Estándar de 5 dimensiones para clasificación y trazabilidad de fallos.
-- **[Tokens y Tipos Léxicos](docs/tokens.md):** Especificación de tokens y su representación interna.
+- **[Índice Maestro de Documentación](docs/index.md)**
+- **01. Arquitectura del Compilador:**
+  - **[Visión General de Arquitectura](docs/01-Arquitectura/index.md)**
+  - **[Motor Léxico (Lexer)](docs/01-Arquitectura/lexer.md):** Tokenización, palabras clave y grupos léxicos.
+  - **[Tokens y Tipos Léxicos](docs/01-Arquitectura/tokens.md):** Especificación de tokens y su representación interna.
+  - **[Parser y Backtracking](docs/01-Arquitectura/parser.md):** Pipeline de análisis sintáctico con puntos de control atómicos.
+  - **[Árbol de Sintaxis Abstracta (AST)](docs/01-Arquitectura/ast.md):** Nodos `ASTNode`, `ASTProgram` y telemetría de ejecución.
+- **02. Sintaxis y Reglas:**
+  - **[Definición de Sintaxis](docs/02-Sintaxis/index.md)**
+  - **[Catálogo Completo de Combinadores](docs/02-Sintaxis/combinators.md):** Manual de todos los combinadores nativos y de plugins.
+  - **[Especificación de RuleItem](docs/02-Sintaxis/rule_item.md):** Clase base declarativa de reglas, metaclase y extensiones para IDE.
+- **03. Ecosistema y Herramientas:**
+  - **[Visión del Ecosistema](docs/03-Ecosistema/index.md)**
+  - **[Especificación del DSL GLANG](docs/03-Ecosistema/glang.md):** Guía de sintaxis y compilación declarativa de gramáticas.
+  - **[Arquitectura y Seguridad de Plugins](docs/03-Ecosistema/plugins.md):** Especificación de manifiestos, auditoría estática AST y modelo de permisos.
+  - **[Infraestructura VSIX y Servidor LSP](docs/03-Ecosistema/vsix.md):** Generación de temas TextMate, autocompletado y servidor LSP.
+- **04. Referencia:**
+  - **[Diagnósticos y Referencia](docs/04-Referencia/index.md)**
+  - **[Catálogo Formal de Errores OSGDC](docs/04-Referencia/errors.md):** Estándar de 5 dimensiones para clasificación y trazabilidad de fallos.
 
 ---
 

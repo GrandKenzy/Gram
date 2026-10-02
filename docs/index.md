@@ -1,22 +1,46 @@
 # Documentación Oficial de Gram Framework
 
-Bienvenido al centro de documentación técnica de **Gram Framework** (v1.0.0). Esta documentación cubre la arquitectura, subsistemas, catálogo de combinadores, desarrollo de plugins, la DSL GLANG y la integración con Visual Studio Code vía VSIX/LSP.
+Bienvenido al centro de documentación técnica de **Gram Framework** (v1.0.0). Esta documentación cubre la arquitectura modular, el pipeline de análisis sintáctico con backtracking atómico, el catálogo de combinadores, la definición declarativa de reglas con `RuleItem`, el desarrollo de plugins en entornos seguros, el lenguaje declarativo GLANG y la integración directa con Visual Studio Code vía extensiones VSIX y servidor LSP.
 
 ---
 
-## Índice General de Documentación
+## Estructura de la Documentación
 
-| Documento | Descripción |
-| :--- | :--- |
-| **[Catálogo de Combinadores](combinators.md)** | Referencia exhaustiva de todos los combinadores sintácticos: nativos (`Seq`, `Alt`, `Opt`, `Many`, `Some`, `MatchToken`, etc.) y de plugins (`Save`, `Load`, `Tag`, `ChainL`, `ChainR`, `ExpressionBuilder`, `SimpleCombinator`, `If`, `ErrorCombinator`, `Req`, `Peek`, `Not`, `Until`). |
-| **[Sistema de Plugins](plugins.md)** | Arquitectura de extensiones, especificación de `manifest.json`, subclases de `PluginBase`, auditoría estática AST (`gram check`), sandbox/permisos de usuario y guías completas de los 3 plugins oficiales (`storage`, `expressions`, `GRAM_ESSENCIAL_PACK`). |
-| **[GLANG (Gram Language)](glang.md)** | Lenguaje de Dominio Específico (DSL) declarativo para definir gramáticas en archivos `.glang` sin necesidad de escribir diccionarios de Python, con compilación automática y comandos CLI. |
-| **[VSIX y LSP para VS Code](vsix.md)** | Infraestructura de generación y empaquetado de extensiones para Visual Studio Code (`.vsix`): esquemas de color TextMate, autocompletado, servidor Language Server Protocol (LSP) en vivo, marcado de errores y compilador objetivo con ID universal de Gram. |
-| **[Árbol de Sintaxis Abstracta (AST)](ast.md)** | Estructura de nodos `ASTNode`, `ASTProgram`, `ASTAnalyzer`, sistema de telemetría y `Watcher`. |
-| **[Motor Léxico (Lexer)](lexer.md)** | Tokenización de código fuente, gestión de palabras clave (`words`), grupos léxicos (`WordGroup`) y manejo de indentación. |
-| **[Parser y Backtracking](parser.md)** | Pipeline de análisis sintáctico con `savepoint` y `restore` inmutables como única fuente de verdad. |
-| **[Catálogo Formal de Errores](errors.md)** | Estándar de 5 dimensiones OSGDC (`[O]rigen`, `[S]ubsistema`, `[G]ravedad`, `[D]ocumentación`, `[C]ondición`) y códigos de error centralizados. |
-| **[Proyectos de Ejemplo](../examples/)** | Motores de demostración en producción: **CExample** (motor mínimo de parsing de C: funciones, variables, control de flujo y AST) y **sjson** (SJSON: Super JSON con variables numéricas y strings, comentarios `//`, cálculos aritméticos y herencia `extend`). |
+La documentación se organiza en cuatro áreas clave:
+
+### 1. Arquitectura del Compilador
+Comprende el ciclo de vida completo de transformación desde código fuente hasta árboles de sintaxis tipados.
+* **[01 Arquitectura — General](01-Arquitectura/index.md):** Visión global del pipeline y principios arquitectónicos.
+* **[Motor Léxico](01-Arquitectura/lexer.md):** Tokenizador modular, análisis de indentación sensible al contexto, grupos léxicos y palabras clave.
+* **[Catálogo de Tokens](01-Arquitectura/tokens.md):** Tipado formal de `TokenType`, `Token` inmutable con metadatos y `CustomToken`.
+* **[Parser y Backtracking](01-Arquitectura/parser.md):** Consumo determinista de tokens y máquina de estados con puntos de control transaccionales inmutables (`ParseControl`).
+* **[Árbol de Sintaxis Abstracta (AST)](01-Arquitectura/ast.md):** Estructura jerárquica de nodos `ASTNode`, agregación en `ASTProgram` y telemetría vía `Watcher`.
+
+### 2. Sintaxis y Definición de Reglas
+Bloques constructivos y modelado formal de gramáticas y lenguajes.
+* **[02 Sintaxis — General](02-Sintaxis/index.md):** Paradigma declarativo de definición sintáctica.
+* **[Catálogo de Combinadores](02-Sintaxis/combinators.md):** Referencia exhaustiva de combinadores nativos (`Seq`, `Alt`, `Opt`, `Many`, `Some`, etc.) y de plugins (`Save`, `Load`, `Tag`, `ChainL`, `If`, etc.).
+* **[Especificación de RuleItem](02-Sintaxis/rule_item.md):** Documentación formal de `RuleItem`, metaclase `RuleMeta`, metadatos TextMate, snippets LSP y comportamiento AST.
+
+### 3. Ecosistema y Herramientas
+Módulos para ampliar, distribuir y dotar de soporte de editor a los lenguajes creados.
+* **[03 Ecosistema — General](03-Ecosistema/index.md):** Visión integral del ecosistema y herramientas de desarrollo.
+* **[DSL GLANG](03-Ecosistema/glang.md):** Lenguaje declarativo para definir gramáticas en archivos `.glang` sin necesidad de código Python manual.
+* **[Sistema de Plugins](03-Ecosistema/plugins.md):** Arquitectura de extensiones, manifiestos `manifest.json`, auditoría estática AST (`gram check`) y sandbox de permisos.
+* **[VSIX y LSP para VS Code](03-Ecosistema/vsix.md):** Infraestructura de empaquetado de extensiones `.vsix`, temas TextMate y servidor Language Server Protocol en tiempo real.
+
+### 4. Referencia y Diagnóstico
+Especificaciones técnicas y catálogos de códigos centralizados.
+* **[04 Referencia — General](04-Referencia/index.md):** Estándar de telemetría y diagnósticos.
+* **[Catálogo Formal de Errores OSGDC](04-Referencia/errors.md):** Matriz estandarizada de 5 dimensiones (`[O]rigen`, `[S]ubsistema`, `[G]ravedad`, `[D]ocumentación`, `[C]ondición`).
+
+---
+
+## Proyectos de Ejemplo
+
+Gram incluye proyectos de demostración completos en la carpeta `examples/`:
+* **CExample:** Motor mínimo de parsing de un subconjunto de lenguaje C (funciones, tipos, variables, control de flujo y AST).
+* **sjson (Super JSON):** Formato enriquecido derivado de JSON con soporte para variables, operaciones aritméticas, comentarios `//` y directivas de herencia `extend`.
 
 ---
 
