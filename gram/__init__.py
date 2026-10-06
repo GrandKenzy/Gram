@@ -109,6 +109,7 @@ from gram.sjson import (
 # Orquestación de Alto Nivel
 from gram.core.process import (
     process,
+    get_stack
 )
 
 __version__ = "1.0.0"
