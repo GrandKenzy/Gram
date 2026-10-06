@@ -167,12 +167,7 @@ def process(
     # -------------------------------------------------------------------------
     # 4. Tokenización y Análisis Sintáctico (Lexer + Parser + ASTAnalyzer)
     # -------------------------------------------------------------------------
-    lexer = Lexer(
-        content,
-        comment_token=comment_token,
-        save_comments=save_comments,
-        ignore_newlines=ignore_newlines,
-    )
+    lexer = Lexer(content)
     tokens = lexer.process()
 
     parser = Parser(tokens)

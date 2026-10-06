@@ -79,11 +79,8 @@ class Lexer:
 
     def __init__(
         self,
-        source: Sequence[str] | str,
-        comment_token: str | Token | None = None,
-        save_comments: bool | None = None,
-        ignore_newlines: bool | None = None,
-    ) -> None:
+        source: Sequence[str] | str
+        ) -> None:
         """
         Inicializa el analizador léxico con el código fuente y opciones opcionales.
 
@@ -98,9 +95,9 @@ class Lexer:
         else:
             self.source = list(source)
 
-        self.comment_token = comment_token if comment_token is not None else getattr(config, 'LEXER_COMMENT_TOKEN', '#')
-        self.save_comments = save_comments if save_comments is not None else getattr(config, 'LEXER_SAVE_COMMENTS', True)
-        self.ignore_newlines = ignore_newlines if ignore_newlines is not None else getattr(config, 'LEXER_IGNORE_NEWLINES', True)
+        self.comment_token = config.LEXER_COMMENT_TOKEN
+        self.save_comments = config.LEXER_SAVE_COMMENTS
+        self.ignore_newlines = config.LEXER_IGNORE_NEWLINES
         self.line: int = 0
         self.col: int = 0
         self.indents: list[int] = [0]
