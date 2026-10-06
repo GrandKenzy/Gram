@@ -107,6 +107,14 @@ class ParseControl:
                 self._default_node = target_input  # type: ignore
                 self._target_node = target_input  # type: ignore
         else:
+            default_parser_stack = StackInfo(
+                'parser-log',
+                'PARSER',
+                'Registro y diagnóstico del analizador sintáctico',
+                expose_nodes=True,
+                generate_log_file=config.INFO_GENERATE_LOGFILE,
+                generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR
+            )
             self._stack = default_parser_stack
             self._default_node = self._stack.node(
                 default_node_name,

@@ -99,6 +99,7 @@ ERROR_SUPPORT_ANSI: bool = False
 # ==============================================================================
 INFO_INIT: bool = False
 INFO_GENERATE_LOGFILE: bool = False
+INFO_GENERATE_LOGFILE_ON_ERROR: bool = False
 INFO_FLATTEN_OUTPUT: bool = True
 INFO_SUPPORT_ANSI: bool = False
 LOG_HIDE_CONSOLE: bool = True

@@ -6,6 +6,7 @@ bajo un archivo de log y canalizar su salida por consola o archivo.
 """
 from __future__ import annotations
 
+import atexit
 from pathlib import Path
 from typing import ClassVar
 
@@ -21,7 +22,10 @@ class StackInfo:
         file_name: str,
         node_name: str,
         description: str,
-        expose_nodes: bool = False):
+        expose_nodes: bool = False,
+        generate_on_error: bool = False,
+        generate_log_file: bool = False,
+        ):
         
         if not file_name.endswith('.log'):
             file_name = file_name + '.log'
@@ -32,6 +36,11 @@ class StackInfo:
         from gram.utilities.info import Node
         self.main: Node = Node(node_name, description, 0)
         self.log: Path | None = None
+        if generate_log_file:
+            self.register()
+        
+        if self.log and generate_on_error:
+            atexit.register(self.write)
         
     def register(self):
         self.log = Log.register(self.file_name)
