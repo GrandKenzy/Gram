@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 
+import gram
+
 from gram.core.ast.nodes import ASTProgram
 from gram.core.combinators.base import Combinator, RuleItem, RuleType
 from gram.core.combinators.many import Many
@@ -22,14 +24,12 @@ if TYPE_CHECKING:
     from gram.plugins.base import PluginBase
 
 
+SAVED_STACK: gram.utilities.info.StackInfo | None = None
 def process(
     grammar: Any,
     source_or_file: str | Path | Sequence[str],
     *,
-    plugins: list[str | Path | PluginBase | Any] | None = None,
-    comment_token: str | Token | None = None,
-    save_comments: bool | None = None,
-    ignore_newlines: bool | None = None,
+    plugins: list[str | Path | PluginBase | Any] | None = None
 ) -> ASTProgram:
     """
     Procesa y analiza código fuente contra una gramática formal en una sola llamada.
@@ -190,7 +190,11 @@ def process(
     # -------------------------------------------------------------------------
     ast.prune_empty()
 
+    SAVED_STACK = parser.stack
+    
     return ast
 
+def get_stack():
+    return SAVED_STACK
 
 __all__ = ["process"]
