@@ -264,7 +264,9 @@ class ASTAnalyzer:
         statements: list[ASTNode] = []
 
         while self.parser.not_empty():
-            current = self.parser.consume(node=target_node)
+            current = self.parser.peek(node=target_node)
+            if current is None:
+                break
 
             if target_node and getattr(config, "PARSER_ADD_INFO", True):
                 target_node.note(f"Analizando token: {current}", "Normal")
@@ -275,6 +277,7 @@ class ASTAnalyzer:
                         f"Token descartado: {current.token.name}",
                         "Advice",
                     )
+                self.parser.consume(node=target_node)
                 continue
 
             decl_node = self.match_with_declaration(current, node=target_node)

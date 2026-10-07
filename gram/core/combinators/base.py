@@ -98,13 +98,11 @@ class Combinator:
             Active telemetry InfoNode or None if unavailable.
             Nodo de telemetría activo o None si no está disponible.
         """
-        node = getattr(analyzer, "node", None)
+        node = analyzer.node
         if node is not None:
+            stack_info = analyzer.parser.stack
             return node
-        parser = getattr(analyzer, "parser", None)
-        if parser is not None:
-            return getattr(parser, "node", None)
-        return getattr(analyzer, "STACK_INFO", None)
+
 
     def _dispatch_sub(
         self,

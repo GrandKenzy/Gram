@@ -96,7 +96,7 @@ class Alt(Combinator):
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if target_node and config.PARSER_ADD_INFO:
             target_node.note(
                 f"ALT iniciado con {len(self.combinators)} alternativas",
                 "Normal",

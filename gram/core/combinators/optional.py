@@ -113,12 +113,10 @@ class Opt(Combinator):
         """
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
-
         if target_node and getattr(config, "PARSER_ADD_INFO", True):
             target_node.note(f"OPT iniciado con {self.combinator!r}", "Normal")
 
         checkpoint = parser.savepoint(node=target_node)
-
         # Siempre evalúa con ignore_errors=True
         try:
             result = self._dispatch_sub(

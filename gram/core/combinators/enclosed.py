@@ -81,6 +81,7 @@ class Enclosed(Combinator):
         content: Combinator,
         close: Token | str,
         skip_whitespace: bool = True,
+        allow_empty: bool = True,
     ) -> None:
         """
         EN: Initialize Enclosed combinator with opening delimiter, content, and closing delimiter.
@@ -95,12 +96,15 @@ class Enclosed(Combinator):
                    Token o string de cierre correspondiente (')', ']', '}').
             skip_whitespace: If True, activates bracket-aware mode suppressing NEWLINE/INDENT/DEDENT.
                              Si True, activa el modo bracket-aware suprimiendo saltos e indentación.
+            allow_empty: If True, accepts matching delimiters with no content.
+                         Si True, acepta delimitadores consecutivos sin contenido.
         """
         self.header_class: bool = True
         self.open_token: Token = _resolve_delimiter(open, _OPEN_MAP)
         self.close_token: Token = _resolve_delimiter(close, _CLOSE_MAP)
         self.content: Combinator = content
         self.skip_whitespace: bool = skip_whitespace
+        self.allow_empty: bool = allow_empty
 
     def parse(
         self,
@@ -159,9 +163,19 @@ class Enclosed(Combinator):
 
                 # Caso de bloque vacío inmediato: "( )"
                 if parser.not_empty() and parser.current().token == self.close_token:
-                    parser.consume(node=target_node)
-                    if target_node and getattr(config, "PARSER_ADD_INFO", True):
-                        target_node.note("Enclosed: contenido vacío", "Normal")
+                    if self.allow_empty:
+                        parser.consume(node=target_node)
+                        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+                            target_node.note("Enclosed: contenido vacío", "Normal")
+                        return []
+
+                    parser.restore(checkpoint, node=target_node)
+                    if not ignore_errors:
+                        error.ParserError(
+                            "Enclosed: contenido vacío",
+                            errors.COMBINATOR_FAILED,
+                            f"El contenido dentro de '{self.open_token.name}...{self.close_token.name}' no puede estar vacío.",
+                        ).raise_error()
                     return None
 
                 res = self._dispatch_sub(
@@ -211,6 +225,20 @@ class Enclosed(Combinator):
 
                 return res
         else:
+            if parser.not_empty() and parser.current().token == self.close_token:
+                if self.allow_empty:
+                    parser.consume(node=target_node)
+                    return []
+
+                parser.restore(checkpoint, node=target_node)
+                if not ignore_errors:
+                    error.ParserError(
+                        "Enclosed: contenido vacío",
+                        errors.COMBINATOR_FAILED,
+                        f"El contenido dentro de '{self.open_token.name}...{self.close_token.name}' no puede estar vacío.",
+                    ).raise_error()
+                return None
+
             res = self._dispatch_sub(
                 self.content,
                 analyzer,

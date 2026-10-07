@@ -486,6 +486,30 @@ class TestSeparatorAndEnclosed(BaseCombinatorTestCase):
         self.assertIsNone(res)
         self.assertEqual(parser.pos, 0)
 
+    def test_enclosed_empty_content_allowed_by_default(self) -> None:
+        parser = self.make_parser(
+            self.make_token(Token.LPAREN, "("),
+            self.make_token(Token.RPAREN, ")"),
+        )
+
+        res = Enclosed("(", MatchToken(Token.IDENT), ")").parse(parser)
+
+        self.assertEqual(res, [])
+        self.assertEqual(parser.pos, 2)
+
+    def test_enclosed_empty_content_can_be_rejected(self) -> None:
+        parser = self.make_parser(
+            self.make_token(Token.LPAREN, "("),
+            self.make_token(Token.RPAREN, ")"),
+        )
+
+        res = Enclosed(
+            "(", MatchToken(Token.IDENT), ")", allow_empty=False
+        ).parse(parser, ignore_errors=True)
+
+        self.assertIsNone(res)
+        self.assertEqual(parser.pos, 0)
+
 
 class TestReferenceAndTokenize(BaseCombinatorTestCase):
     """Pruebas para Ref (Reference), Tokenize y AnyGrammar."""
@@ -665,4 +689,3 @@ class TestHeaderClassAttribute(BaseCombinatorTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
