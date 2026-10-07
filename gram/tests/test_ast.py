@@ -335,6 +335,20 @@ class ASTProgramTestCase(BaseASTTestCase):
         level0_nodes = self.program.by_level(0)
         self.assertEqual(len(level0_nodes), 2)
 
+    def test_program_walk_can_filter_by_level(self) -> None:
+        self.assertEqual(
+            list(self.program.walk(0)),
+            [self.stmt1, self.block_stmt],
+        )
+        self.assertEqual(
+            list(self.program.walk(1)),
+            [self.inner_stmt],
+        )
+        self.assertEqual(
+            list(self.program.walk("post")),
+            [self.stmt1, self.inner_stmt, self.block_stmt],
+        )
+
     def test_program_serialization_and_dumps(self) -> None:
         dump_str = self.program.dump()
         self.assertIn("ASTProgram", dump_str)

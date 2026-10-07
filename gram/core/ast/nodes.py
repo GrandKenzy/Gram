@@ -298,25 +298,38 @@ class ASTNode:
                 return match
         return None
 
-    def walk(self, order: str = "pre") -> Iterator[ASTNode]:
+    def walk(
+        self,
+        level: int | str | None = None,
+        order: str = "pre",
+    ) -> Iterator[ASTNode]:
         """
         EN: Traverses the complete subtree rooted at this node.
         ES: Recorre el subárbol completo partiendo de este nodo.
 
         Args:
-            order (str): Traversal order ('pre' for pre-order, 'post' for post-order). Defaults to 'pre'.
+            level (int | None): If specified, only yields nodes at this exact level.
+                               If a string is passed positionally, it is treated as
+                               the legacy order argument.
+            order (str): Traversal order ('pre' for pre-order, 'post' for post-order).
 
         Yields:
             ASTNode: Each visited node in the tree.
         """
+        if isinstance(level, str):
+            order = level
+            level = None
+
         if order == "post":
             for child in self.children:
-                yield from child.walk(order=order)
-            yield self
+                yield from child.walk(level=level, order=order)
+            if level is None or self.level == level:
+                yield self
         else:
-            yield self
+            if level is None or self.level == level:
+                yield self
             for child in self.children:
-                yield from child.walk(order=order)
+                yield from child.walk(level=level, order=order)
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -664,19 +677,30 @@ class ASTProgram:
             "levels": list(self.levels().keys()),
         }
 
-    def walk(self, order: str = "pre") -> Iterator[ASTNode]:
+    def walk(
+        self,
+        level: int | str | None = None,
+        order: str = "pre",
+    ) -> Iterator[ASTNode]:
         """
         EN: Traverses all nodes in the complete program tree.
         ES: Recorre la totalidad de los nodos del árbol del programa.
 
         Args:
+            level (int | None): If specified, yields only nodes at this exact level.
+                               If a string is passed positionally, it is treated as
+                               the legacy order argument.
             order (str): Traversal order ('pre' or 'post'). Defaults to 'pre'.
 
         Yields:
             ASTNode: Each visited node.
         """
+        if isinstance(level, str):
+            order = level
+            level = None
+
         for node in self.body:
-            yield from node.walk(order=order)
+            yield from node.walk(level=level, order=order)
 
     def to_dict(self) -> dict[str, Any]:
         """
