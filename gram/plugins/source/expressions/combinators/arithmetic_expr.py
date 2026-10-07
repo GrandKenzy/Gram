@@ -51,18 +51,31 @@ class ArithmeticExpr(Combinator):
     def parse(
         self,
         analyzer: Any,
-        current: TokenType,
+        current: TokenType | None = None,
         ignore_errors: bool = False,
     ) -> list[TokenType] | None:
         target_node = self._get_node(analyzer)
         parser = analyzer.parser
         saved_pos = parser.pos
 
-        tok_type = current.token
+        if current is None:
+            if not parser.not_empty():
+                if ignore_errors:
+                    return None
+                err_code = codes.CodeError((2, 1, 1, 0, 1), "Arithmetic.EmptyStream")
+                error.ParserError(
+                    "Se esperaba una expresión aritmética pero se alcanzó EOF.",
+                    err_code,
+                ).raise_error()
+            start_tok = parser.current()
+        else:
+            start_tok = current
+
+        tok_type = start_tok.token
         valid_start = (
             tok_type in (Token.NUMBER, Token.PLUS, Token.MINUS, Token.DECREMENT, Token.INCREMENT, Token.LPAREN)
             or (self.allow_ident and tok_type == Token.IDENT)
-            or isinstance(current.value, (int, float))
+            or isinstance(start_tok.value, (int, float))
         )
 
         if not valid_start:
@@ -70,30 +83,36 @@ class ArithmeticExpr(Combinator):
                 return None
             err_code = codes.CodeError((2, 1, 1, 0, 1), "Arithmetic.InvalidStart")
             error.ParserError(
-                f"Token '{current.value}' ({tok_type.name}) no puede iniciar una expresión aritmética.",
+                f"Token '{start_tok.value}' ({tok_type.name}) no puede iniciar una expresión aritmética.",
                 err_code,
-                f"Línea {current.line}, columna {current.col}.",
+                f"Línea {start_tok.line}, columna {start_tok.col}.",
             ).raise_error()
 
         class StreamAdapter:
-            def __init__(self, first_token: TokenType, prs: Any):
-                self.first_token = first_token
+            def __init__(self, first_token: TokenType | None, prs: Any):
                 self.parser = prs
-                self.first_used = False
                 self.consumed: list[TokenType] = []
+                if first_token is not None:
+                    if prs.not_empty() and prs.tokens[prs.pos] is first_token:
+                        self.next_tok = None
+                    else:
+                        self.next_tok = first_token
+                else:
+                    self.next_tok = None
 
             def peek(self) -> TokenType | None:
-                if not self.first_used:
-                    return self.first_token
+                if self.next_tok is not None:
+                    return self.next_tok
                 if self.parser.not_empty():
                     return self.parser.current()
                 return None
 
             def consume(self) -> TokenType:
-                if not self.first_used:
-                    self.first_used = True
-                    self.consumed.append(self.first_token)
-                    return self.first_token
+                if self.next_tok is not None:
+                    tok = self.next_tok
+                    self.next_tok = None
+                    self.consumed.append(tok)
+                    return tok
                 if self.parser.not_empty():
                     tok = self.parser.consume()
                     self.consumed.append(tok)
@@ -109,7 +128,7 @@ class ArithmeticExpr(Combinator):
                 if cur is None:
                     break
                 tt = cur.token
-                if not is_binary_op(tt):
+                if not is_binary_op(tt) or tt in (Token.LOGIC_AND, Token.AND_LOGIC, Token.LOGIC_OR, Token.OR_LOGIC):
                     break
                 prec = BINARY_PRECEDENCE[tt]
                 if prec < min_prec:

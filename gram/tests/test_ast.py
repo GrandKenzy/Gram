@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 
 from gram import config, errors
-from gram.core.ast import ASTAnalyzer, ASTNode, ASTProgram, generate_file_tree
+from gram.core.ast import ASTAnalyzer, ASTNode, ASTProgram, Identifier, generate_file_tree
 from gram.core.combinators import (
     Alt,
     Many,
@@ -182,8 +182,27 @@ class ASTNodeTestCase(BaseASTTestCase):
         node = ASTNode(name="ASSIGN", tokens=[tok_id, tok_eq, tok_num])
 
         self.assertEqual(node.values, ["x", 42])
+        self.assertIsInstance(node.values[0], Identifier)
+        self.assertEqual(node.values[0].name, "x")
         self.assertEqual(node.value, "x")
         self.assertEqual(node.identifiers, ["x"])
+
+    def test_identifier_value_is_distinct_from_string_literal(self) -> None:
+        identifier_node = ASTNode(
+            name="IDENTIFIER",
+            tokens=[self.make_token(Token.IDENT, "Hola")],
+        )
+        string_node = ASTNode(
+            name="STRING",
+            tokens=[self.make_token(Token.STRING, "Hola")],
+        )
+
+        identifier, = identifier_node.values
+        string_literal, = string_node.values
+
+        self.assertIsInstance(identifier, Identifier)
+        self.assertEqual(identifier, string_literal)
+        self.assertNotIsInstance(string_literal, Identifier)
 
     def test_node_hierarchy_and_levels(self) -> None:
         parent = ASTNode(name="FUNC_DEF", level=0)

@@ -22,6 +22,7 @@ from gram.plugins.source.expressions.combinators import (
     ArithmeticExpr,
     ChainL,
     ChainR,
+    ConditionalExpr,
     ExpressionBuilder,
     IsDigit,
     MathBinaryOp,
@@ -33,6 +34,44 @@ from gram.plugins.source.expressions.combinators import (
 # ============================================================================
 # Reglas Gramaticales (RuleItem)
 # ============================================================================
+
+class CONDITIONAL_EXPR(RuleItem):
+    code = 7050
+    name = "CONDITIONAL_EXPR"
+    description = "Expresión condicional con operadores relacionales (==, !=, <, <=, >, >=), lógicos (&&, ||, !) y booleanos."
+    docs = "docs/conditional_expr.md"
+    grammar = ConditionalExpr()
+    colors = {0: "#4EC9B0"}
+    suggestions = {0: [("cond", "Expresión condicional (ej. a > 10 && b == 0)")]}
+    suggestions_autocomplete = True
+
+
+class COMP_OP(RuleItem):
+    code = 7051
+    name = "COMP_OP"
+    description = "Operador relacional de comparación: ==, !=, <, <=, >, >="
+    grammar = Alt(
+        MatchToken(Token.EQUAL),
+        MatchToken(Token.NOT_EQUAL),
+        MatchToken(Token.LESS_EQUAL),
+        MatchToken(Token.GREATER_EQUAL),
+        MatchToken(Token.LESS),
+        MatchToken(Token.GREATER),
+    )
+    colors = {0: "#D4D4D4"}
+
+
+class LOGIC_OP(RuleItem):
+    code = 7052
+    name = "LOGIC_OP"
+    description = "Operador lógico: &&, ||"
+    grammar = Alt(
+        MatchToken(Token.LOGIC_AND),
+        MatchToken(Token.AND_LOGIC),
+        MatchToken(Token.LOGIC_OR),
+        MatchToken(Token.OR_LOGIC),
+    )
+    colors = {0: "#D4D4D4"}
 
 class ARITHMETIC_EXPR(RuleItem):
     code = 7001
@@ -138,6 +177,7 @@ grammar: dict[Any, Any] = {
     PROGRAM: Many(Ref(DECLARATION)),
     DECLARATION: Alt(
         Ref(ARITHMETIC_EXPR),
+        Ref(CONDITIONAL_EXPR),
         Ref(MATH_SUM),
         Ref(MATH_SUB),
         Ref(MATH_MULT),
@@ -150,6 +190,9 @@ grammar: dict[Any, Any] = {
         Ref(IS_DIGIT),
     ),
     ARITHMETIC_EXPR: ARITHMETIC_EXPR.grammar,
+    CONDITIONAL_EXPR: CONDITIONAL_EXPR.grammar,
+    COMP_OP: COMP_OP.grammar,
+    LOGIC_OP: LOGIC_OP.grammar,
     MATH_SUM: MATH_SUM.grammar,
     MATH_SUB: MATH_SUB.grammar,
     MATH_MULT: MATH_MULT.grammar,
@@ -167,6 +210,9 @@ def get_rules() -> list[type[RuleItem]]:
     """Retorna las clases RuleItem expuestas por el plugin expressions."""
     return [
         ARITHMETIC_EXPR,
+        CONDITIONAL_EXPR,
+        COMP_OP,
+        LOGIC_OP,
         MATH_SUM,
         MATH_SUB,
         MATH_MULT,
@@ -187,6 +233,9 @@ def get_grammar() -> dict[Any, Any]:
 
 __all__ = [
     "ARITHMETIC_EXPR",
+    "CONDITIONAL_EXPR",
+    "COMP_OP",
+    "LOGIC_OP",
     "MATH_SUM",
     "MATH_SUB",
     "MATH_MULT",

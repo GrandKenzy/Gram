@@ -15,3 +15,4 @@ def setup_glang() -> None:
     add_keyword("ChainL", "#DCDCAA", group="EXPRESSION_OPS", description="Combinador asociativo por izquierda (ChainL).", allow_override=True)
     add_keyword("ChainR", "#DCDCAA", group="EXPRESSION_OPS", description="Combinador asociativo por derecha (ChainR).", allow_override=True)
     add_keyword("ExprBuilder", "#4EC9B0", group="EXPRESSION_OPS", description="Constructor declarativo de precedencia de operadores.", allow_override=True)
+    add_keyword("ConditionalExpr", "#4EC9B0", group="EXPRESSION_OPS", description="Combinador para expresiones condicionales y relacionales.", allow_override=True)

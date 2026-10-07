@@ -23,6 +23,8 @@ from .combinators import (
     ArithmeticExpr,
     ChainL,
     ChainR,
+    ConditionalExpr,
+    ConditionalSyntaxError,
     ExpressionBuilder,
     IsDigit,
     MathBinaryOp,
@@ -34,6 +36,7 @@ from .evaluator import (
     ArithmeticNode,
     ArithmeticSyntaxError,
     BinaryOpNode,
+    BooleanNode,
     DEFAULT_ENV,
     FunctionCallNode,
     GroupNode,
@@ -44,7 +47,10 @@ from .evaluator import (
 )
 from .grammar import (
     ARITHMETIC_EXPR,
+    COMP_OP,
+    CONDITIONAL_EXPR,
     IS_DIGIT,
+    LOGIC_OP,
     MATH_DIV,
     MATH_FLOOR_DIV,
     MATH_MOD,
@@ -68,6 +74,7 @@ class ExpressionsPlugin(PluginBase):
         from gram.core.combinators.mods import register_custom_mod
         register_custom_mod(ChainL)
         register_custom_mod(ChainR)
+        register_custom_mod(ConditionalExpr)
 
         try:
             from gram import vsix
@@ -121,6 +128,7 @@ __all__ = [
     "evaluate",
     # Evaluador y Nodos
     "ArithmeticNode",
+    "BooleanNode",
     "BinaryOpNode",
     "NumberNode",
     "VariableNode",
@@ -134,12 +142,17 @@ __all__ = [
     "ChainR",
     "ExpressionBuilder",
     "ArithmeticExpr",
+    "ConditionalExpr",
+    "ConditionalSyntaxError",
     "IsDigit",
     "MathBinaryOp",
     "MathUnaryOp",
     "MathGroup",
     # Reglas RuleItem
     "ARITHMETIC_EXPR",
+    "CONDITIONAL_EXPR",
+    "COMP_OP",
+    "LOGIC_OP",
     "MATH_SUM",
     "MATH_SUB",
     "MATH_MULT",

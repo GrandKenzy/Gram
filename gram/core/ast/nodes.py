@@ -19,6 +19,20 @@ from typing import Any, Iterator, Self
 from gram.core.lexer.tokens import CustomToken, Token, TokenType
 
 
+class Identifier(str):
+    """String-compatible AST value that preserves identifier semantics."""
+
+    def __new__(cls, name: str) -> Self:
+        return super().__new__(cls, name)
+
+    @property
+    def name(self) -> str:
+        return str(self)
+
+    def __repr__(self) -> str:
+        return f"Identifier({super().__repr__()})"
+
+
 @dataclass
 class ASTNode:
     """
@@ -142,13 +156,9 @@ class ASTNode:
         }
         result: list[Any] = []
         for t in self.tokens:
-            if t.token in (
-                Token.IDENT,
-                Token.STRING,
-                Token.NUMBER,
-                Token.BOOL,
-                Token.CHAR,
-            ):
+            if t.token == Token.IDENT:
+                result.append(Identifier(str(t.value)))
+            elif t.token in (Token.STRING, Token.NUMBER, Token.BOOL, Token.CHAR):
                 result.append(t.value)
             elif t.token == Token.KEYWORD and str(t.value) not in structural_keywords:
                 result.append(t.value)
@@ -979,6 +989,7 @@ def generate_file_tree(
 
 
 __all__ = [
+    "Identifier",
     "ASTNode",
     "ASTProgram",
     "generate_file_tree",

@@ -49,6 +49,10 @@ DEFAULT_ENV: dict[str, Any] = {
     "log": math.log,
     "exp": math.exp,
     "pow": math.pow,
+    "true": 1,
+    "false": 0,
+    "True": 1,
+    "False": 0,
 }
 
 
@@ -72,6 +76,31 @@ class ArithmeticNode:
         return node
 
 
+class BooleanNode(ArithmeticNode):
+    """Nodo para literales booleanos: true, false."""
+    def __init__(self, token: TokenType):
+        self.token = token
+        raw_val = token.value
+        if isinstance(raw_val, bool):
+            self.value: bool = raw_val
+        elif str(raw_val).lower() in ("true", "1"):
+            self.value = True
+        else:
+            self.value = False
+
+    def evaluate(self, env: dict[str, Any] | None = None) -> int:
+        return 1 if self.value else 0
+
+    def to_tokens(self) -> list[TokenType]:
+        return [self.token]
+
+    def __str__(self) -> str:
+        return "true" if self.value else "false"
+
+    def __repr__(self) -> str:
+        return f"Bool({self.value})"
+
+
 def to_arithmetic_node(val: Any) -> ArithmeticNode:
     """Convierte de forma segura cualquier valor (TokenType, número o string) a un ArithmeticNode."""
     if isinstance(val, ArithmeticNode):
@@ -79,10 +108,16 @@ def to_arithmetic_node(val: Any) -> ArithmeticNode:
     if isinstance(val, TokenType):
         if val.token == Token.NUMBER or isinstance(val.value, (int, float)):
             return NumberNode(val)
+        if val.token == Token.BOOL or isinstance(val.value, bool):
+            return BooleanNode(val)
         return VariableNode(val)
+    if isinstance(val, bool):
+        return BooleanNode(TokenType(token=Token.BOOL, value=val, line=1, col=0))
     if isinstance(val, (int, float)):
         return NumberNode(TokenType(token=Token.NUMBER, value=val, line=1, col=0))
     if isinstance(val, str):
+        if val.lower() in ("true", "false"):
+            return BooleanNode(TokenType(token=Token.BOOL, value=(val.lower() == "true"), line=1, col=0))
         return VariableNode(TokenType(token=Token.IDENT, value=val, line=1, col=0))
     if isinstance(val, list) and len(val) == 1 and isinstance(val[0], TokenType):
         return to_arithmetic_node(val[0])
@@ -150,6 +185,8 @@ class UnaryOpNode(ArithmeticNode):
 
     def evaluate(self, env: dict[str, Any] | None = None) -> Any:
         val = self.operand.evaluate(env)
+        if self.op_token.token in (Token.NOT_LOGIC, Token.LOGIC_NOT, Token.EXCLAMATION) or self.op in ("!", "not"):
+            return 1 if not val else 0
         if self.op_token.token == Token.MINUS or self.op == "-":
             return -val
         if self.op_token.token == Token.NOT or self.op == "~":
@@ -226,6 +263,12 @@ class BinaryOpNode(ArithmeticNode):
             return 1 if left_val > right_val else 0
         elif tok == Token.GREATER_EQUAL or op == ">=":
             return 1 if left_val >= right_val else 0
+
+        # Operaciones lógicas
+        elif tok in (Token.LOGIC_AND, Token.AND_LOGIC) or op in ("&&", "and"):
+            return 1 if (bool(left_val) and bool(right_val)) else 0
+        elif tok in (Token.LOGIC_OR, Token.OR_LOGIC) or op in ("||", "or"):
+            return 1 if (bool(left_val) or bool(right_val)) else 0
 
         # Operaciones a nivel de bits
         elif tok == Token.AND or op == "&":
@@ -307,6 +350,10 @@ class GroupNode(ArithmeticNode):
 # ============================================================================
 
 BINARY_PRECEDENCE: dict[Token, int] = {
+    Token.LOGIC_OR: 3,
+    Token.OR_LOGIC: 3,
+    Token.LOGIC_AND: 4,
+    Token.AND_LOGIC: 4,
     Token.ASSIGN: 5,
     Token.OR: 6,
     Token.XOR: 6,
@@ -393,10 +440,14 @@ class ArithmeticParser:
 
         tok_type = current.token
 
-        if tok_type in (Token.PLUS, Token.MINUS, Token.NOT):
+        if tok_type in (Token.PLUS, Token.MINUS, Token.NOT, Token.NOT_LOGIC, Token.LOGIC_NOT, Token.EXCLAMATION):
             op_tok = self.consume()
             operand = self.parse_expression(UNARY_PRECEDENCE)
             return UnaryOpNode(op_tok, operand)
+
+        if tok_type == Token.BOOL or isinstance(current.value, bool):
+            bool_tok = self.consume()
+            return BooleanNode(bool_tok)
 
         if tok_type == Token.DECREMENT:
             dec_tok = self.consume()
@@ -520,6 +571,7 @@ def evaluate(
 
 __all__ = [
     "ArithmeticNode",
+    "BooleanNode",
     "NumberNode",
     "VariableNode",
     "UnaryOpNode",

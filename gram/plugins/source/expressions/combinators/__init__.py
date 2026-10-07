@@ -9,6 +9,7 @@ from .arithmetic_expr import ArithmeticExpr
 from .math_ops import MathBinaryOp, MathUnaryOp, MathGroup
 from .chain import ChainL, ChainR
 from .builder import ExpressionBuilder
+from .conditional_expr import ConditionalExpr, ConditionalSyntaxError
 
 
 def get_combinators() -> list[Any]:
@@ -18,6 +19,7 @@ def get_combinators() -> list[Any]:
         ChainR,
         ExpressionBuilder,
         ArithmeticExpr,
+        ConditionalExpr,
         IsDigit,
         MathBinaryOp,
         MathUnaryOp,
@@ -30,6 +32,8 @@ __all__ = [
     "ChainR",
     "ExpressionBuilder",
     "ArithmeticExpr",
+    "ConditionalExpr",
+    "ConditionalSyntaxError",
     "IsDigit",
     "MathBinaryOp",
     "MathUnaryOp",

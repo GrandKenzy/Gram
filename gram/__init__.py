@@ -41,6 +41,7 @@ from gram.core.ast import (
     ASTAnalyzer,
     ASTNode,
     ASTProgram,
+    Identifier,
     generate_file_tree,
 )
 from gram.core.watcher import Watcher
@@ -158,6 +159,7 @@ __all__ = [
     "ASTAnalyzer",
     "ASTNode",
     "ASTProgram",
+    "Identifier",
     "generate_file_tree",
     "Watcher",
     # Combinadores y Reglas

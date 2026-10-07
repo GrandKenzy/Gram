@@ -91,6 +91,127 @@ class TestExpressionsPlugin(unittest.TestCase):
         self.assertIn("ChainR", combs)
         self.assertIn("ExpressionBuilder", combs)
         self.assertIn("ArithmeticExpr", combs)
+        self.assertIn("ConditionalExpr", combs)
+
+        rules = [r.__name__ for r in p.get_rules()]
+        self.assertIn("CONDITIONAL_EXPR", rules)
+        self.assertIn("COMP_OP", rules)
+        self.assertIn("LOGIC_OP", rules)
+
+    def test_conditional_expr_combinator(self):
+        class DummyAnalyzer:
+            node = None
+            def __init__(self, parser):
+                self.parser = parser
+
+        cond_comb = expressions.ConditionalExpr(allow_ident_boolean=True)
+
+        # 1. Comparación aritmética válida: 10 + 20 > 5
+        toks = Lexer("10 + 20 > 5").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNotNone(res)
+        self.assertEqual([x.value for x in res], [10, "+", 20, ">", 5])
+
+        # 2. Expresión puramente aritmética: 10 + 20 (debe ser RECHAZADA)
+        toks = Lexer("10 + 20").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNone(res, "10 + 20 no debe ser aceptado como condición")
+
+        # 3. Número solo: 42 (debe ser RECHAZADO)
+        toks = Lexer("42").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNone(res, "42 no debe ser aceptado como condición")
+
+        # 4. Identificador como bandera booleana: activo (aceptado)
+        toks = Lexer("activo").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNotNone(res)
+        self.assertEqual([x.value for x in res], ["activo"])
+
+        # 5. Aritmética con identificador: activo + 1 (debe ser RECHAZADA)
+        toks = Lexer("activo + 1").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNone(res, "activo + 1 no debe ser aceptado como condición")
+
+        # 6. Negación lógica: !activo
+        toks = Lexer("!activo").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNotNone(res)
+        self.assertEqual([x.value for x in res], ["!", "activo"])
+
+        # 7. Negación con agrupación: !(10 + 20 > 5)
+        toks = Lexer("!(10 + 20 > 5)").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNotNone(res)
+        self.assertEqual([x.value for x in res], ["!", "(", 10, "+", 20, ">", 5, ")"])
+
+        # 8. Negación con aritmética inválida: !(10 + 20) (debe ser RECHAZADA)
+        toks = Lexer("!(10 + 20)").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNone(res)
+
+        # 9. Conectores lógicos: 10 + 20 > 5 && activo == 1
+        toks = Lexer("10 + 20 > 5 && activo == 1").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNotNone(res)
+        self.assertEqual([x.value for x in res], [10, "+", 20, ">", 5, "&&", "activo", "==", 1])
+
+        # 10. Conector con condición inválida a la derecha: 10 + 20 > 5 && 42 (debe ser RECHAZADA)
+        toks = Lexer("10 + 20 > 5 && 42").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNone(res)
+
+        # 11. Literales booleanos: true && false
+        toks = Lexer("true && false").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
+        self.assertIsNotNone(res)
+        self.assertEqual(len(res), 3)
+
+    def test_evaluator_conditionals_and_logic(self):
+        # Comparaciones simples
+        self.assertEqual(expressions.evaluate("10 + 20 > 5"), 1)
+        self.assertEqual(expressions.evaluate("10 + 20 < 5"), 0)
+        self.assertEqual(expressions.evaluate("10 == 10"), 1)
+        self.assertEqual(expressions.evaluate("10 != 10"), 0)
+
+        # Conectores lógicos && y ||
+        self.assertEqual(expressions.evaluate("10 > 5 && 2 < 4"), 1)
+        self.assertEqual(expressions.evaluate("10 > 5 && 2 > 4"), 0)
+        self.assertEqual(expressions.evaluate("10 < 5 || 2 < 4"), 1)
+        self.assertEqual(expressions.evaluate("10 < 5 || 2 > 4"), 0)
+
+        # Negación lógica !
+        self.assertEqual(expressions.evaluate("!0"), 1)
+        self.assertEqual(expressions.evaluate("!1"), 0)
+        self.assertEqual(expressions.evaluate("!(10 > 20)"), 1)
+
+        # Booleanos y variables de entorno
+        env = {"x": 8, "y": 10, "activo": 1}
+        self.assertEqual(expressions.evaluate("x > 5 && y == 10", env=env), 1)
+        self.assertEqual(expressions.evaluate("x < 5 && y == 10", env=env), 0)
+        self.assertEqual(expressions.evaluate("activo && x == 8", env=env), 1)
 
     def test_evaluator_basic_arithmetic(self):
         self.assertEqual(expressions.evaluate("2 + 3 * 4"), 14)
