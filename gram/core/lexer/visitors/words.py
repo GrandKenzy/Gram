@@ -46,7 +46,7 @@ def process(
 
     node.name = 'VISITOR-WORD'
 
-    if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_INFO:
         node.note(
             f'Inicio de palabra en línea {start_line}, columna {start}',
             'normal',
@@ -66,7 +66,7 @@ def process(
     # 1. Literales booleanos
     if lower in BOOLS:
         parsed_bool = BOOLS[lower]
-        if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+        if config.LEXER_ADD_INFO:
             node.note(f'Booleano reconocido: {value!r} -> {parsed_bool}', 'success')
 
         return TokenType(
@@ -78,7 +78,7 @@ def process(
 
     # 2. Literal nulo
     if lower in NULLS:
-        if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+        if config.LEXER_ADD_INFO:
             node.note(f'Literal nulo reconocido: {value!r}', 'success')
 
         return TokenType(
@@ -91,7 +91,7 @@ def process(
     # 3. Palabras clave registradas en words.py
     keyword = words.get_keyword(value)
     if keyword is not None:
-        if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+        if config.LEXER_ADD_INFO:
             node.note(f'Palabra clave reconocida: {keyword.name!r}', 'success')
 
         return TokenType(
@@ -102,7 +102,7 @@ def process(
         )
 
     # 4. Identificador genérico
-    if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_INFO:
         node.note(f'Identificador reconocido: {value!r}', 'advice')
 
     return TokenType(

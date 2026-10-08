@@ -45,23 +45,17 @@ class MatchGroup(Combinator):
             exclude: Lista opcional de tokens o identificadores excluidos.
             only: Lista opcional restrictiva; solo tokens presentes aquí serán aceptados.
         """
-        self.group: str = group.name if hasattr(group, "name") else str(group)
+        self.group: str = group.name if isinstance(group, WordGroup) else str(group)
         self.exclude: list[str] = []
         if exclude:
             for item in exclude:
-                if hasattr(item, "name"):
-                    self.exclude.append(item.name)
-                else:
-                    self.exclude.append(str(item))
+                self.exclude.append(item if isinstance(item, str) else item.name)
 
         self.only: list[str] | None = None
         if only is not None:
             self.only = []
             for item in only:
-                if hasattr(item, "name"):
-                    self.only.append(item.name)
-                else:
-                    self.only.append(str(item))
+                self.only.append(item if isinstance(item, str) else item.name)
 
     def parse(
         self,
@@ -86,7 +80,7 @@ class MatchGroup(Combinator):
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"MatchGroup: buscando pertenencia al grupo {self.group!r}",
                 "Normal",
@@ -96,8 +90,14 @@ class MatchGroup(Combinator):
 
         if current is None:
             if not parser.not_empty():
+                self._record_failure(
+                    analyzer,
+                    f"miembro del grupo {self.group!r}",
+                    checkpoint.pos,
+                    None,
+                )
                 if not ignore_errors:
-                    if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                    if config.PARSER_ADD_ERROR:
                         target_node.note(
                             f"Error sintáctico: se esperaba miembro del grupo {self.group!r} pero se alcanzó EOF",
                             "Error",
@@ -114,13 +114,19 @@ class MatchGroup(Combinator):
 
         token_value = str(tok.value) if tok.value is not None else ""
         current_token = tok.token
-        token_name = getattr(current_token, "name", str(current_token))
+        token_name = current_token.name
 
         # 1. Verificar lista de exclusiones
         if token_value in self.exclude or token_name in self.exclude:
+            self._record_failure(
+                analyzer,
+                f"miembro no excluido del grupo {self.group!r}",
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"Token {token_value!r} descartado por lista de exclusión",
                     "Advice",
@@ -136,9 +142,15 @@ class MatchGroup(Combinator):
 
         # 2. Verificar lista restrictiva (only)
         if self.only is not None and (token_value not in self.only and token_name not in self.only):
+            self._record_failure(
+                analyzer,
+                f"token permitido por el grupo {self.group!r}",
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"Token {token_value!r} descartado por no pertenecer a la lista 'only'",
                     "Advice",
@@ -156,16 +168,22 @@ class MatchGroup(Combinator):
         in_group = words.exists_in_group(token_value, self.group) or words.exists_in_group(token_name, self.group)
 
         if not in_group:
+            self._record_failure(
+                analyzer,
+                f"miembro del grupo {self.group!r}",
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"El valor {token_name} ({token_value!r}) no pertenece al grupo {self.group!r}",
                     "Warn",
                 )
 
             if not ignore_errors:
-                if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                if config.PARSER_ADD_ERROR:
                     target_node.note(
                         f"Error sintáctico: {token_value!r} no pertenece al grupo {self.group!r}",
                         "Error",
@@ -183,7 +201,7 @@ class MatchGroup(Combinator):
         if current is not None and parser.not_empty() and parser.tokens[parser.pos] is current:
             parser.advance()
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"MatchGroup exitoso: {token_value!r} pertenece al grupo {self.group!r}",
                 "Success",

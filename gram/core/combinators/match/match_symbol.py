@@ -143,7 +143,7 @@ class MatchSeqSymbol(Combinator):
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"MatchSeqSymbol: evaluando patrón {self.pattern!r}",
                 "Normal",
@@ -153,8 +153,14 @@ class MatchSeqSymbol(Combinator):
 
         if current is None:
             if not parser.not_empty():
+                self._record_failure(
+                    analyzer,
+                    f"patrón {self.pattern!r}",
+                    checkpoint.pos,
+                    None,
+                )
                 if not ignore_errors:
-                    if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                    if config.PARSER_ADD_ERROR:
                         target_node.note(
                             f"Error sintáctico: se esperaba patrón {self.pattern!r} pero se alcanzó EOF",
                             "Error",
@@ -173,16 +179,22 @@ class MatchSeqSymbol(Combinator):
         match = self._regex.fullmatch(val_str)
 
         if not match:
+            self._record_failure(
+                analyzer,
+                f"patrón {self.pattern!r}",
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"Patrón {self.pattern!r} no coincidió con {val_str!r}",
                     "Warn",
                 )
 
             if not ignore_errors:
-                if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                if config.PARSER_ADD_ERROR:
                     target_node.note(
                         f"Error sintáctico: {val_str!r} no cumple el patrón {self.pattern!r}",
                         "Error",
@@ -203,7 +215,7 @@ class MatchSeqSymbol(Combinator):
         if self.custom_token_name:
             tok.token = CustomToken(self.custom_token_name)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"MatchSeqSymbol exitoso: {val_str!r}",
                 "Success",

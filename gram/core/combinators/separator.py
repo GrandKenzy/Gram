@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 from gram import config, errors
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.item import Item, ItemResult, Literal
+from gram.core.combinators.item import Item, ItemNode, Literal, LiteralNode
 from gram.core.combinators.match import MatchKeyword, MatchSeqSymbol, MatchToken
 from gram.core.combinators.optional import OptResult
 from gram.core.lexer.tokens import MAP_SYMBOLS, Token, TokenType
@@ -52,8 +52,10 @@ EN:
         """
         result = []
         for item in self:
-            if isinstance(item, (SeparatorResult, ItemResult)):
+            if isinstance(item, SeparatorResult):
                 result.append(item.to_list())
+            elif isinstance(item, (ItemNode, LiteralNode)):
+                result.append(list(item))
             else:
                 result.append(item)
         return result
@@ -172,7 +174,7 @@ ES:
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note("Iniciando evaluación de Separator", "Normal")
 
         initial_checkpoint = parser.savepoint(node=target_node)
@@ -184,12 +186,23 @@ ES:
             parser.restore(initial_checkpoint, node=target_node)
             if self.min > 0:
                 if not ignore_errors:
+                    failure_context = self._failure_context(analyzer)
                     curr_tok = current if current else parser.peek()
-                    tok_info = f" en {curr_tok}" if curr_tok else ""
+                    tok_info = (
+                        ""
+                        if failure_context
+                        else f" en {curr_tok}" if curr_tok else ""
+                    )
+                    caution = (
+                        f"Separator requería al menos {self.min} elementos "
+                        f"pero no se encontró ninguno{tok_info}.",
+                    )
+                    if failure_context:
+                        caution += (failure_context,)
                     error.ParserError(
                         "Elementos insuficientes",
                         errors.COMBINATOR_FAILED,
-                        f"Separator requería al menos {self.min} elementos pero no se encontró ninguno{tok_info}.",
+                        *caution,
                     ).raise_error()
                 return None
             return SeparatorResult([], trailing_separator=False)

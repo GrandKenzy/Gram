@@ -16,7 +16,14 @@ import unittest
 from pathlib import Path
 
 from gram import config, errors
-from gram.core.ast import ASTAnalyzer, ASTNode, ASTProgram, Identifier, generate_file_tree
+from gram.core.ast import (
+    ASTAnalyzer,
+    ASTNode,
+    ASTProgram,
+    Identifier,
+    RefNode,
+    generate_file_tree,
+)
 from gram.core.combinators import (
     Alt,
     Many,
@@ -25,6 +32,7 @@ from gram.core.combinators import (
     MatchToken,
     Opt,
     Ref,
+    RuleItem,
     Seq,
     Some,
     create_rule,
@@ -37,7 +45,7 @@ from gram.core.combinators.defaults import (
     PASS,
     PROGRAM,
 )
-from gram.core.combinators.item import Item, ItemResult
+from gram.core.combinators.item import ItemNode, LiteralNode
 from gram.core.lexer import Token, TokenType, words
 from gram.core.parser import Parser
 from gram.core.watcher import FileWatcher, PluginWatcher, Watcher
@@ -292,12 +300,17 @@ class ASTNodeTestCase(BaseASTTestCase):
         self.assertEqual(len(node2.children), 1)
         self.assertEqual(node2.children[0].name, "EXPR")
 
-        # ItemResult
-        it = ItemResult([t1, t2])
+        # Item and Literal produce named AST fragments containing pure tokens.
+        it = ItemNode([t1, t2])
         node3 = ASTNode.from_rule_result(DummyRule, it, level=0)
         self.assertEqual(len(node3.children), 1)
-        self.assertEqual(node3.children[0].name, "ITEM")
+        self.assertEqual(node3.children[0].name, "ItemNode")
         self.assertEqual(node3.children[0].tokens, [t1, t2])
+
+        literal = LiteralNode([t1])
+        node4 = ASTNode.from_rule_result(DummyRule, literal, level=0)
+        self.assertEqual(node4.children[0].name, "LiteralNode")
+        self.assertEqual(node4.children[0].tokens, [t1])
 
 
 class ASTProgramTestCase(BaseASTTestCase):
@@ -487,6 +500,134 @@ class ASTAnalyzerTestCase(BaseASTTestCase):
         self.assertEqual(len(ast_prog.body), 0)
         self.assertEqual(len(ast_prog.comments), 1)
         self.assertEqual(ast_prog.comments[0].value, "# header comment")
+
+    def test_ast_processing_uses_nested_telemetry_stack(self) -> None:
+        parser = Parser([
+            self.make_token(Token.KEYWORD, "let"),
+            self.make_token(Token.IDENT, "x"),
+            self.make_token(Token.EOF, "<EOF>"),
+        ])
+        ast_stack_rule = create_rule(
+            "AST_STACK_RULE",
+            987654,
+            Seq(
+                MatchKeyword("let"),
+                MatchToken(Token.IDENT),
+            ),
+        )
+        grammar = {
+            PROGRAM: Many(Ref(DECLARATION)),
+            DECLARATION: Alt(Ref(ast_stack_rule)),
+            ast_stack_rule: ast_stack_rule.grammar,
+        }
+        analyzer = ASTAnalyzer(parser, grammar)
+
+        program = analyzer.process()
+
+        parser_node = parser.stack.main.nodes[0]
+        self.assertEqual(len(program.body), 1)
+        self.assertIn(analyzer.stack.main, parser_node.nodes)
+        self.assertIn("Alt", [node.name for node in analyzer.stack.main.nodes])
+        self.assertIs(parser.node, parser_node)
+
+    def test_ref_omits_node_by_default_and_can_generate_named_node(self) -> None:
+        class TargetRule(RuleItem):
+            code = 987655
+            name = "TARGET_RULE"
+            grammar = Seq(
+                MatchToken(Token.IDENT),
+                MatchToken(Token.NUMBER),
+            )
+
+        tokens = [
+            self.make_token(Token.IDENT, "value"),
+            self.make_token(Token.NUMBER, 42),
+        ]
+        parser = Parser(tokens)
+        analyzer = ASTAnalyzer(parser, {TargetRule: TargetRule.grammar})
+
+        result = Ref(TargetRule).parse(analyzer)
+        self.assertIsInstance(result, ASTNode)
+        self.assertEqual(result.name, "TARGET_RULE")
+        self.assertEqual(result.collect_tokens(), tokens)
+        parent = ASTNode.from_rule_result("CONTAINER", result)
+        self.assertEqual(parent.tokens, [])
+        self.assertEqual(parent.children, [result])
+        self.assertNotIsInstance(parent.children[0], RefNode)
+
+        parser = Parser(tokens)
+        analyzer = ASTAnalyzer(parser, {TargetRule: TargetRule.grammar})
+        explicit_false = Ref(TargetRule, generate_node=False).parse(analyzer)
+        self.assertIsInstance(explicit_false, ASTNode)
+        self.assertEqual(explicit_false.name, "TARGET_RULE")
+
+        parser = Parser(tokens)
+        analyzer = ASTAnalyzer(parser, {TargetRule: TargetRule.grammar})
+        result = Ref(
+            TargetRule,
+            generate_node=True,
+            name="Operand",
+        ).parse(analyzer)
+
+        self.assertIsInstance(result, RefNode)
+        self.assertEqual(result.name, "Operand")
+        self.assertEqual(result.collect_tokens(), tokens)
+        self.assertEqual(result.children[0].name, "TARGET_RULE")
+        parent = ASTNode.from_rule_result("CONTAINER", result)
+        self.assertEqual(parent.children, [result])
+
+    def test_ignored_rule_flattens_child_nodes_into_parent(self) -> None:
+        class IdentifierRule(RuleItem):
+            code = 987656
+            name = "IDENTIFIER"
+            grammar = Seq(
+                MatchToken(Token.IDENT),
+                MatchToken(Token.IDENT),
+            )
+
+        class NumberRule(RuleItem):
+            code = 987657
+            name = "NUMBER"
+            grammar = Seq(
+                MatchToken(Token.NUMBER),
+                MatchToken(Token.NUMBER),
+            )
+
+        class InlineRule(RuleItem):
+            code = 987658
+            name = "INLINE"
+            grammar = Seq(
+                Ref(IdentifierRule),
+                Ref(NumberRule),
+            )
+            ignore = True
+
+        tokens = [
+            self.make_token(Token.IDENT, "value"),
+            self.make_token(Token.IDENT, "next"),
+            self.make_token(Token.NUMBER, 42),
+            self.make_token(Token.NUMBER, 43),
+        ]
+        parser = Parser(tokens)
+        analyzer = ASTAnalyzer(
+            parser,
+            {
+                IdentifierRule: IdentifierRule.grammar,
+                NumberRule: NumberRule.grammar,
+                InlineRule: InlineRule.grammar,
+            },
+        )
+
+        result = Ref(InlineRule).parse(analyzer)
+        parent = ASTNode.from_rule_result("CONTAINER", result)
+
+        self.assertEqual([child.name for child in parent.children], ["IDENTIFIER", "NUMBER"])
+        self.assertEqual([child.level for child in parent.children], [1, 1])
+        self.assertEqual(
+            [child.collect_tokens() for child in parent.children],
+            [tokens[:2], tokens[2:]],
+        )
+        self.assertTrue(InlineRule.compile()["ignore"])
 
     def test_end_to_end_simple_assignment(self) -> None:
         # Input: let x = 42

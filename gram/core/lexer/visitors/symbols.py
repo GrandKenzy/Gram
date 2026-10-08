@@ -39,7 +39,7 @@ def process(
     start_line = lexer.line
     line = lexer.currline
 
-    if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_INFO:
         node.note(
             f'Buscando símbolo desde línea {start_line}, columna {start}',
             'normal',
@@ -53,7 +53,7 @@ def process(
             lexer.col = end
             token_type = MAP_SYMBOLS[symbol]
 
-            if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+            if config.LEXER_ADD_INFO:
                 node.note(f'Símbolo reconocido: {symbol!r} -> {token_type}', 'success')
 
             return TokenType(
@@ -64,7 +64,7 @@ def process(
             )
 
     # Carácter o símbolo no reconocido en el catálogo
-    if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_ERROR:
         node.note(f'Carácter o símbolo desconocido: {char!r}', 'error')
 
     lexer.advance()

@@ -135,24 +135,25 @@ class Error(Exception):
             basándose en la configuración de la constante `Format.line`.
 
         EN:
-            Wraps a text string inside a centered decorative box, based on 
+            Wraps a text string inside a centered decorative box, based on
             the global `Format.line` configuration.
         """
-        box_width: int = len('|' + (Format.line * 38) + '|')
+        border = '-' * 38
+        box_width: int = len('|' + border + '|')
         inner_length: int = box_width - 2
         text_length: int = len(text)
         remaining: int = max(0, inner_length - text_length)
         left: int = remaining // 2
         right: int = remaining - left
-        
+
         return (
             '|'
-            + Format.line * left
+            + '-' * left
             + f' {text} '
-            + Format.line * right
+            + '-' * right
             + '|'
         )
-        
+
     def stringify(self, ansi: bool = False) -> str:
         """
         ES:
@@ -166,12 +167,15 @@ class Error(Exception):
             and the origin metadata. Allows injecting ANSI codes.
         """
         code: str = self.code.stringify()
-        
+
         top_header: str = self._format_box('ERROR')
-        bottom_header: str = self._format_box(f'eof {self.get_index()}')
-        
+        error_index = self.get_index()
+        bottom_header = self._format_box(
+            f'ERROR {error_index}' if error_index >= 0 else 'END OF ERROR'
+        )
+
         caution_text: str = (
-            '\n\n'.join(self.caution) 
+            '\n\n'.join(self.caution)
             if self.caution 
             else 'No se proporcionó información adicional.'
         )

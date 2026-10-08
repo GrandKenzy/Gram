@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from gram import config, errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.optional import OptResult
 from gram.core.combinators.sequence import Seq
 from gram.core.lexer.tokens import CustomToken, TokenType
 from gram.utilities import error
@@ -78,15 +79,16 @@ class Tokenize(Combinator):
             ignore_errors: Si True, suprime errores sintácticos.
 
         Returns:
-            TokenType sintetizado con CustomToken, o None si la secuencia falló.
+            TokenType whose token is a CustomToken, or None if the sequence failed.
+            TokenType cuyo tipo es CustomToken, o None si falló la secuencia.
         """
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"Tokenize iniciado con {len(self.combinators)} combinadores para {self.token_name}",
-                "Normal",
+                "normal",
             )
 
         checkpoint = parser.savepoint(node=target_node)
@@ -106,7 +108,11 @@ class Tokenize(Combinator):
             return None
 
         tokens: list[TokenType] = []
-        self._collect_tokens(result, tokens)
+        try:
+            self._collect_tokens(result, tokens)
+        except TypeError:
+            parser.restore(checkpoint, node=target_node)
+            raise
 
         if not tokens:
             parser.restore(checkpoint, node=target_node)
@@ -116,7 +122,7 @@ class Tokenize(Combinator):
         for t in tokens:
             if t.value is not None:
                 parts.append(str(t.value))
-            elif hasattr(t, "token") and hasattr(t.token, "name"):
+            else:
                 parts.append(str(t.token.name))
 
         combined_value = self.join_char.join(parts)
@@ -133,30 +139,36 @@ class Tokenize(Combinator):
             col=tok_col,
         )
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"Tokenize ({self.token_name}) exitoso -> valor={combined_value!r}",
-                "Success",
+                "success",
             )
 
         return token_result
 
     def _collect_tokens(self, item: Any, out: list[TokenType]) -> None:
-        """Extrae recursivamente todas las instancias TokenType de un árbol o lista anidada."""
+        """Collect tokens from the explicit result types supported by Tokenize."""
         if item is None:
             return
         if isinstance(item, TokenType):
             out.append(item)
+        elif isinstance(item, OptResult):
+            if item.matched:
+                self._collect_tokens(item.value, out)
         elif isinstance(item, (list, tuple)):
             for sub in item:
                 self._collect_tokens(sub, out)
-        elif hasattr(item, "tokens"):
-            for t in getattr(item, "tokens", []):
-                if isinstance(t, TokenType):
-                    out.append(t)
-        elif hasattr(item, "matched") and hasattr(item, "value"):
-            if item.matched and item.value is not None:
-                self._collect_tokens(item.value, out)
+        else:
+            from gram.core.ast.nodes import ASTNode
+
+            if isinstance(item, ASTNode):
+                out.extend(item.collect_tokens())
+                return
+            raise TypeError(
+                f"Tokenize solo puede fusionar resultados de tokens; "
+                f"recibió {type(item).__name__}."
+            )
 
     def __repr__(self) -> str:
         inner = ", ".join(repr(c) for c in self.combinators)

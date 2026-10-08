@@ -66,6 +66,7 @@ A continuación se detallan todas las propiedades disponibles en `RuleItem`:
 | `suggestions` | `dict[int, Any]` | `{}` | Plantillas y opciones de autocompletado para el motor de sugerencias o snippets de VS Code. |
 | `suggestions_autocomplete` | `bool` | `False` | Habilita o deshabilita la exportación de las sugerencias al archivo `snippets.json` del editor. |
 | `is_structural` | `bool` | `False` | Si es `True`, el AST Analyzer omite la creación de un `ASTNode` y devuelve el resultado directo. |
+| `ignore` | `bool` | `False` | Si es `True`, omite el bloque AST de esta regla e integra directamente sus resultados en el padre. |
 | `queries` | `list[Query] \| set[Query] \| Query` | `None` | Consultas dinámicas de autocompletado contextual en vivo para LSP (ej. `Query.query_roots`). |
 | `hints` | `dict[int, Hints]` | `{}` | Pistas virtuales e Inlay Hints contextuales (ej. `Hints.new(processor=...)`). |
 
@@ -233,7 +234,29 @@ class ENDLINE(RuleItem):
 
 ---
 
-### 3.10. `queries: list[Query] | set[Query] | Query | None`
+    ### 3.10. `ignore: bool`
+    Controla si la regla aporta un bloque propio al AST sin cambiar cómo se analiza su gramática.
+
+    - **`False` (por defecto):** conserva el `ASTNode` de la regla.
+    - **`True`:** no crea el nodo para esta regla. Devuelve sus resultados tal como los generaron los combinadores internos, de modo que los nodos hijos se integran directamente bajo el padre y quedan a un nivel menos de anidamiento.
+
+    Úselo en reglas auxiliares profundas cuando su lógica sintáctica debe mantenerse, pero su bloque no aporta una distinción útil al AST:
+
+    ```python
+    class SIGNED_NUMBER(RuleItem):
+        code = 1201
+        ignore = True
+        grammar = Seq(
+            Opt(MatchSymbol("-")),
+            Ref(NUMBER),
+        )
+    ```
+
+    `ignore` es distinto de `is_structural`: `ignore` marca una regla concreta como transparente para la construcción del AST; `is_structural` indica que la regla cumple un rol estructural del framework y se procesa como resultado crudo.
+
+    ---
+
+    ### 3.11. `queries: list[Query] | set[Query] | Query | None`
 Define consultas dinámicas de autocompletado contextual e IntelliSense para el editor en tiempo real.
 
 A diferencia de `suggestions` (que genera fragmentos estáticos de texto en tiempo de compilación), `queries` delega la resolución al servidor LSP ([`gram.vsix.lsp`](file:///C:/Users/Kentucky/Desktop/Gram/gram/vsix/lsp.py)) en vivo, permitiendo consultar el sistema de archivos, directorios y recursos mientras el usuario escribe en el editor.
@@ -355,6 +378,7 @@ def compile(cls) -> dict[str, Any]:
     "color": "#4EC9B0",                     # Color primario resuelto
     "scope": "entity.name.rule.gram.my_rule", # Scope TextMate sanitizado
     "is_structural": False,
+    "ignore": False,
     "suggestions": {...},
     "suggestions_autocomplete": True,
     "contain_grammar": True,
@@ -378,13 +402,13 @@ Cuando el parser ejecuta una regla mediante `analyzer.process_rule(rule, grammar
 
 1. Ejecuta el combinador asociado.
 2. Si la regla coincide (`result is not None`):
-   - Evalúa `rule.is_structural`.
-   - Si `is_structural` es `False`, invoca `ASTNode.from_rule_result(rule, result, start_level)`.
-   - Si `is_structural` es `True`, retorna el valor crudo directamente.
+   - Evalúa `rule.is_structural` e `rule.ignore`.
+   - Si ambos son `False` y la regla no se reconoce como estructural, invoca `ASTNode.from_rule_result(rule, result, start_level)`.
+   - Si cualquiera evita la envoltura, retorna el valor crudo para integrarlo directamente bajo el padre.
    
 ```python
 # Lógica interna en ASTAnalyzer.process_rule:
-is_structural = getattr(rule, "is_structural", False)
+is_structural = rule.is_structural or rule.ignore
 if not is_structural and (
     rule_name in ("ENDLINE", "ENTRY_INDENT_BLOCK", "EXIT_INDENT_BLOCK", "BLOCK", "INDENT_BLOCK")
     or isinstance(grammar, Tokenize)

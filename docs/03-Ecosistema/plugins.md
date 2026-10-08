@@ -176,7 +176,43 @@ El plugin `expressions` soluciona el problema de construir analizadores de expre
 - **`ChainR(operand, operator)`:** Resuelve asociatividad por la derecha ($a ** b ** c \to (a ** (b ** c))$).
 - **`ExpressionBuilder`:** Constructor fluido declarativo de precedencias.
 - **`ARITHMETIC_EXPR`:** Regla sintáctica completa con soporte para `+`, `-`, `*`, `/`, `//`, `%`, `**`, unarios (`+`, `-`) y paréntesis anidados.
+- **`ArithmeticExpr`:** Combinador que devuelve un AST operacional de nodos `ASTNode`; cada operación conserva sus operandos y su operador, en lugar de entregar una lista plana de tokens.
+- **`ConditionalExpr`:** Combinador que valida comparaciones y lógica, y conserva la misma estructura operacional para su procesamiento posterior.
 - **`evaluate(expression, env=None)`:** Evaluador de árbol sintáctico puro (seguro, sin `eval` de Python) que soporta variables y funciones matemáticas.
+
+#### AST operacional de expresiones
+`ArithmeticExpr.parse(...)` y `ConditionalExpr.parse(...)` producen un árbol procesable. Los nodos `Op` conservan la operación y sus operandos en orden: `op1` es el operando izquierdo (o el único operando de una operación unaria), `op2` es el derecho y `operator` contiene el token original del operador. Los atributos incluyen el operador como texto y su aridad.
+
+Los operandos se representan recursivamente como nodos `Number`, `Boolean`, `Identifier`, `Group` o `Call`. Los grupos mantienen sus paréntesis; las llamadas conservan el nombre de la función, los argumentos y la puntuación de origen. Así, la precedencia y la asociación quedan explícitas en la forma del árbol:
+
+```text
+(10 + 20) * 3
+Op(operator="*", arity=2)
+├── op1: Group
+│   └── Op(operator="+", arity=2)
+│       ├── op1: Number(value=10)
+│       └── op2: Number(value=20)
+└── op2: Number(value=3)
+```
+
+Ejemplo de análisis, inspección y evaluación del mismo AST:
+
+```python
+from gram.core.lexer import Lexer
+from gram.core.parser import Parser
+from gram.plugins.source.expressions import ArithmeticExpr, evaluate
+
+parser = Parser(Lexer("(10 + 20) * 3").process())
+tree = ArithmeticExpr().parse(parser, parser.peek())
+
+assert tree.name == "Op"
+assert tree.attributes["operator"] == "*"
+assert tree.op1.name == "Group"
+assert tree.op2.attributes["value"] == 3
+assert evaluate(tree) == 90
+```
+
+La evaluación acepta directamente el árbol operacional. También se puede recorrer con `walk()`, buscar nodos por nombre con `find()`, consultar `attributes` y obtener los tokens originales con `collect_tokens()`. En reglas gramaticales, `ARITHMETIC_EXPR` y `CONDITIONAL_EXPR` son transparentes para evitar un bloque envolvente redundante; se conserva la jerarquía operacional interna.
 
 #### Funciones Matemáticas Disponibles en `evaluate()`:
 `sqrt`, `abs`, `min`, `max`, `sin`, `cos`, `tan`, `round`, `floor`, `ceil`, `log`, `exp`, `pow`.

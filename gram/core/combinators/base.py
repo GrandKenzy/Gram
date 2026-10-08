@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from gram import config
+
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
     from gram.core.lexer.tokens import TokenType
@@ -38,7 +40,7 @@ class Combinator:
     header_class: bool = False
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.header_class: bool = getattr(self.__class__, "header_class", False)
+        self.header_class: bool = self.__class__.header_class
 
     def parse(
         self,
@@ -72,8 +74,8 @@ class Combinator:
 
     def _get_parser(self, analyzer: Any) -> Parser:
         """
-        EN: Safely resolve Parser instance from ASTAnalyzer or Parser.
-        ES: Obtiene de forma segura la instancia del Parser a partir de ASTAnalyzer o Parser.
+        EN: Resolve the parser from the supported analyzer or parser input.
+        ES: Obtiene el parser desde el analizador o el parser recibido.
 
         Args:
             analyzer: Active ASTAnalyzer or Parser instance.
@@ -83,26 +85,44 @@ class Combinator:
             Resolved Parser instance.
             Instancia del parser sintáctico.
         """
-        return getattr(analyzer, "parser", analyzer)
+        from gram.core.parser.core import Parser
 
-    def _get_node(self, analyzer: Any) -> InfoNode | None:
+        if isinstance(analyzer, Parser):
+            return analyzer
+        return analyzer.parser
+
+    def _get_node(self, analyzer: Any) -> InfoNode:
         """
-        EN: Safely resolve active telemetry node from analyzer or parser.
-        ES: Obtiene de forma segura el nodo de telemetría del analizador o parser.
+        EN: Resolve the active telemetry node owned by the parser.
+        ES: Obtiene el nodo de telemetría activo del parser.
 
         Args:
             analyzer: Active analyzer or parser instance.
                       Instancia del analizador o parser.
 
         Returns:
-            Active telemetry InfoNode or None if unavailable.
-            Nodo de telemetría activo o None si no está disponible.
+            Active telemetry InfoNode.
+            Nodo de telemetría activo.
         """
-        node = analyzer.node
-        if node is not None:
-            stack_info = analyzer.parser.stack
-            return node
+        return self._get_parser(analyzer).node
 
+    def _record_failure(
+        self,
+        analyzer: Any,
+        expected: str,
+        position: int,
+        token: TokenType | None,
+    ) -> None:
+        """Record a mismatch before a combinator restores the parser cursor."""
+        self._get_parser(analyzer).control.record_failure(
+            expected,
+            position,
+            token,
+        )
+
+    def _failure_context(self, analyzer: Any) -> str | None:
+        """Return the deepest token mismatch for a high-level failure message."""
+        return self._get_parser(analyzer).control.failure_context()
 
     def _dispatch_sub(
         self,
@@ -131,9 +151,28 @@ class Combinator:
             Result of sub-combinator evaluation.
             Resultado de la evaluación del sub-combinador.
         """
-        if hasattr(analyzer, "process_combinator"):
-            return analyzer.process_combinator(combinator, current, ignore_errors=ignore_errors)
-        return combinator.parse(analyzer, current, ignore_errors=ignore_errors)
+        parser = self._get_parser(analyzer)
+        from gram.core.ast.analyzer import ASTAnalyzer
+
+        if isinstance(analyzer, ASTAnalyzer):
+            return analyzer.process_combinator(
+                combinator,
+                current,
+                ignore_errors=ignore_errors,
+            )
+
+        if config.PARSER_ADD_INFO:
+            node = parser.node.node(
+                combinator.type(),
+                f"{combinator.type()} ← {current}",
+            )
+            with parser.use_node(node):
+                return combinator.parse(
+                    parser,
+                    current,
+                    ignore_errors=ignore_errors,
+                )
+        return combinator.parse(parser, current, ignore_errors=ignore_errors)
 
     @classmethod
     def type(cls) -> str:
@@ -181,23 +220,51 @@ class Combinator:
         return f"<{self.__class__.__name__}>"
 
 
+from gram.core.rules.codes import AutoCode, SetCode, code_manager
+
+
 class RuleMeta(type):
     """
     EN:
         Metaclass for formal and declarative representation of RuleItem rules.
-        Provides readable textual inspection and debugging for grammar AST dumps.
+        Provides readable textual inspection, automatic non-colliding code allocation
+        via AutoCode, and code registry tracking.
 
     ES:
         Metaclase para la representación formal y declarativa de reglas RuleItem.
-        Facilita la inspección textual, depuración e introspección de gramáticas.
+        Facilita la inspección textual, asignación automática de códigos sin colisión
+        mediante AutoCode y registro centralizado de identificadores.
     """
+
+    def __new__(mcls, name: str, bases: tuple[type, ...], namespace: dict[str, Any]) -> type:
+        raw_code = namespace.get("code")
+
+        # Asignación automática o resolución de AutoCode
+        if raw_code is AutoCode or (isinstance(raw_code, type) and issubclass(raw_code, AutoCode)):
+            namespace["code"] = AutoCode()
+        elif "code" not in namespace and bases:
+            namespace["code"] = AutoCode()
+        elif callable(raw_code) and not isinstance(raw_code, type):
+            try:
+                namespace["code"] = raw_code()
+            except TypeError:
+                pass
+
+        cls = super().__new__(mcls, name, bases, namespace)
+
+        # Registrar el código en el gestor global para prevenir colisiones futuras
+        code_val = cls.code
+        if isinstance(code_val, int) and code_val > 0:
+            code_manager.register(code_val, rule=cls)
+
+        return cls
 
     def __repr__(cls) -> str:
         return (
             f"{cls.__name__}("
-            f"code={getattr(cls, 'code', 0)!r}, "
-            f"name={getattr(cls, 'name', cls.__name__)!r}, "
-            f"grammar={bool(getattr(cls, 'grammar', None))}"
+            f"code={cls.code!r}, "
+            f"name={cls.name or cls.__name__!r}, "
+            f"grammar={bool(cls.grammar)}"
             f")"
         )
 
@@ -224,6 +291,8 @@ class RuleItem(metaclass=RuleMeta):
     suggestions: dict[int, Any] = {}
     suggestions_autocomplete: bool = False
     is_structural: bool = False
+    ignore: bool = False
+    no_simplify: bool = False
     queries: Any = None
     hints: dict[int, Any] = {}
 
@@ -246,19 +315,20 @@ class RuleItem(metaclass=RuleMeta):
             Structured compiled metadata dictionary.
             Diccionario estructurado con los metadatos compilados de la regla.
         """
-        r_name = getattr(cls, "name", "") or cls.__name__
-        r_code = getattr(cls, "code", 0)
-        r_desc = getattr(cls, "description", "")
-        r_docs = getattr(cls, "docs", "")
-        raw_colors = getattr(cls, "colors", {}) or {}
+        r_name = cls.name or cls.__name__
+        r_code = cls.code
+        r_desc = cls.description
+        r_docs = cls.docs
+        raw_colors = cls.colors or {}
         r_colors = dict(raw_colors) if isinstance(raw_colors, dict) else {}
-        r_struct = getattr(cls, "is_structural", False)
-        raw_sugg = getattr(cls, "suggestions", {}) or {}
+        r_struct = cls.is_structural
+        r_ignore = cls.ignore
+        raw_sugg = cls.suggestions or {}
         r_sugg = dict(raw_sugg) if isinstance(raw_sugg, dict) else {}
-        r_auto = getattr(cls, "suggestions_autocomplete", False)
+        r_auto = cls.suggestions_autocomplete
 
         # Determinar queries de autocompletado dinámico
-        raw_queries = getattr(cls, "queries", None)
+        raw_queries = cls.queries
         r_queries: list[Any] = []
         if raw_queries is not None:
             if isinstance(raw_queries, (list, tuple, set)):
@@ -299,7 +369,7 @@ class RuleItem(metaclass=RuleMeta):
         scope_name = f"entity.name.rule.gram.{clean_name}"
 
         # Determinar hints virtuales declarados
-        raw_hints = getattr(cls, "hints", {}) or {}
+        raw_hints = cls.hints or {}
         r_hints = dict(raw_hints) if isinstance(raw_hints, dict) else {}
 
         return {
@@ -311,6 +381,7 @@ class RuleItem(metaclass=RuleMeta):
             "color": color_val,
             "scope": scope_name,
             "is_structural": r_struct,
+            "ignore": r_ignore,
             "suggestions": r_sugg,
             "suggestions_autocomplete": r_auto,
             "queries": r_queries,
@@ -324,8 +395,10 @@ RuleType = type[RuleItem] | str
 
 
 __all__ = [
+    "AutoCode",
     "Combinator",
     "RuleItem",
     "RuleMeta",
     "RuleType",
+    "SetCode",
 ]

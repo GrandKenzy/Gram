@@ -19,7 +19,7 @@ class Node:
         self.stack: list[Note | Node] = []
         
     def note(self, description: str, type: Format.LogType):
-        n = Note(description, type)
+        n = Note(description, type.lower())
         self.stack.append(n)
         return n
     

@@ -55,6 +55,7 @@ class ASTNode:
     children: list[ASTNode] = field(default_factory=list)
     parent: ASTNode | None = None
     attributes: dict[str, Any] = field(default_factory=dict)
+    no_simplify: bool = False
 
     @property
     def is_block(self) -> bool:
@@ -141,6 +142,15 @@ class ASTNode:
         EN: Extracts all semantic literal and identifier values from the node's tokens.
         ES: Extrae y devuelve todos los valores semánticos literales e identificadores del nodo.
         """
+        if self.no_simplify or getattr(self.rule, "no_simplify", False):
+            result: list[Any] = []
+            for t in self.collect_tokens():
+                if t.token == Token.IDENT:
+                    result.append(Identifier(str(t.value)))
+                else:
+                    result.append(t.value)
+            return result
+
         structural_keywords = {
             "DECLARE",
             "RULE",
@@ -168,7 +178,29 @@ class ASTNode:
                 or str(getattr(t.token, "name", "")).startswith("Custom")
             ):
                 result.append(t.value)
+        if not result and self.children:
+            for c in self.children:
+                result.extend(c.values)
         return result
+
+    def collect_tokens(self) -> list[TokenType]:
+        """
+        EN: Recursively collects all tokens contained in this node and its children in source order.
+        ES: Recolecta recursivamente todos los tokens en este nodo y sus hijos en orden sintáctico.
+        """
+        all_toks: list[TokenType] = list(self.tokens)
+        for child in self.children:
+            all_toks.extend(child.collect_tokens())
+        all_toks.sort(key=lambda t: (getattr(t, "line", 0), getattr(t, "col", 0)))
+        return all_toks
+
+    @property
+    def all_tokens(self) -> list[TokenType]:
+        """
+        EN: All tokens within this node and its children in syntactic source order.
+        ES: Todos los tokens contenidos en este nodo y sus hijos en orden sintáctico.
+        """
+        return self.collect_tokens()
 
     @property
     def value(self) -> Any | None:
@@ -461,7 +493,7 @@ class ASTNode:
 
         Args:
             rule: RuleItem definition or rule class.
-            result: Raw combinator output (token, list, ItemResult, or subnodes).
+            result: Raw combinator output (token, list, AST fragment, or subnodes).
             level (int): Indentation level where the rule started.
 
         Returns:
@@ -469,16 +501,19 @@ class ASTNode:
         """
         name = getattr(rule, "name", str(rule))
         code = getattr(rule, "code", 0)
+        no_simplify = getattr(rule, "no_simplify", False)
 
         node = cls(
             name=name,
             rule=rule,
             code=code,
             level=level,
+            no_simplify=no_simplify,
         )
 
         tokens: list[TokenType] = []
         children: list[ASTNode] = []
+        from gram.core.combinators.item import ItemNode, LiteralNode
 
         def collect(item: Any) -> None:
             if item is None:
@@ -487,33 +522,27 @@ class ASTNode:
                 # Descartar nodos hijos vacíos (reglas opcionales no coincidentes)
                 if not item.tokens and not item.children and not getattr(item, "is_block", False):
                     return
+                if item.no_simplify:
+                    node.no_simplify = True
                 children.append(item)
+            elif isinstance(item, (ItemNode, LiteralNode)):
+                children.append(
+                    cls(
+                        name=type(item).__name__,
+                        rule=rule,
+                        code=code,
+                        level=level + 1,
+                        tokens=list(item),
+                        no_simplify=node.no_simplify,
+                    )
+                )
             elif isinstance(item, TokenType):
                 tokens.append(item)
-            elif getattr(item, "_is_item_result", False):
-                # ItemResult: each Item() is converted to a grouped child ASTNode
-                item_node = ASTNode(
-                    name="ITEM",
-                    rule=rule,
-                    code=code,
-                    level=level + 1,
-                )
-                item_tokens: list[TokenType] = []
-                item_children: list[ASTNode] = []
-                for sub in item:
-                    if isinstance(sub, ASTNode):
-                        item_children.append(sub)
-                    elif isinstance(sub, TokenType):
-                        item_tokens.append(sub)
-                    elif getattr(sub, "_is_item_result", False):
-                        collect(sub)
-                    elif isinstance(sub, (list, tuple)):
-                        for deep in sub:
-                            collect(deep)
-                item_node.tokens = item_tokens
-                for child_node in item_children:
-                    item_node.add_child(child_node)
-                children.append(item_node)
+            elif getattr(item, "_is_expr_result", False):
+                expr_node = item.to_ast_node(level=level + 1)
+                if getattr(expr_node, "no_simplify", False):
+                    node.no_simplify = True
+                children.append(expr_node)
             elif isinstance(item, (list, tuple)):
                 for sub in item:
                     collect(sub)
@@ -528,6 +557,73 @@ class ASTNode:
             node.add_child(child)
 
         return node
+
+
+class RefNode(ASTNode):
+    """AST wrapper explicitly requested for a rule reference."""
+
+    @classmethod
+    def from_result(
+        cls,
+        rule: Any,
+        result: Any,
+        level: int,
+        name: str = "RefNode",
+    ) -> RefNode:
+        fragment = ASTNode.from_rule_result(rule, result, level)
+        node = cls(
+            name=name,
+            rule=rule,
+            code=fragment.code,
+            level=level,
+            tokens=fragment.tokens,
+            no_simplify=fragment.no_simplify,
+        )
+        for child in fragment.children:
+            node.add_child(child)
+        return node
+
+
+class ExprResult(list):
+    """
+    EN:
+        Evaluation result container for expression combinators (e.g. ConditionalExpr).
+        Inherits from Python's built-in list to behave seamlessly as a list of TokenType,
+        while maintaining an associated hierarchical ASTNode tree for grouping.
+
+    ES:
+        Contenedor del resultado de evaluación de combinadores de expresiones.
+        Hereda de list para comportarse de forma transparente como una lista de TokenType,
+        mientras mantiene un árbol ASTNode jerárquico asociado para agrupamiento.
+    """
+
+    _is_expr_result: bool = True
+
+    def __init__(
+        self,
+        tokens: Iterable[TokenType] | None = None,
+        node: ASTNode | None = None,
+    ) -> None:
+        super().__init__(tokens if tokens is not None else [])
+        self.node = node
+
+    def to_ast_node(self, level: int = 0) -> ASTNode:
+        """
+        EN: Returns the associated grouped ASTNode, adjusting hierarchy level.
+        ES: Retorna el nodo AST agrupado asociado, ajustando el nivel jerárquico.
+        """
+        if self.node is not None:
+            self.node.set_level(level)
+            return self.node
+        return ASTNode(
+            name="expression",
+            tokens=list(self),
+            level=level,
+            no_simplify=True,
+        )
+
+    def __repr__(self) -> str:
+        return f"ExprResult({super().__repr__()}, node={self.node!r})"
 
 
 class ASTProgram:
@@ -991,6 +1087,7 @@ def generate_file_tree(
 __all__ = [
     "Identifier",
     "ASTNode",
+    "ExprResult",
     "ASTProgram",
     "generate_file_tree",
 ]

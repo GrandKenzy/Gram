@@ -41,6 +41,7 @@ class CONDITIONAL_EXPR(RuleItem):
     description = "Expresión condicional con operadores relacionales (==, !=, <, <=, >, >=), lógicos (&&, ||, !) y booleanos."
     docs = "docs/conditional_expr.md"
     grammar = ConditionalExpr()
+    ignore = True
     colors = {0: "#4EC9B0"}
     suggestions = {0: [("cond", "Expresión condicional (ej. a > 10 && b == 0)")]}
     suggestions_autocomplete = True
@@ -79,6 +80,7 @@ class ARITHMETIC_EXPR(RuleItem):
     description = "Expresión aritmética completa con soporte para +, -, *, /, //, %, **, unarios y paréntesis anidados."
     docs = "docs/arithmetic_expr.md"
     grammar = ArithmeticExpr()
+    ignore = True
     colors = {0: "#4EC9B0"}
     suggestions = {0: [("expr", "Expresión aritmética (ej. 2 + 3 * 4)")]}
     suggestions_autocomplete = True

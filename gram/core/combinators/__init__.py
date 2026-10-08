@@ -13,7 +13,7 @@ ES:
 """
 from __future__ import annotations
 
-from gram.core.combinators import (
+from . import (
     additional_stack,
     alternative,
     any_grammar,
@@ -33,23 +33,25 @@ from gram.core.combinators import (
     some,
     tokenize,
 )
-from gram.core.combinators.additional_stack import CombinatorAdditionalStack
-from gram.core.combinators.alternative import Alt, Alternative
-from gram.core.combinators.any_grammar import AnyGrammar
-from gram.core.combinators.base import (
+from .additional_stack import CombinatorAdditionalStack
+from .alternative import Alt, Alternative
+from .any_grammar import AnyGrammar
+from .base import (
+    AutoCode,
     Combinator,
     RuleItem,
     RuleMeta,
     RuleType,
+    SetCode,
 )
-from gram.core.combinators.query import Query, query
+from .query import Query, query
 from gram.core.hints import (
     Hints,
     InlayHintKind,
     VirtualHint,
     VirtualHintManager,
 )
-from gram.core.combinators.defaults import (
+from .defaults import (
     BLOCK,
     DECLARATION,
     DOCSTRING,
@@ -60,10 +62,10 @@ from gram.core.combinators.defaults import (
     PROGRAM,
     create_rule,
 )
-from gram.core.combinators.enclosed import Bracketed, Enclosed
-from gram.core.combinators.item import Item, ItemResult, Literal
-from gram.core.combinators.many import Many
-from gram.core.combinators.match import (
+from .enclosed import Bracketed, Enclosed
+from .item import Item, ItemNode, Literal, LiteralNode
+from .many import Many
+from .match import (
     MatchGroup,
     MatchKeyword,
     MatchSeqSymbol,
@@ -71,7 +73,7 @@ from gram.core.combinators.match import (
     MatchToken,
     generador_expr,
 )
-from gram.core.combinators.mods import (
+from .mods import (
     HARDCODED_MODS,
     custom_mod,
     get_custom_mods,
@@ -80,11 +82,11 @@ from gram.core.combinators.mods import (
     is_hardcoded_mod,
     register_custom_mod,
 )
-from gram.core.combinators.optional import Opt, OptResult, Optional
-from gram.core.combinators.reference import Ref, Reference
-from gram.core.combinators.separator import Sep, Separator, SeparatorResult
-from gram.core.combinators.sequence import Seq, Sequence
-from gram.core.combinators.signals import (
+from .optional import Opt, OptResult, Optional
+from .reference import Ref, Reference
+from .separator import Sep, Separator, SeparatorResult
+from .sequence import Seq, Sequence
+from .signals import (
     AbortFlowSignal,
     BacktrackSignal,
     BreakFlowSignal,
@@ -92,8 +94,8 @@ from gram.core.combinators.signals import (
     CutFlowSignal,
     SkipFlowSignal,
 )
-from gram.core.combinators.some import Some
-from gram.core.combinators.tokenize import Tokenize
+from .some import Some
+from .tokenize import Tokenize
 
 __all__ = [
     # Módulos
@@ -117,9 +119,11 @@ __all__ = [
     "tokenize",
     # Clases Base y Metadatos
     "Combinator",
+    "AutoCode",
     "RuleItem",
     "RuleMeta",
     "RuleType",
+    "SetCode",
     "Query",
     "Hints",
     "InlayHintKind",
@@ -132,8 +136,9 @@ __all__ = [
     "Bracketed",
     "Enclosed",
     "Item",
-    "ItemResult",
+    "ItemNode",
     "Literal",
+    "LiteralNode",
     "Many",
     "Some",
     "Opt",

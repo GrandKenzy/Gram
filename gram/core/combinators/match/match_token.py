@@ -73,15 +73,21 @@ class MatchToken(Combinator):
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(f"MatchToken: buscando <{self.token_name}>", "Normal")
 
         checkpoint = parser.savepoint(node=target_node)
 
         if current is None:
             if not parser.not_empty():
+                self._record_failure(
+                    analyzer,
+                    self.token_name,
+                    checkpoint.pos,
+                    None,
+                )
                 if not ignore_errors:
-                    if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                    if config.PARSER_ADD_ERROR:
                         target_node.note(
                             f"Error sintáctico: se esperaba <{self.token_name}> pero se alcanzó EOF",
                             "Error",
@@ -97,7 +103,7 @@ class MatchToken(Combinator):
             tok = current
 
         current_token = tok.token
-        current_name = getattr(current_token, "name", str(current_token))
+        current_name = current_token.name
 
         matched = False
         if isinstance(self.token, Token):
@@ -108,16 +114,22 @@ class MatchToken(Combinator):
             matched = (current_name == self.token) or (str(tok.value) == self.token)
 
         if not matched:
+            self._record_failure(
+                analyzer,
+                self.token_name,
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"Token no coincidente: se esperaba {self.token_name}, se recibió {current_name}",
                     "Warn",
                 )
 
             if not ignore_errors:
-                if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                if config.PARSER_ADD_ERROR:
                     target_node.note(
                         f"Error sintáctico: se esperaba {self.token_name}, se encontró {current_name}",
                         "Error",
@@ -135,7 +147,7 @@ class MatchToken(Combinator):
         if current is not None and parser.not_empty() and parser.tokens[parser.pos] is current:
             parser.advance()
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"Token reconocido: {self.token_name} ({tok.value!r})",
                 "Success",

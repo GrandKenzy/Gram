@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from gram import config, errors
-from gram.core.lexer import items, stack, tokens, visit, word, words
+from gram.core.lexer import items, tokens, visit, words
 from gram.core.lexer.items import TokenStream
 from gram.core.lexer.tokens import (
     CustomToken,
@@ -45,6 +45,7 @@ from gram.core.lexer.words import (
     remove_keyword,
 )
 from gram.utilities import error
+from gram.utilities.info.stack import StackInfo
 
 
 def check_state() -> int:
@@ -79,16 +80,13 @@ class Lexer:
 
     def __init__(
         self,
-        source: Sequence[str] | str
-        ) -> None:
+        source: Sequence[str] | str,
+    ) -> None:
         """
-        Inicializa el analizador léxico con el código fuente y opciones opcionales.
+        Inicializa el analizador léxico con el código fuente.
 
         Args:
             source: Líneas de código fuente (o cadena con saltos de línea).
-            comment_token: Carácter, delimitador o Token para comentarios.
-            save_comments: Si se deben incluir los comentarios en el flujo de tokens.
-            ignore_newlines: Si es True, no guarda tokens Token.NEWLINE.
         """
         if isinstance(source, str):
             self.source: list[str] = source.splitlines()
@@ -98,17 +96,26 @@ class Lexer:
         self.comment_token = config.LEXER_COMMENT_TOKEN
         self.save_comments = config.LEXER_SAVE_COMMENTS
         self.ignore_newlines = config.LEXER_IGNORE_NEWLINES
+
         self.line: int = 0
         self.col: int = 0
         self.indents: list[int] = [0]
 
-        self.info_node = stack.stack.node(
+        self.stack: StackInfo = StackInfo(
+            'lexer-log',
+            'LEXER',
+            'Registro y diagnóstico del analizador léxico',
+            expose_nodes=True,
+            generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR,
+            generate_log_file=config.INFO_GENERATE_LOGFILE,
+        )
+        self.info_node = self.stack.node(
             'LEXER',
             f'Inicializando lexer con {len(self.source)} líneas',
             priority=2,
         )
 
-        if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(self.info_node, 'note'):
+        if config.LEXER_ADD_INFO:
             self.info_node.note(
                 f'Lexer inicializado. Procesando {len(self.source)} líneas de entrada',
                 'success',
@@ -148,7 +155,7 @@ class Lexer:
             code: Código OSGDC numérico o CodeError correspondiente.
             *caution: Sugerencias o precauciones para mitigar el error.
         """
-        if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(self.info_node, 'note'):
+        if config.LEXER_ADD_ERROR:
             self.info_node.note(f'Error léxico: {message}', 'error')
 
         error.LexerError(message, code, *caution).raise_error()
@@ -178,7 +185,7 @@ class Lexer:
                     0,
                 )
             )
-            if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(self.info_node, 'note'):
+            if config.LEXER_ADD_INFO:
                 self.info_node.note(
                     f'INDENT generado: nivel {current_indent} -> {indent}',
                     'success',
@@ -195,7 +202,7 @@ class Lexer:
                         0,
                     )
                 )
-                if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(self.info_node, 'note'):
+                if config.LEXER_ADD_INFO:
                     self.info_node.note(
                         f'DEDENT generado: nivel regresó a {self.indents[-1]}',
                         'success',
@@ -243,7 +250,7 @@ class Lexer:
         content = self.currline[self.col:]
         self.col = len(self.currline)
 
-        if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(self.info_node, 'note'):
+        if config.LEXER_ADD_INFO:
             self.info_node.note(
                 f'Comentario detectado en línea {self.line}, columna {start}',
                 'normal',
@@ -266,12 +273,12 @@ class Lexer:
         check_state()
         tokens_list: list[TokenType] = []
 
-        if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(self.info_node, 'note'):
+        if config.LEXER_ADD_INFO:
             self.info_node.note('Iniciando análisis léxico', 'normal')
 
         while self.has_lines():
             if self.is_empty():
-                if not getattr(config, 'LEXER_IGNORE_EMPTY_LINES', True) and not self.ignore_newlines:
+                if not config.LEXER_IGNORE_EMPTY_LINES and not self.ignore_newlines:
                     tokens_list.append(
                         TokenType(
                             Token.NEWLINE,
@@ -346,7 +353,7 @@ class Lexer:
             )
         )
 
-        if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(self.info_node, 'note'):
+        if config.LEXER_ADD_INFO:
             self.info_node.note(
                 f'Análisis léxico completado. Total de tokens generados: {len(tokens_list)}',
                 'success',
@@ -363,45 +370,26 @@ class Lexer:
 
 def tokenize(
     source: Sequence[str] | str,
-    comment_token: str | Token | None = None,
-    save_comments: bool | None = None,
-    ignore_newlines: bool | None = None,
 ) -> list[TokenType]:
     """
     Función de alto nivel para tokenizar código fuente directamente en una lista de tokens.
 
     Args:
         source: Código fuente como cadena multilínea o lista de líneas.
-        comment_token: Delimitador de comentarios personalizado.
-        save_comments: Si se deben incluir los tokens de comentario.
-        ignore_newlines: Si es True, no guarda tokens NEWLINE.
 
     Returns:
         list[TokenType]: Secuencia completa de tokens.
     """
-    return Lexer(
-        source,
-        comment_token=comment_token,
-        save_comments=save_comments,
-        ignore_newlines=ignore_newlines,
-    ).process()
+    return Lexer(source).process()
 
 
 def tokenize_stream(
     source: Sequence[str] | str,
-    comment_token: str | Token | None = None,
-    save_comments: bool | None = None,
-    ignore_newlines: bool | None = None,
 ) -> TokenStream:
     """
     Función de alto nivel para tokenizar código fuente y retornar un `TokenStream`.
     """
-    return Lexer(
-        source,
-        comment_token=comment_token,
-        save_comments=save_comments,
-        ignore_newlines=ignore_newlines,
-    ).stream()
+    return Lexer(source).stream()
 
 
 __all__ = [
@@ -444,8 +432,6 @@ __all__ = [
     # Módulos y submódulos
     'tokens',
     'words',
-    'word',
     'visit',
     'items',
-    'stack',
 ]

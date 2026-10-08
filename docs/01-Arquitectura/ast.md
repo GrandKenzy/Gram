@@ -103,7 +103,7 @@ class ASTNode:
 ```python
 ASTNode.from_rule_result(rule: Any, result: Any, level: int = 0) -> ASTNode
 ```
-Empaqueta automáticamente el resultado de un combinador (tokens, listas, tuplas, `ItemResult` o subnodos `ASTNode`) en un `ASTNode` estructurado y coherente.
+Empaqueta automáticamente el resultado de un combinador (tokens, listas, tuplas, `ItemNode`, `LiteralNode` o subnodos `ASTNode`) en un `ASTNode` estructurado y coherente. `ItemNode` y `LiteralNode` preservan como fragmentos nombrados las listas de tokens que producen `Item` y `Literal`.
 
 ---
 

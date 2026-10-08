@@ -1,213 +1,134 @@
 """
-Combinador ArithmeticExpr para gram Framework.
-==============================================
-Permite analizar expresiones aritméticas completas con precedencia de operadores,
-anidamiento arbitrario, paréntesis y operadores unarios directamente sobre el flujo
-de tokens del Parser de gram.
+Combinador de expresiones aritméticas para Gram Framework.
+==========================================================
+Analiza expresiones con precedencia y asociatividad, y devuelve un AST
+operacional cuyos nodos conservan la estructura izquierda/derecha.
 """
 from __future__ import annotations
 
 from typing import Any
-from gram.core.combinators.base import Combinator
+
+from gram.core.ast.nodes import ASTNode
 from gram.core.combinators.additional_stack import CombinatorAdditionalStack
+from gram.core.combinators.base import Combinator
 from gram.core.lexer.tokens import Token, TokenType
 from gram.errors import codes
-from gram.utilities import error
 from gram.plugins.source.expressions.evaluator import (
-    ArithmeticNode,
-    BinaryOpNode,
-    UnaryOpNode,
-    GroupNode,
-    NumberNode,
-    VariableNode,
-    is_binary_op,
-    BINARY_PRECEDENCE,
-    is_right_associative,
-    UNARY_PRECEDENCE,
+    ArithmeticParser,
     ArithmeticSyntaxError,
 )
+from gram.utilities import error
 
 
 class ArithmeticExpr(Combinator):
-    """
-    Combinador sintáctico para expresiones aritméticas en gram.
-
-    Soporta:
-    - Suma (+), Resta (-), Multiplicación (*), División (/), División entera (//), Módulo (%), Potencia (**)
-    - Operadores unarios (+, -, --, ++)
-    - Paréntesis con anidación a cualquier profundidad: ((1 + 2) * (3 - 4))
-    - Literales numéricos (enteros y flotantes)
-    - Variables / identificadores (opcional)
-    """
+    """Pratt parser que devuelve un AST procesable de operandos y operaciones."""
 
     code: int = 7001
     name: str = "ArithmeticExpr"
-    description: str = "Analizador de expresiones aritméticas completas con precedencia y anidamiento."
+    description: str = "Analizador de expresiones con precedencia y anidamiento."
 
-    def __init__(self, allow_ident: bool = True):
+    def __init__(
+        self,
+        allow_ident: bool = True,
+        allow_logical: bool = False,
+    ) -> None:
         super().__init__()
         self.allow_ident = allow_ident
+        self.allow_logical = allow_logical
 
     def parse(
         self,
         analyzer: Any,
         current: TokenType | None = None,
         ignore_errors: bool = False,
-    ) -> list[TokenType] | None:
+    ) -> ASTNode | None:
         target_node = self._get_node(analyzer)
-        parser = analyzer.parser
-        saved_pos = parser.pos
-
-        if current is None:
-            if not parser.not_empty():
-                if ignore_errors:
-                    return None
-                err_code = codes.CodeError((2, 1, 1, 0, 1), "Arithmetic.EmptyStream")
-                error.ParserError(
-                    "Se esperaba una expresión aritmética pero se alcanzó EOF.",
-                    err_code,
-                ).raise_error()
-            start_tok = parser.current()
-        else:
-            start_tok = current
-
-        tok_type = start_tok.token
-        valid_start = (
-            tok_type in (Token.NUMBER, Token.PLUS, Token.MINUS, Token.DECREMENT, Token.INCREMENT, Token.LPAREN)
-            or (self.allow_ident and tok_type == Token.IDENT)
-            or isinstance(start_tok.value, (int, float))
+        parser = self._get_parser(analyzer)
+        start_pos = parser.pos
+        remaining = parser.tokens[start_pos:]
+        current_is_in_stream = (
+            current is None
+            or (remaining and remaining[0] is current)
         )
+        input_tokens = remaining if current_is_in_stream else [current, *remaining]
+        if not input_tokens:
+            if ignore_errors:
+                return None
+            self._raise_parse_error(
+                ArithmeticSyntaxError("Se esperaba una expresión aritmética, pero se alcanzó EOF."),
+                None,
+            )
 
+        start_token = input_tokens[0]
+        valid_start = (
+            start_token.token
+            in (
+                Token.NUMBER,
+                Token.BOOL,
+                Token.PLUS,
+                Token.MINUS,
+                Token.NOT,
+                Token.NOT_LOGIC,
+                Token.LOGIC_NOT,
+                Token.EXCLAMATION,
+                Token.DECREMENT,
+                Token.INCREMENT,
+                Token.LPAREN,
+            )
+            or (self.allow_ident and start_token.token == Token.IDENT)
+            or isinstance(start_token.value, (int, float, bool))
+        )
         if not valid_start:
             if ignore_errors:
                 return None
-            err_code = codes.CodeError((2, 1, 1, 0, 1), "Arithmetic.InvalidStart")
-            error.ParserError(
-                f"Token '{start_tok.value}' ({tok_type.name}) no puede iniciar una expresión aritmética.",
-                err_code,
-                f"Línea {start_tok.line}, columna {start_tok.col}.",
-            ).raise_error()
-
-        class StreamAdapter:
-            def __init__(self, first_token: TokenType | None, prs: Any):
-                self.parser = prs
-                self.consumed: list[TokenType] = []
-                if first_token is not None:
-                    if prs.not_empty() and prs.tokens[prs.pos] is first_token:
-                        self.next_tok = None
-                    else:
-                        self.next_tok = first_token
-                else:
-                    self.next_tok = None
-
-            def peek(self) -> TokenType | None:
-                if self.next_tok is not None:
-                    return self.next_tok
-                if self.parser.not_empty():
-                    return self.parser.current()
-                return None
-
-            def consume(self) -> TokenType:
-                if self.next_tok is not None:
-                    tok = self.next_tok
-                    self.next_tok = None
-                    self.consumed.append(tok)
-                    return tok
-                if self.parser.not_empty():
-                    tok = self.parser.consume()
-                    self.consumed.append(tok)
-                    return tok
-                raise ArithmeticSyntaxError("Fin de tokens inesperado en stream.")
-
-        stream = StreamAdapter(current, parser)
-
-        def parse_expr(min_prec: int = 0) -> ArithmeticNode:
-            left = parse_pref()
-            while True:
-                cur = stream.peek()
-                if cur is None:
-                    break
-                tt = cur.token
-                if not is_binary_op(tt) or tt in (Token.LOGIC_AND, Token.AND_LOGIC, Token.LOGIC_OR, Token.OR_LOGIC):
-                    break
-                prec = BINARY_PRECEDENCE[tt]
-                if prec < min_prec:
-                    break
-                op_tok = stream.consume()
-                next_prec = prec if is_right_associative(tt) else prec + 1
-                right = parse_expr(next_prec)
-                left = BinaryOpNode(op_tok, left, right)
-            return left
-
-        def parse_pref() -> ArithmeticNode:
-            cur = stream.peek()
-            if cur is None:
-                raise ArithmeticSyntaxError("Fin de tokens inesperado al inicio de operando aritmético.")
-            tt = cur.token
-
-            if tt in (Token.PLUS, Token.MINUS):
-                op_tok = stream.consume()
-                operand = parse_expr(UNARY_PRECEDENCE)
-                return UnaryOpNode(op_tok, operand)
-
-            if tt == Token.DECREMENT:
-                dec = stream.consume()
-                m1 = TokenType(token=Token.MINUS, value="-", line=dec.line - 1, col=dec.col)
-                m2 = TokenType(token=Token.MINUS, value="-", line=dec.line - 1, col=dec.col + 1)
-                operand = parse_expr(UNARY_PRECEDENCE)
-                return UnaryOpNode(m1, UnaryOpNode(m2, operand))
-
-            if tt == Token.INCREMENT:
-                inc = stream.consume()
-                p1 = TokenType(token=Token.PLUS, value="+", line=inc.line - 1, col=inc.col)
-                p2 = TokenType(token=Token.PLUS, value="+", line=inc.line - 1, col=inc.col + 1)
-                operand = parse_expr(UNARY_PRECEDENCE)
-                return UnaryOpNode(p1, UnaryOpNode(p2, operand))
-
-            if tt == Token.LPAREN:
-                lp = stream.consume()
-                inner = parse_expr(0)
-                nxt = stream.peek()
-                if nxt is None or nxt.token != Token.RPAREN:
-                    col = nxt.col if nxt else "EOF"
-                    line = nxt.line if nxt else "EOF"
-                    raise ArithmeticSyntaxError(
-                        f"Se esperaba ')' para cerrar paréntesis abierto en lín {lp.line}, col {lp.col}."
-                    )
-                rp = stream.consume()
-                return GroupNode(lp, inner, rp)
-
-            if tt == Token.NUMBER or isinstance(cur.value, (int, float)):
-                num_tok = stream.consume()
-                return NumberNode(num_tok)
-
-            if self.allow_ident and tt == Token.IDENT:
-                var_tok = stream.consume()
-                return VariableNode(var_tok)
-
-            raise ArithmeticSyntaxError(
-                f"Token inesperado '{cur.value}' ({tt.name}) en lín {cur.line}, col {cur.col}."
+            self._raise_parse_error(
+                ArithmeticSyntaxError(
+                    f"Token {start_token.value!r} ({start_token.token.name}) "
+                    "no puede iniciar una expresión."
+                ),
+                start_token,
             )
 
+        expression_parser = ArithmeticParser(
+            input_tokens,
+            allow_logical=self.allow_logical,
+            allow_ident=self.allow_ident,
+        )
         try:
-            ast_tree = parse_expr(0)
-            tokens = stream.consumed
-
-            # Inyectamos el árbol y el método evaluate en el resultado
-            return tokens
-        except Exception as exc:
-            parser.restore(saved_pos, node=target_node)
+            expression = expression_parser.parse_expression()
+        except ArithmeticSyntaxError as exc:
             if ignore_errors:
                 return None
-            err_code = codes.CodeError((2, 1, 1, 0, 1), "Arithmetic.ParseError")
-            error.ParserError(
-                f"Error al analizar expresión aritmética: {exc}",
-                err_code,
-                f"Línea {current.line}, columna {current.col}.",
-            ).raise_error()
+            self._raise_parse_error(exc, start_token)
+
+        consumed = expression_parser.pos
+        if consumed == 0:
+            return None
+        parser.pos = start_pos + consumed - (0 if current_is_in_stream else 1)
+        return expression.to_ast_node(level=0)
+
+    @staticmethod
+    def _raise_parse_error(
+        exc: ArithmeticSyntaxError,
+        token: TokenType | None,
+    ) -> None:
+        err_code = codes.CodeError((2, 1, 1, 0, 1), "Arithmetic.ParseError")
+        location = (
+            f"Línea {token.line}, columna {token.col}."
+            if token is not None
+            else "No hay tokens disponibles."
+        )
+        error.ParserError(
+            f"Error al analizar expresión aritmética: {exc}",
+            err_code,
+            location,
+        ).raise_error()
 
     def __repr__(self) -> str:
-        return "ArithmeticExpr()"
+        return (
+            f"ArithmeticExpr(allow_ident={self.allow_ident}, "
+            f"allow_logical={self.allow_logical})"
+        )
 
 
 CombinatorAdditionalStack.register(ArithmeticExpr)

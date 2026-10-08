@@ -61,6 +61,9 @@ class BaseLexerTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.old_hide_console = config.ERROR_HIDE_CONSOLE
         self.old_exit_on_error = config.ERROR_EXIT_ON_ERROR
+        self.old_comment_token = config.LEXER_COMMENT_TOKEN
+        self.old_save_comments = config.LEXER_SAVE_COMMENTS
+        self.old_ignore_newlines = config.LEXER_IGNORE_NEWLINES
         config.ERROR_HIDE_CONSOLE = True
         config.ERROR_EXIT_ON_ERROR = False
         clear_all()
@@ -74,6 +77,9 @@ class BaseLexerTestCase(unittest.TestCase):
         clear_all()
         config.ERROR_HIDE_CONSOLE = self.old_hide_console
         config.ERROR_EXIT_ON_ERROR = self.old_exit_on_error
+        config.LEXER_COMMENT_TOKEN = self.old_comment_token
+        config.LEXER_SAVE_COMMENTS = self.old_save_comments
+        config.LEXER_IGNORE_NEWLINES = self.old_ignore_newlines
 
 
 # ==============================================================================
@@ -478,12 +484,12 @@ class TestLexerEngine(BaseLexerTestCase):
         """Verifica omisión o conservación de comentarios de línea."""
         code = "a = 1 # Este es un comentario\nb = 2"
 
-        # Con save_comments=False
-        no_comm = tokenize(code, save_comments=False)
+        config.LEXER_SAVE_COMMENTS = False
+        no_comm = tokenize(code)
         self.assertNotIn(Token.COMMENT, [t.token for t in no_comm])
 
-        # Con save_comments=True
-        with_comm = tokenize(code, save_comments=True)
+        config.LEXER_SAVE_COMMENTS = True
+        with_comm = tokenize(code)
         comm_toks = [t for t in with_comm if t.token == Token.COMMENT]
         self.assertEqual(len(comm_toks), 1)
         self.assertIn("Este es un comentario", comm_toks[0].value)
@@ -491,7 +497,9 @@ class TestLexerEngine(BaseLexerTestCase):
     def test_custom_comment_delimiter(self) -> None:
         """Verifica uso de un delimitador de comentarios personalizado (ej. ';')."""
         code = "x = 42 ; comentario con punto y coma"
-        tokens_list = tokenize(code, comment_token=";", save_comments=True)
+        config.LEXER_COMMENT_TOKEN = ";"
+        config.LEXER_SAVE_COMMENTS = True
+        tokens_list = tokenize(code)
         comm_tok = next(t for t in tokens_list if t.token == Token.COMMENT)
         self.assertIn("comentario con punto y coma", comm_tok.value)
 
@@ -573,14 +581,14 @@ class TestTokenStream(BaseLexerTestCase):
         """Verifica el comportamiento de LEXER_IGNORE_NEWLINES tanto activado como desactivado."""
         code = "a = 1\nb = 2"
 
-        # Con ignore_newlines=True (por defecto), no se emite NEWLINE
-        tokens_ignored = tokenize(code, ignore_newlines=True)
+        config.LEXER_IGNORE_NEWLINES = True
+        tokens_ignored = tokenize(code)
         types_ignored = [t.token for t in tokens_ignored]
         self.assertNotIn(Token.NEWLINE, types_ignored)
         self.assertEqual(types_ignored, [Token.IDENT, Token.ASSIGN, Token.NUMBER, Token.IDENT, Token.ASSIGN, Token.NUMBER, Token.EOF])
 
-        # Con ignore_newlines=False, se emiten los tokens NEWLINE
-        tokens_preserved = tokenize(code, ignore_newlines=False)
+        config.LEXER_IGNORE_NEWLINES = False
+        tokens_preserved = tokenize(code)
         types_preserved = [t.token for t in tokens_preserved]
         self.assertIn(Token.NEWLINE, types_preserved)
         self.assertEqual(types_preserved.count(Token.NEWLINE), 2)

@@ -113,7 +113,7 @@ class Opt(Combinator):
         """
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(f"OPT iniciado con {self.combinator!r}", "Normal")
 
         checkpoint = parser.savepoint(node=target_node)
@@ -132,21 +132,21 @@ class Opt(Combinator):
         if result is not None:
             if isinstance(result, OptResult) and not result.matched:
                 parser.restore(checkpoint, node=target_node)
-                if target_node and getattr(config, "PARSER_ADD_INFO", True):
+                if config.PARSER_ADD_INFO:
                     target_node.note(
                         "OPT no encontró coincidencia; continuando sin consumir",
                         "Advice",
                     )
                 return OptResult(matched=False, value=None)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note("OPT encontró coincidencia", "Success")
             return OptResult(matched=True, value=result)
 
         # Si no hubo coincidencia, restaurar exactamente el cursor
         parser.restore(checkpoint, node=target_node)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 "OPT no encontró coincidencia; continuando sin consumir",
                 "Advice",

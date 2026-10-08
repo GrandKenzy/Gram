@@ -31,7 +31,7 @@ def process(lexer: Any, char: str) -> TokenType:
         priority=1,
     )
 
-    if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_INFO:
         node.note(f'Carácter recibido: {char!r}', 'normal')
 
     # 1. Cadenas simples, dobles o docstrings

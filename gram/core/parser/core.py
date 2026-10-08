@@ -13,16 +13,18 @@ ES:
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Iterator, Sequence
+from contextlib import AbstractContextManager, contextmanager
+from typing import TYPE_CHECKING, Any, Generator, Sequence
 
 from gram import config, errors
+from gram.core.lexer.tokens import CustomToken, Token
 from gram.core.parser.control import ParseControl
+from gram.utilities import Format
 
 if TYPE_CHECKING:
     from gram.codes import CodeError
     from gram.core.lexer.items import TokenStream
-    from gram.core.lexer.tokens import Token, TokenType
+    from gram.core.lexer.tokens import TokenType
     from gram.core.parser.checkpoint import Checkpoint
     from gram.utilities import error
     from gram.utilities.info import Node as InfoNode, StackInfo
@@ -46,28 +48,15 @@ class Parser:
     def __init__(
         self,
         tokens: Sequence[TokenType] | TokenStream | None = None,
-        control: ParseControl | None = None,
-        node: InfoNode | StackInfo | None = None,
-        stack: StackInfo | InfoNode | None = None,
     ) -> None:
         """
-        EN: Initializes the syntactic parser with tokens, optional control, and telemetry node.
-        ES: Inicializa el analizador sintáctico con tokens, controlador opcional y nodo de telemetría.
+        EN: Initializes the syntactic parser with its token stream.
+        ES: Inicializa el analizador sintáctico con su flujo de tokens.
 
         Args:
             tokens: Sequence of tokens or TokenStream to parse.
-            control: Optional custom ParseControl instance.
-            node: Optional external telemetry Node or StackInfo.
-            stack: Optional external telemetry StackInfo (alias of `node`).
         """
-        if control is not None:
-            self._control = control
-            if tokens is not None:
-                self._control.bind_tokens(tokens)
-            if node is not None or stack is not None:
-                self._control.set_node(node if node is not None else stack)
-        else:
-            self._control = ParseControl(tokens=tokens, node=node, stack=stack)
+        self._control: ParseControl = ParseControl(tokens)
 
     # ==========================================================================
     # CONTROLADOR Y PROPIEDADES DE ACCESO / CONTROLLER & ACCESS PROPERTIES
@@ -126,16 +115,12 @@ class Parser:
         return self._control.node
 
     @property
-    def stack(self) -> StackInfo | None:
+    def stack(self) -> StackInfo:
         """
         EN: Active telemetry and error stack (StackInfo).
         ES: Pila (StackInfo) de telemetría y errores activa en el analizador sintáctico.
         """
         return self._control.stack
-
-    @stack.setter
-    def stack(self, value: StackInfo | None) -> None:
-        self._control.stack = value
 
     @property
     def errors(self) -> list[error.ParserError]:
@@ -175,7 +160,7 @@ class Parser:
         """
         self._control.reset_node()
 
-    def use_node(self, node: InfoNode | StackInfo) -> Iterator[InfoNode]:
+    def use_node(self, node: InfoNode | StackInfo) -> AbstractContextManager[InfoNode]:
         """
         EN: Context manager temporarily redirecting logs to a specific node.
         ES: Context manager para enviar logs a un nodo o stack específico temporalmente.
@@ -185,15 +170,14 @@ class Parser:
     def note(
         self,
         message: str,
-        note_type: str = 'normal',
-        priority: int = 1,
+        note_type: Format.LogType = 'normal',
         node: InfoNode | StackInfo | None = None,
     ) -> None:
         """
         EN: Emits a diagnostic telemetry note through the controller.
         ES: Emite una nota de telemetría a través del controlador.
         """
-        self._control.note(message, note_type=note_type, priority=priority, node=node)
+        self._control.note(message, note_type=note_type, node=node)
 
     def fail(
         self,
@@ -307,14 +291,14 @@ class Parser:
         token = self._control.tokens[self._control.pos]
 
         if expected is not None:
-            matches_expected = False
-            if hasattr(expected, 'name'):
-                matches_expected = (token.token == expected)
-            elif isinstance(expected, str):
-                matches_expected = (token.token.name == expected or str(token.value) == expected)
+            matches_expected = (
+                token.token == expected
+                if isinstance(expected, Token)
+                else token.token.name == expected or str(token.value) == expected
+            )
 
             if not matches_expected:
-                exp_name = getattr(expected, 'name', str(expected))
+                exp_name = expected.name if isinstance(expected, Token) else expected
                 self._control.fail(
                     f"Token inesperado '{token.value}': se esperaba {exp_name}",
                     errors.PARSER_UNEXPECTED_TOKEN,
@@ -322,7 +306,7 @@ class Parser:
                     node=node,
                 )
 
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self._control.note(
                 f"Consumiendo [{self._control.pos}]: {token.token.name} = {token.value!r}",
                 'normal',
@@ -335,7 +319,7 @@ class Parser:
         if self._control.watcher is not None:
             self._control.watcher.update_token(token)
 
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self._control.note(
                 f"Cursor físico avanzado a posición {self._control.pos}",
                 'success',
@@ -360,7 +344,7 @@ class Parser:
 
         curr = self._control.tokens[self._control.pos]
         for exp in expected:
-            if hasattr(exp, 'name') and curr.token == exp:
+            if isinstance(exp, Token) and curr.token == exp:
                 return self.consume(node=node)
             if isinstance(exp, str) and (curr.token.name == exp or str(curr.value) == exp):
                 return self.consume(node=node)
@@ -393,7 +377,7 @@ class Parser:
         self._control.exit_bracket()
 
     @contextmanager
-    def bracket_context(self) -> Iterator[None]:
+    def bracket_context(self) -> Generator[None, None, None]:
         """
         EN: Context manager for delimited operations (parentheses, brackets, braces).
             Guarantees exit_bracket() is called on block exit.
@@ -410,38 +394,40 @@ class Parser:
     # DELEGACIONES ERGONÓMICAS HACIA PARSECONTROL / ERGONOMIC DELEGATIONS
     # ==========================================================================
 
-    def peek(self, offset: int = 0, node: InfoNode | None = None) -> TokenType | None:
+    def peek(self, offset: int = 0) -> TokenType | None:
         """
         EN: Inspects token at relative offset without moving the physical cursor.
         ES: Inspecciona token a distancia offset sin mover el cursor físico.
         """
-        return self._control.peek(offset=offset, node=node)
+        return self._control.peek(offset)
 
-    def peek_token(self, offset: int = 0, node: InfoNode | None = None) -> Token | None:
+    def peek_token(
+        self,
+        offset: int = 0,
+    ) -> Token | CustomToken | None:
         """
         EN: Inspects Token enum type at relative offset.
         ES: Inspecciona tipo de token (Enum) a distancia offset.
         """
-        return self._control.peek_token(offset=offset, node=node)
+        return self._control.peek_token(offset)
 
-    def lookahead(self, count: int = 1, node: InfoNode | None = None) -> list[TokenType]:
+    def lookahead(self, count: int = 1) -> list[TokenType]:
         """
         EN: Retrieves upcoming `count` tokens without consuming them.
         ES: Obtiene los siguientes `count` tokens sin consumirlos.
         """
-        return self._control.lookahead(count=count, node=node)
+        return self._control.lookahead(count)
 
     def matches(
         self,
         *expected: Token | str,
         offset: int = 0,
-        node: InfoNode | None = None,
     ) -> bool:
         """
         EN: Checks if token at relative offset matches any of the expected types.
         ES: Verifica si el token en posición relativa coincide con los esperados.
         """
-        return self._control.matches(*expected, offset=offset, node=node)
+        return self._control.matches(*expected, offset=offset)
 
     def slice(self, start: int, end: int) -> list[TokenType]:
         """
@@ -468,7 +454,10 @@ class Parser:
         """
         self._control.restore(checkpoint=checkpoint, node=node)
 
-    def transaction(self, node: InfoNode | None = None) -> Iterator[Checkpoint]:
+    def transaction(
+        self,
+        node: InfoNode | None = None,
+    ) -> AbstractContextManager[Checkpoint]:
         """
         EN: Context manager for atomic operations with automatic rollback on failure.
         ES: Context manager para operaciones atómicas con rollback automático ante fallo.
@@ -482,12 +471,12 @@ class Parser:
         """
         return self._control.future(node=node)
 
-    def peek_virtual(self, offset: int = 0, node: InfoNode | None = None) -> TokenType | None:
+    def peek_virtual(self, offset: int = 0) -> TokenType | None:
         """
         EN: Inspects token relative to the virtual cursor without moving it.
         ES: Inspecciona relativo al cursor virtual sin moverlo.
         """
-        return self._control.peek_virtual(offset=offset, node=node)
+        return self._control.peek_virtual(offset)
 
     def set_virtual_token(self, pos: int, node: InfoNode | None = None) -> int:
         """
@@ -556,8 +545,9 @@ class Parser:
             ASTProgram: Fully built and structured abstract syntax tree.
         """
         target_node = self._control._get_target_node(node)
+        self._control.clear_failures()
 
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self._control.note(
                 f"Iniciando análisis sintáctico con gramática {grammar}",
                 'normal',
@@ -569,7 +559,7 @@ class Parser:
         analyzer = ASTAnalyzer(self, grammar, node=target_node)
         result = analyzer.process()
 
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self._control.note(
                 "Análisis sintáctico finalizado con éxito",
                 'success',

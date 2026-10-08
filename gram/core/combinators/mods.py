@@ -140,8 +140,8 @@ def is_custom_mod(obj: Any) -> bool:
     if CombinatorAdditionalStack.has(obj):
         return True
     if isinstance(obj, type) and issubclass(obj, Combinator):
-        return hasattr(obj, "parse")
-    return isinstance(obj, Combinator) and hasattr(obj, "parse")
+        return True
+    return isinstance(obj, Combinator)
 
 
 def get_custom_mods() -> list[type[Combinator] | Combinator]:

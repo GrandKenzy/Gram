@@ -16,12 +16,9 @@ from gram.utilities import error
 
 def _log_lexer_note(message: str, note_type: str = 'normal') -> None:
     """Emite una nota de telemetría al stack léxico si está disponible."""
-    try:
-        mod = sys.modules.get('gram.core.lexer.stack')
-        if mod is not None and hasattr(mod, 'stack') and mod.stack is not None:
-            mod.stack.note(message, note_type.lower())
-    except Exception:
-        pass
+    mod = sys.modules.get('gram.core.lexer.stack')
+    if mod is not None and mod.stack is not None:
+        mod.stack.note(message, note_type.lower())
 
 
 # ==============================================================================
@@ -65,7 +62,7 @@ class Keyword:
         self._source_plugin: str = 'native'
 
         if self.group is not None and not group_exists(self.group):
-            if getattr(config, 'LEXER_ADD_INFO', True):
+            if config.LEXER_ADD_INFO:
                 _log_lexer_note(
                     f'El grupo {self.group!r} no existe aún al registrar la palabra clave {self.name!r}.',
                     'warn',
@@ -129,15 +126,12 @@ def add_keyword(
 
     # Detección de procedencia de plugin
     current_loading = 'native'
-    try:
-        mod = sys.modules.get('gram.plugins.manager.core')
-        if mod is not None and hasattr(mod, 'registry'):
-            current_loading = mod.registry.get_current_loading() or 'native'
-    except Exception:
-        pass
+    mod = sys.modules.get('gram.plugins.manager.core')
+    if mod is not None:
+        current_loading = mod.registry.get_current_loading() or 'native'
 
     if name in MAP_KEYWORDS and not allow_override:
-        existing_owner = getattr(MAP_KEYWORDS[name], '_source_plugin', 'native')
+        existing_owner = MAP_KEYWORDS[name]._source_plugin
         error.LexerError(
             'Keyword ya registrada',
             errors.KEYWORD_ALREADY_EXISTS,
@@ -289,7 +283,7 @@ class WordGroup:
             kw = get_keyword(name)
 
         if kw is None:
-            if getattr(config, 'LEXER_ADD_ERROR', True):
+            if config.LEXER_ADD_ERROR:
                 _log_lexer_note(
                     f'Intento de agregar palabra no registrada "{name}" al grupo "{self.name}"',
                     'error',
@@ -349,7 +343,7 @@ class WordGroupManager:
         """Crea y registra un nuevo grupo léxico."""
         group_name = name.name if isinstance(name, WordGroup) else str(name)
         if group_name in self._groups and not allow_override:
-            if getattr(config, 'LEXER_ADD_ERROR', True):
+            if config.LEXER_ADD_ERROR:
                 _log_lexer_note(f'El grupo {group_name!r} ya está registrado', 'error')
             error.LexerError(
                 'Grupo ya existente',
@@ -365,7 +359,7 @@ class WordGroupManager:
         )
         self._groups[group_name] = group
 
-        if getattr(config, 'LEXER_ADD_INFO', True):
+        if config.LEXER_ADD_INFO:
             _log_lexer_note(f'Grupo de palabras creado: {group_name!r}', 'success')
 
         return group
@@ -375,7 +369,7 @@ class WordGroupManager:
         group_name = name.name if isinstance(name, WordGroup) else name
         group = self._groups.get(group_name)
         if group is None and strict:
-            if getattr(config, 'LEXER_ADD_ERROR', True):
+            if config.LEXER_ADD_ERROR:
                 _log_lexer_note(f'Grupo no encontrado: {group_name!r}', 'error')
             error.LexerError(
                 'Grupo no encontrado',

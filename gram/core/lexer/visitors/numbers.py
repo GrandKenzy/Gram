@@ -39,7 +39,7 @@ def process(
     start = lexer.col
     start_line = lexer.line
 
-    if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_INFO:
         node.note(
             f'Inicio de número en línea {start_line}, columna {start}',
             'normal',
@@ -59,7 +59,7 @@ def process(
 
             raw_val = lexer.currline[start:lexer.col].replace('_', '')
             if lexer.col == hex_start:
-                if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(node, 'note'):
+                if config.LEXER_ADD_ERROR:
                     node.note('Prefijo hexadecimal sin dígitos', 'error')
                 error.LexerError(
                     f'Literal hexadecimal incompleto en línea {start_line}, columna {start}',
@@ -87,7 +87,7 @@ def process(
 
             raw_val = lexer.currline[start:lexer.col].replace('_', '')
             if lexer.col == bin_start:
-                if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(node, 'note'):
+                if config.LEXER_ADD_ERROR:
                     node.note('Prefijo binario sin dígitos', 'error')
                 error.LexerError(
                     f'Literal binario incompleto en línea {start_line}, columna {start}',
@@ -115,7 +115,7 @@ def process(
 
             raw_val = lexer.currline[start:lexer.col].replace('_', '')
             if lexer.col == oct_start:
-                if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(node, 'note'):
+                if config.LEXER_ADD_ERROR:
                     node.note('Prefijo octal sin dígitos', 'error')
                 error.LexerError(
                     f'Literal octal incompleto en línea {start_line}, columna {start}',
@@ -173,7 +173,7 @@ def process(
             break
 
         if digits_start == lexer.col:
-            if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(node, 'note'):
+            if config.LEXER_ADD_ERROR:
                 node.note('Exponente sin dígitos válidos', 'error')
             error.LexerError(
                 f'Exponente inválido en línea {start_line}, columna {exponent_start}',
@@ -190,7 +190,7 @@ def process(
         else:
             parsed_number = int(clean_value)
     except ValueError:
-        if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(node, 'note'):
+        if config.LEXER_ADD_ERROR:
             node.note(f'Fallo al convertir {raw_value!r} a número', 'error')
         error.LexerError(
             f'Literal numérico inválido: {raw_value!r}',
@@ -198,7 +198,7 @@ def process(
             f'No se pudo interpretar el número en línea {start_line}, columna {start}.',
         ).raise_error()
 
-    if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_INFO:
         node.note(
             f'Número procesado: {parsed_number!r} ({type(parsed_number).__name__})',
             'success',

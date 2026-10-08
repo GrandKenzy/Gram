@@ -30,21 +30,30 @@ class Ref(Combinator):
         Rule reference combinator resolving named rules dynamically from the grammar registry.
     """
 
-    def __init__(self, rule: RuleType) -> None:
+    def __init__(
+        self,
+        rule: RuleType,
+        generate_node: bool = False,
+        name: str | None = None,
+    ) -> None:
         """
         Inicializa la referencia a una regla gramatical.
 
         Args:
             rule: Clase de regla (RuleType), subclase de RuleItem, instancia o nombre en cadena.
+            generate_node: Si es True, genera un RefNode al analizar con ASTAnalyzer.
+            name: Nombre opcional para el RefNode generado.
         """
         self.rule: RuleType = rule
+        self.generate_node: bool = generate_node
+        self.name: str | None = name
 
     @property
     def rule_name(self) -> str:
         """Retorna el nombre descriptivo de la regla referenciada."""
         if isinstance(self.rule, str):
             return self.rule
-        return getattr(self.rule, "name", getattr(self.rule, "__name__", str(self.rule)))
+        return self.rule.name or self.rule.__name__
 
     def get_grammar(
         self,
@@ -63,24 +72,29 @@ class Ref(Combinator):
             GrammarError: Si la regla no tiene gramática definida o no existe.
         """
         # 1. Regla con gramática declarada directamente en la clase o instancia
-        grammar = getattr(self.rule, "grammar", None)
+        grammar = None if isinstance(self.rule, str) else self.rule.grammar
         if grammar is not None:
             return grammar
 
         # 2. Búsqueda en el diccionario activo de la gramática del analizador
-        analyzer_grammar = getattr(analyzer, "grammar", {})
+        parser = self._get_parser(analyzer)
+        analyzer_grammar = {} if analyzer is parser else analyzer.grammar
         if isinstance(analyzer_grammar, dict):
             if self.rule in analyzer_grammar:
                 return analyzer_grammar[self.rule]
 
             # 3. Búsqueda por nombre de regla
             for rule_key, rule_grammar in analyzer_grammar.items():
-                key_name = getattr(rule_key, "name", getattr(rule_key, "__name__", str(rule_key)))
+                key_name = (
+                    rule_key
+                    if isinstance(rule_key, str)
+                    else rule_key.name or rule_key.__name__
+                )
                 if key_name == self.rule_name:
                     return rule_grammar
 
         target_node = self._get_node(analyzer)
-        if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+        if config.PARSER_ADD_ERROR:
             target_node.note(
                 f"Referencia no resuelta: la regla {self.rule_name!r} no posee gramática",
                 "Error",
@@ -112,25 +126,28 @@ class Ref(Combinator):
         """
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"Resolviendo referencia: {self.rule_name}",
                 "Normal",
             )
 
         grammar = self.get_grammar(analyzer)
-        is_structural = getattr(self.rule, "is_structural", False)
+        is_structural = (
+            False if isinstance(self.rule, str) else self.rule.is_structural
+        )
 
-        if (
-            hasattr(analyzer, "process_rule")
-            and not is_structural
-            and not isinstance(self.rule, str)
+        if analyzer is not self._get_parser(analyzer) and (
+            self.generate_node
+            or (not is_structural and not isinstance(self.rule, str))
         ):
             return analyzer.process_rule(
                 self.rule,
                 grammar,
                 current,
                 ignore_errors=ignore_errors,
+                generate_node=self.generate_node,
+                node_name=self.name,
             )
 
         return self._dispatch_sub(
@@ -141,7 +158,13 @@ class Ref(Combinator):
         )
 
     def __repr__(self) -> str:
-        return f"<Ref> -> {self.rule_name}"
+        options = []
+        if self.generate_node:
+            options.append("generate_node=True")
+        if self.name is not None:
+            options.append(f"name={self.name!r}")
+        suffix = f", {', '.join(options)}" if options else ""
+        return f"<Ref> -> {self.rule_name}{suffix}"
 
 
 # Alias idiomático

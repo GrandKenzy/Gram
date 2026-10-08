@@ -290,8 +290,8 @@ class TokenType:
         EN:
             Interpolates contextual variables into diagnostic or caution strings.
         """
-        token_name: str = getattr(self.token, 'name', str(self.token))
-        token_val: str = str(getattr(self.token, 'value', self.token))
+        token_name: str = self.token.name
+        token_val: str = str(self.token.value)
         content_val: str = str(self.value) if self.value is not None else token_name
         symbol_val: str = MAP_SYMBOLS.get(self.token, "")
 
@@ -345,7 +345,7 @@ class TokenType:
     def __str__(self) -> str:
         if self.value is not None:
             return str(self.value)
-        return getattr(self.token, 'name', str(self.token))
+        return self.token.name
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, TokenType):
@@ -353,7 +353,7 @@ class TokenType:
         if isinstance(other, (Token, CustomToken)):
             return self.token == other
         if isinstance(other, str):
-            token_name = getattr(self.token, 'name', '')
+            token_name = self.token.name
             return token_name == other or str(self.value) == other
         return False
 
@@ -381,8 +381,7 @@ class _MapSymbolsDict(dict[str, Token]):
         self._rev = {}
         for sym, tok in self.items():
             self._rev[tok] = sym
-            if hasattr(tok, 'name'):
-                self._rev[tok.name] = sym
+            self._rev[tok.name] = sym
 
     def __getitem__(self, key: Any) -> Any:
         if key in self:

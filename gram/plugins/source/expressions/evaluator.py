@@ -69,11 +69,7 @@ class ArithmeticNode:
         raise NotImplementedError
 
     def to_ast_node(self, rule: Any = None, level: int = 0) -> ASTNode:
-        name = getattr(rule, "name", self.__class__.__name__)
-        code = getattr(rule, "code", 7000)
-        node = ASTNode(name=name, rule=rule, code=code, level=level)
-        node.tokens = self.to_tokens()
-        return node
+        return arithmetic_to_ast_node(self, rule=rule, level=level)
 
 
 class BooleanNode(ArithmeticNode):
@@ -105,6 +101,8 @@ def to_arithmetic_node(val: Any) -> ArithmeticNode:
     """Convierte de forma segura cualquier valor (TokenType, número o string) a un ArithmeticNode."""
     if isinstance(val, ArithmeticNode):
         return val
+    if isinstance(val, ExpressionASTNode):
+        return val.expression
     if isinstance(val, TokenType):
         if val.token == Token.NUMBER or isinstance(val.value, (int, float)):
             return NumberNode(val)
@@ -183,6 +181,18 @@ class UnaryOpNode(ArithmeticNode):
         self.op: str = str(op_token.value) if op_token.value is not None else ("+" if op_token.token == Token.PLUS else "-")
         self.operand = to_arithmetic_node(operand)
 
+    @property
+    def op1(self) -> ArithmeticNode:
+        return self.operand
+
+    @property
+    def op2(self) -> None:
+        return None
+
+    @property
+    def operator(self) -> TokenType:
+        return self.op_token
+
     def evaluate(self, env: dict[str, Any] | None = None) -> Any:
         val = self.operand.evaluate(env)
         if self.op_token.token in (Token.NOT_LOGIC, Token.LOGIC_NOT, Token.EXCLAMATION) or self.op in ("!", "not"):
@@ -214,6 +224,18 @@ class BinaryOpNode(ArithmeticNode):
 
         self.left = to_arithmetic_node(left)
         self.right = to_arithmetic_node(right)
+
+    @property
+    def op1(self) -> ArithmeticNode:
+        return self.left
+
+    @property
+    def op2(self) -> ArithmeticNode:
+        return self.right
+
+    @property
+    def operator(self) -> TokenType:
+        return self.op_token
 
     def evaluate(self, env: dict[str, Any] | None = None) -> Any:
         active_env = env if env is not None else {}
@@ -296,10 +318,20 @@ class BinaryOpNode(ArithmeticNode):
 
 class FunctionCallNode(ArithmeticNode):
     """Nodo para llamadas a funciones matemáticas en expresiones: sqrt(16), max(1, 2)."""
-    def __init__(self, func_token: TokenType, args: list[ArithmeticNode]):
+    def __init__(
+        self,
+        func_token: TokenType,
+        args: list[ArithmeticNode],
+        lparen: TokenType | None = None,
+        commas: list[TokenType] | None = None,
+        rparen: TokenType | None = None,
+    ):
         self.func_token = func_token
         self.name: str = str(func_token.value)
         self.args: list[ArithmeticNode] = [to_arithmetic_node(a) for a in args]
+        self.lparen = lparen
+        self.commas = commas or []
+        self.rparen = rparen
 
     def evaluate(self, env: dict[str, Any] | None = None) -> Any:
         active_env = {**DEFAULT_ENV, **(env or {})}
@@ -310,12 +342,23 @@ class FunctionCallNode(ArithmeticNode):
         return func(*evaluated_args)
 
     def to_tokens(self) -> list[TokenType]:
-        toks = [self.func_token, TokenType(token=Token.LPAREN, value="(", line=1, col=0)]
-        for i, a in enumerate(self.args):
-            if i > 0:
-                toks.append(TokenType(token=Token.COMMA, value=",", line=1, col=0))
-            toks.extend(a.to_tokens())
-        toks.append(TokenType(token=Token.RPAREN, value=")", line=1, col=0))
+        lparen = self.lparen or TokenType(
+            token=Token.LPAREN, value="(", line=self.func_token.line, col=self.func_token.col + len(self.name)
+        )
+        rparen = self.rparen or TokenType(
+            token=Token.RPAREN, value=")", line=lparen.line, col=lparen.col + 1
+        )
+        toks = [self.func_token, lparen]
+        for index, arg in enumerate(self.args):
+            if index > 0:
+                comma = (
+                    self.commas[index - 1]
+                    if index - 1 < len(self.commas)
+                    else TokenType(token=Token.COMMA, value=",", line=lparen.line, col=lparen.col + index)
+                )
+                toks.append(comma)
+            toks.extend(arg.to_tokens())
+        toks.append(rparen)
         return toks
 
     def __str__(self) -> str:
@@ -343,6 +386,144 @@ class GroupNode(ArithmeticNode):
 
     def __repr__(self) -> str:
         return f"({self.expr})"
+
+
+class ExpressionASTNode(ASTNode):
+    """AST node projected from a typed expression node."""
+
+    def __init__(
+        self,
+        name: str,
+        expression: ArithmeticNode,
+        level: int = 0,
+        tokens: list[TokenType] | None = None,
+        attributes: dict[str, Any] | None = None,
+        children: list[ExpressionASTNode] | None = None,
+    ) -> None:
+        super().__init__(
+            name=name,
+            level=level,
+            tokens=tokens or [],
+            attributes=attributes or {},
+            no_simplify=True,
+        )
+        self.expression = expression
+        for child in children or []:
+            self.add_child(child)
+
+    def evaluate(self, env: dict[str, Any] | None = None) -> Any:
+        return self.expression.evaluate(env)
+
+
+class OpNode(ExpressionASTNode):
+    """Processable AST operation exposing operands and its source operator token."""
+
+    def __init__(
+        self,
+        expression: BinaryOpNode | UnaryOpNode,
+        level: int,
+        op1: ExpressionASTNode,
+        op2: ExpressionASTNode | None,
+    ) -> None:
+        super().__init__(
+            name="Op",
+            expression=expression,
+            level=level,
+            tokens=[expression.op_token],
+            attributes={
+                "operator": expression.op,
+                "operator_type": expression.op_token.token.name,
+                "arity": 2 if op2 is not None else 1,
+            },
+            children=[op1] if op2 is None else [op1, op2],
+        )
+
+    @property
+    def op1(self) -> ExpressionASTNode:
+        return self.children[0]
+
+    @property
+    def op2(self) -> ExpressionASTNode | None:
+        return self.children[1] if len(self.children) > 1 else None
+
+    @property
+    def operator(self) -> TokenType:
+        return self.tokens[0]
+
+
+def arithmetic_to_ast_node(
+    expression: ArithmeticNode,
+    rule: Any = None,
+    level: int = 0,
+) -> ExpressionASTNode:
+    """Convert the typed evaluator tree to a recursively structured AST."""
+    if isinstance(expression, BinaryOpNode):
+        return OpNode(
+            expression,
+            level,
+            arithmetic_to_ast_node(expression.left, level=level + 1),
+            arithmetic_to_ast_node(expression.right, level=level + 1),
+        )
+    if isinstance(expression, UnaryOpNode):
+        return OpNode(
+            expression,
+            level,
+            arithmetic_to_ast_node(expression.operand, level=level + 1),
+            None,
+        )
+    if isinstance(expression, FunctionCallNode):
+        syntax_tokens = expression.to_tokens()
+        punctuation = [
+            token
+            for token in syntax_tokens
+            if token.token in (Token.LPAREN, Token.COMMA, Token.RPAREN)
+        ]
+        return ExpressionASTNode(
+            name="Call",
+            expression=expression,
+            level=level,
+            tokens=[expression.func_token, *punctuation],
+            attributes={"function": expression.name, "argument_count": len(expression.args)},
+            children=[
+                arithmetic_to_ast_node(arg, level=level + 1)
+                for arg in expression.args
+            ],
+        )
+    if isinstance(expression, GroupNode):
+        return ExpressionASTNode(
+            name="Group",
+            expression=expression,
+            level=level,
+            tokens=[expression.lparen, expression.rparen],
+            children=[
+                arithmetic_to_ast_node(expression.expr, level=level + 1)
+            ],
+        )
+    if isinstance(expression, NumberNode):
+        return ExpressionASTNode(
+            name="Number",
+            expression=expression,
+            level=level,
+            tokens=[expression.token],
+            attributes={"value": expression.value},
+        )
+    if isinstance(expression, BooleanNode):
+        return ExpressionASTNode(
+            name="Boolean",
+            expression=expression,
+            level=level,
+            tokens=[expression.token],
+            attributes={"value": expression.value},
+        )
+    if isinstance(expression, VariableNode):
+        return ExpressionASTNode(
+            name="Identifier",
+            expression=expression,
+            level=level,
+            tokens=[expression.token],
+            attributes={"identifier": expression.name},
+        )
+    raise TypeError(f"Tipo de nodo aritmético no soportado: {type(expression).__name__}")
 
 
 # ============================================================================
@@ -396,9 +577,17 @@ class ArithmeticParser:
     (Pratt Parser) para consumir expresiones aritméticas desde una lista de tokens.
     """
 
-    def __init__(self, tokens: list[TokenType], pos: int = 0):
+    def __init__(
+        self,
+        tokens: list[TokenType],
+        pos: int = 0,
+        allow_logical: bool = True,
+        allow_ident: bool = True,
+    ):
         self.tokens = tokens
         self.pos = pos
+        self.allow_logical = allow_logical
+        self.allow_ident = allow_ident
 
     def peek(self) -> TokenType | None:
         if self.pos < len(self.tokens):
@@ -420,6 +609,13 @@ class ArithmeticParser:
 
             tok_type = current.token
             if not is_binary_op(tok_type):
+                break
+            if not self.allow_logical and tok_type in (
+                Token.LOGIC_AND,
+                Token.AND_LOGIC,
+                Token.LOGIC_OR,
+                Token.OR_LOGIC,
+            ):
                 break
 
             prec = BINARY_PRECEDENCE[tok_type]
@@ -482,19 +678,24 @@ class ArithmeticParser:
             return NumberNode(num_tok)
 
         if tok_type == Token.IDENT:
+            if not self.allow_ident:
+                raise ArithmeticSyntaxError(
+                    f"Identificadores no permitidos: {current.value!r}."
+                )
             var_tok = self.consume()
             if self.peek() and self.peek().token == Token.LPAREN:
-                self.consume()  # '('
+                lparen = self.consume()
                 args: list[ArithmeticNode] = []
+                commas: list[TokenType] = []
                 if self.peek() and self.peek().token != Token.RPAREN:
                     args.append(self.parse_expression(0))
                     while self.peek() and self.peek().token == Token.COMMA:
-                        self.consume()  # ','
+                        commas.append(self.consume())
                         args.append(self.parse_expression(0))
                 if not self.peek() or self.peek().token != Token.RPAREN:
                     raise ArithmeticSyntaxError(f"Se esperaba ')' tras argumentos de '{var_tok.value}'.")
-                self.consume()  # ')'
-                return FunctionCallNode(var_tok, args)
+                rparen = self.consume()
+                return FunctionCallNode(var_tok, args, lparen, commas, rparen)
             return VariableNode(var_tok)
 
         raise ArithmeticSyntaxError(
@@ -529,6 +730,9 @@ def evaluate(
     Evalúa una expresión aritmética en texto, tokens o ASTNode, retornando el valor numérico.
     """
     active_env = {**DEFAULT_ENV, **(env or {})}
+
+    if isinstance(expr, ExpressionASTNode):
+        return expr.evaluate(active_env)
 
     if isinstance(expr, ArithmeticNode):
         return expr.evaluate(active_env)

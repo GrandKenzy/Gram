@@ -77,6 +77,11 @@ class TestStoragePlugin(unittest.TestCase):
 class TestExpressionsPlugin(unittest.TestCase):
     """Pruebas del plugin expressions."""
 
+    def setUp(self):
+        from gram.core.lexer import words
+        if not words.MAP_KEYWORDS:
+            words.add_keyword("dummy_keyword", allow_override=True)
+
     def test_manifest_validation(self):
         plugin_dir = Path(expressions.__file__).parent
         report = validate_plugin(plugin_dir)
@@ -112,7 +117,10 @@ class TestExpressionsPlugin(unittest.TestCase):
         t = p.consume()
         res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
         self.assertIsNotNone(res)
-        self.assertEqual([x.value for x in res], [10, "+", 20, ">", 5])
+        self.assertEqual(
+            [x.value for x in res.collect_tokens()],
+            [10, "+", 20, ">", 5],
+        )
 
         # 2. Expresión puramente aritmética: 10 + 20 (debe ser RECHAZADA)
         toks = Lexer("10 + 20").process()
@@ -134,7 +142,7 @@ class TestExpressionsPlugin(unittest.TestCase):
         t = p.consume()
         res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
         self.assertIsNotNone(res)
-        self.assertEqual([x.value for x in res], ["activo"])
+        self.assertEqual([x.value for x in res.collect_tokens()], ["activo"])
 
         # 5. Aritmética con identificador: activo + 1 (debe ser RECHAZADA)
         toks = Lexer("activo + 1").process()
@@ -149,7 +157,7 @@ class TestExpressionsPlugin(unittest.TestCase):
         t = p.consume()
         res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
         self.assertIsNotNone(res)
-        self.assertEqual([x.value for x in res], ["!", "activo"])
+        self.assertEqual([x.value for x in res.collect_tokens()], ["!", "activo"])
 
         # 7. Negación con agrupación: !(10 + 20 > 5)
         toks = Lexer("!(10 + 20 > 5)").process()
@@ -157,7 +165,10 @@ class TestExpressionsPlugin(unittest.TestCase):
         t = p.consume()
         res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
         self.assertIsNotNone(res)
-        self.assertEqual([x.value for x in res], ["!", "(", 10, "+", 20, ">", 5, ")"])
+        self.assertEqual(
+            [x.value for x in res.collect_tokens()],
+            ["!", "(", 10, "+", 20, ">", 5, ")"],
+        )
 
         # 8. Negación con aritmética inválida: !(10 + 20) (debe ser RECHAZADA)
         toks = Lexer("!(10 + 20)").process()
@@ -172,7 +183,10 @@ class TestExpressionsPlugin(unittest.TestCase):
         t = p.consume()
         res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
         self.assertIsNotNone(res)
-        self.assertEqual([x.value for x in res], [10, "+", 20, ">", 5, "&&", "activo", "==", 1])
+        self.assertEqual(
+            [x.value for x in res.collect_tokens()],
+            [10, "+", 20, ">", 5, "&&", "activo", "==", 1],
+        )
 
         # 10. Conector con condición inválida a la derecha: 10 + 20 > 5 && 42 (debe ser RECHAZADA)
         toks = Lexer("10 + 20 > 5 && 42").process()
@@ -187,7 +201,84 @@ class TestExpressionsPlugin(unittest.TestCase):
         t = p.consume()
         res = cond_comb.parse(DummyAnalyzer(p), t, ignore_errors=True)
         self.assertIsNotNone(res)
-        self.assertEqual(len(res), 3)
+        self.assertEqual(len(res.collect_tokens()), 3)
+
+    def test_arithmetic_expr_returns_processable_operation_tree(self):
+        from gram.core.ast import ASTNode
+
+        source = "((10 * 20) + 20) * ((20 + 20) + sumar(10 + 30)) - sesgo"
+        parser = Parser(Lexer(source).process())
+        result = expressions.ArithmeticExpr().parse(
+            parser,
+            parser.peek(),
+            ignore_errors=True,
+        )
+
+        self.assertIsInstance(result, expressions.OpNode)
+        self.assertEqual(result.attributes["operator"], "-")
+        self.assertEqual(result.op2.name, "Identifier")
+        self.assertEqual(result.op2.attributes["identifier"], "sesgo")
+        self.assertEqual(result.op1.name, "Op")
+        self.assertEqual(result.op1.attributes["operator"], "*")
+        calls = result.find("Call")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].attributes["function"], "sumar")
+        self.assertEqual(calls[0].children[0].attributes["operator"], "+")
+        self.assertEqual(
+            [token.value for token in result.collect_tokens()],
+            [token.value for token in Lexer(source).process() if token.token != Token.EOF],
+        )
+        self.assertTrue(
+            all(isinstance(node, ASTNode) for node in result.walk())
+        )
+        self.assertEqual(
+            result.evaluate({"sesgo": 10, "sumar": lambda value: value}),
+            17590,
+        )
+        self.assertEqual(
+            expressions.evaluate(result, {"sesgo": 10, "sumar": lambda value: value}),
+            17590,
+        )
+
+    def test_conditional_expr_ast_grouping_and_no_simplify(self):
+        """Verifica que ConditionalExpr produzca un árbol AST agrupado con no_simplify sin perder operadores."""
+        import gram
+
+        class ConditionRule(gram.RuleItem):
+            name = "condition"
+            code = 9999
+            grammar = expressions.ConditionalExpr(allow_ident_boolean=True, no_simplify=True, grouping=True)
+
+        toks = Lexer("x == y || 10 == 1").process()
+        p = Parser(toks)
+        t = p.consume()
+        res = expressions.ConditionalExpr(allow_ident_boolean=True, no_simplify=True, grouping=True).parse(
+            p, t, ignore_errors=True
+        )
+        self.assertIsNotNone(res)
+
+        # El combinador devuelve un árbol operacional y el RuleItem lo envuelve.
+        node = gram.ASTNode.from_rule_result(ConditionRule, res, level=3)
+        self.assertEqual(node.name, "condition")
+        self.assertTrue(node.no_simplify)
+        self.assertEqual(node.values, [gram.Identifier("x"), "==", gram.Identifier("y"), "||", 10, "==", 1])
+        self.assertEqual(len(node.children), 1)
+
+        # 3. Jerarquía y agrupamiento
+        or_node = node.children[0]
+        self.assertEqual(or_node.name, "Op")
+        self.assertEqual(or_node.attributes["operator"], "||")
+        self.assertEqual(len(or_node.children), 2)
+
+        left_comp = or_node.children[0]
+        self.assertEqual(left_comp.name, "Op")
+        self.assertEqual(left_comp.attributes["operator"], "==")
+        self.assertEqual(left_comp.values, [gram.Identifier("x"), "==", gram.Identifier("y")])
+
+        right_comp = or_node.children[1]
+        self.assertEqual(right_comp.name, "Op")
+        self.assertEqual(right_comp.attributes["operator"], "==")
+        self.assertEqual(right_comp.values, [10, "==", 1])
 
     def test_evaluator_conditionals_and_logic(self):
         # Comparaciones simples

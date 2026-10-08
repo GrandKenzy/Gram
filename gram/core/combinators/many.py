@@ -83,7 +83,7 @@ class Many(Combinator):
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"MANY iniciado con {self.combinator!r}",
                 "Normal",
@@ -125,7 +125,7 @@ class Many(Combinator):
             results.append(res)
             active_token = None
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"MANY finalizado: {len(results)} coincidencias acumuladas",
                 "Success",

@@ -3,7 +3,7 @@ Pruebas Unitarias del Catálogo de Combinadores (`gram.tests.test_combinators`).
 ==============================================================================
 Valida exhaustivamente todos los componentes de `gram.core.combinators`:
   1. Matchers atómicos: MatchToken, MatchKeyword, MatchGroup, MatchSymbol/MatchSeqSymbol, generador_expr.
-  2. Item & Literal: ItemResult, secuencia atómica Item, validación de primitivos con Literal.
+  2. Item & Literal: nodos de tokens, secuencia atómica Item y validación de literales.
   3. Secuencia (Seq): consumo ordenado, backtracking atómico completo, operador `+`.
   4. Alternativas (Alt): selección priorizada, backtracking entre ramas, operador `|`, CutFlowSignal.
   5. Opcional (Opt): OptResult, desempaquetado (unwrap), preservación de cursor si no coincide.
@@ -28,7 +28,8 @@ from gram.core.combinators import (
     CutFlowSignal,
     Enclosed,
     Item,
-    ItemResult,
+    ItemNode,
+    LiteralNode,
     Literal,
     Many,
     MatchGroup,
@@ -52,7 +53,7 @@ from gram.core.combinators import (
     is_hardcoded_mod,
     register_custom_mod,
 )
-from gram.core.lexer import Token, TokenType, words
+from gram.core.lexer import CustomToken, Token, TokenType, words
 from gram.core.parser import Parser
 from gram.utilities.error import GrammarError, ParserError
 
@@ -192,15 +193,7 @@ class TestMatchers(BaseCombinatorTestCase):
 
 
 class TestItemAndLiteral(BaseCombinatorTestCase):
-    """Pruebas para los combinadores Item, ItemResult y Literal."""
-
-    def test_item_result_properties(self) -> None:
-        res = ItemResult([10, [20, 30]])
-        self.assertEqual(res.first, 10)
-        self.assertEqual(res.last, [20, 30])
-        self.assertTrue(res.is_match)
-        self.assertTrue(bool(res))
-        self.assertEqual(res.to_list(), [10, [20, 30]])
+    """Pruebas para los combinadores Item, ItemNode y Literal."""
 
     def test_item_atomic_success(self) -> None:
         t1 = self.make_token(Token.IDENT, "var")
@@ -210,9 +203,20 @@ class TestItemAndLiteral(BaseCombinatorTestCase):
         item_comb = Item(MatchToken(Token.IDENT), MatchToken(Token.COLON))
         res = item_comb.parse(parser)
 
-        self.assertIsInstance(res, ItemResult)
-        self.assertEqual(len(res), 2)
+        self.assertIsInstance(res, ItemNode)
+        self.assertEqual(res, [t1, t2])
+        self.assertTrue(all(isinstance(token, TokenType) for token in res))
         self.assertEqual(parser.pos, 2)
+
+    def test_item_flattens_literal_node_tokens(self) -> None:
+        token = self.make_token(Token.NUMBER, 100)
+        parser = self.make_parser(token)
+
+        result = Item(Literal(100)).parse(parser)
+
+        self.assertIsInstance(result, ItemNode)
+        self.assertEqual(result, [token])
+        self.assertTrue(all(isinstance(item, TokenType) for item in result))
 
     def test_item_atomic_failure_rolls_back(self) -> None:
         t1 = self.make_token(Token.IDENT, "var")
@@ -228,7 +232,9 @@ class TestItemAndLiteral(BaseCombinatorTestCase):
     def test_literal_validation(self) -> None:
         t_num = self.make_token(Token.NUMBER, 100)
         p1 = self.make_parser(t_num)
-        self.assertIsNotNone(Literal(100).parse(p1))
+        literal_node = Literal(100).parse(p1)
+        self.assertIsInstance(literal_node, LiteralNode)
+        self.assertEqual(literal_node, [t_num])
 
         # Discrepancia de valor
         p2 = self.make_parser(t_num)
@@ -560,6 +566,7 @@ class TestReferenceAndTokenize(BaseCombinatorTestCase):
         res = tok_comb.parse(parser)
 
         self.assertIsInstance(res, TokenType)
+        self.assertIsInstance(res.token, CustomToken)
         self.assertEqual(res.value, "0x1A")
         self.assertEqual(res.token.name, "HEX_LITERAL")
         self.assertEqual(parser.pos, 3)

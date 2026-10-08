@@ -29,74 +29,24 @@ if TYPE_CHECKING:
 _ANY_LITERAL = object()
 
 
-class ItemResult(list):
+class ItemNode(list[TokenType]):
     """
     EN:
-        Evaluation result container for Item() combinator.
-        Inherits from Python's built-in list to behave natively as a list,
-        providing ergonomic access utilities (first, last, to_list).
+        AST fragment produced by Item(), containing only matched tokens.
 
     ES:
-        Resultado de la evaluación del combinador Item().
-        Hereda de list para comportarse de forma nativa como una lista en Python,
-        proporcionando utilidades de acceso ergonómico (first, last, to_list).
+        Fragmento de AST producido por Item(), compuesto únicamente por tokens coincidentes.
     """
 
-    _is_item_result: bool = True
-    is_match: bool = True
-
-    def __init__(self, items: Iterable[Any] | None = None) -> None:
-        super().__init__(items if items is not None else [])
-
-    def to_list(self) -> list[Any]:
-        """
-        EN: Recursively convert into standard native Python list.
-        ES: Convierte recursivamente a lista estándar de Python.
-
-        Returns:
-            list[Any]: Pure unwrapped Python list.
-        """
-        result: list[Any] = []
-        for item in self:
-            if isinstance(item, ItemResult):
-                result.append(item.to_list())
-            else:
-                result.append(item)
-        return result
-
-    @property
-    def items(self) -> list[Any]:
-        """
-        EN: Return a copy as standard Python list.
-        ES: Retorna una copia como lista de Python.
-        """
-        return list(self)
-
-    @property
-    def first(self) -> Any:
-        """
-        EN: First element or None if empty.
-        ES: Primer elemento o None si la lista está vacía.
-        """
-        return self[0] if self else None
-
-    @property
-    def last(self) -> Any:
-        """
-        EN: Last element or None if empty.
-        ES: Último elemento o None si la lista está vacía.
-        """
-        return self[-1] if self else None
-
-    def __bool__(self) -> bool:
-        """
-        EN: True if container holds at least one element.
-        ES: Verdadero si contiene al menos un elemento.
-        """
-        return len(self) > 0
+    def __init__(self, items: Iterable[TokenType] = ()) -> None:
+        super().__init__(items)
 
     def __repr__(self) -> str:
-        return f"ItemResult({super().__repr__()})"
+        return f"ItemNode({super().__repr__()})"
+
+
+class LiteralNode(list[TokenType]):
+    """AST fragment produced by Literal(), containing its matched token."""
 
 
 class Item(Combinator):
@@ -140,7 +90,7 @@ class Item(Combinator):
         analyzer: ASTAnalyzer | Parser | Any,
         current: TokenType | None = None,
         ignore_errors: bool = False,
-    ) -> ItemResult | None:
+    ) -> ItemNode | None:
         """
         EN: Execute atomic evaluation of the match sequence.
         ES: Ejecuta la evaluación atómica de la secuencia de combinadores.
@@ -154,23 +104,23 @@ class Item(Combinator):
                            Si True, no levanta excepciones ante fallos.
 
         Returns:
-            ItemResult with matched elements, or None on failure.
-            ItemResult con los resultados coincidentes, o None si falló la secuencia.
+            ItemNode with matched tokens, or None on failure.
+            ItemNode con los tokens coincidentes, o None si falló la secuencia.
         """
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"Item iniciado con {len(self.matchs)} matchs",
-                "Normal",
+                "normal",
             )
 
         if not self.matchs:
-            return ItemResult([])
+            return ItemNode()
 
         checkpoint = parser.savepoint(node=target_node)
-        results: list[Any] = []
+        tokens: list[TokenType] = []
 
         try:
             for idx, match_comb in enumerate(self.matchs):
@@ -195,15 +145,24 @@ class Item(Combinator):
                         ).raise_error()
                     return None
 
-                results.append(res)
+                if isinstance(res, TokenType):
+                    tokens.append(res)
+                elif isinstance(res, (ItemNode, LiteralNode)):
+                    tokens.extend(res)
+                else:
+                    parser.restore(checkpoint, node=target_node)
+                    raise TypeError(
+                        f"Item solo puede agrupar resultados de tokens; "
+                        f"{match_comb!r} devolvió {type(res).__name__}."
+                    )
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
-                    f"Item completado con éxito ({len(results)} elementos)",
-                    "Success",
+                    f"Item completado con éxito ({len(tokens)} tokens)",
+                    "success",
                 )
 
-            return ItemResult(results)
+            return ItemNode(tokens)
 
         except error.ParserError:
             parser.restore(checkpoint, node=target_node)
@@ -242,7 +201,7 @@ class Literal(Combinator):
         analyzer: ASTAnalyzer | Parser | Any,
         current: TokenType | None = None,
         ignore_errors: bool = False,
-    ) -> TokenType | None:
+    ) -> LiteralNode | None:
         """
         EN: Evaluate whether the current token possesses the expected literal value.
         ES: Evalúa si el token actual posee el valor literal esperado.
@@ -256,22 +215,28 @@ class Literal(Combinator):
                            Si True, no levanta excepciones ante discrepancias.
 
         Returns:
-            Matched TokenType or None on failure.
-            TokenType si coincide el valor literal, o None en caso contrario.
+            LiteralNode containing the matched token, or None on failure.
+            LiteralNode con el token coincidente, o None en caso contrario.
         """
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note(f"Procesando Literal: {self.literal!r}", "Normal")
+        if config.PARSER_ADD_INFO:
+            target_node.note(f"Procesando Literal: {self.literal!r}", "normal")
 
         checkpoint = parser.savepoint(node=target_node)
 
         if current is None:
             if not parser.not_empty():
+                self._record_failure(
+                    analyzer,
+                    f"literal {self.literal!r}",
+                    checkpoint.pos,
+                    None,
+                )
                 if not ignore_errors:
-                    if target_node and getattr(config, "PARSER_ADD_ERROR", True):
-                        target_node.note("Error: se esperaba Literal pero se alcanzó EOF", "Error")
+                    if config.PARSER_ADD_ERROR:
+                        target_node.note("Error: se esperaba Literal pero se alcanzó EOF", "error")
                     error.ParserError(
                         "Token no disponible",
                         errors.PARSER_EARLY_EOF,
@@ -283,11 +248,17 @@ class Literal(Combinator):
             tok = current
 
         # Las palabras reservadas (KEYWORD) nunca coinciden con un Literal
-        if tok.token == Token.KEYWORD or getattr(tok.token, "name", "") == "KEYWORD":
+        if tok.token == Token.KEYWORD or tok.token.name == "KEYWORD":
+            self._record_failure(
+                analyzer,
+                f"literal {self.literal!r}",
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
             if not ignore_errors:
-                if target_node and getattr(config, "PARSER_ADD_ERROR", True):
-                    target_node.note(f"Literal no admite KEYWORD: {tok.value!r}", "Error")
+                if config.PARSER_ADD_ERROR:
+                    target_node.note(f"Literal no admite KEYWORD: {tok.value!r}", "error")
                 error.ParserError(
                     "Literal no admite palabra clave",
                     errors.PARSER_UNEXPECTED_TOKEN,
@@ -297,17 +268,23 @@ class Literal(Combinator):
 
         # Comparación del valor literal
         if not self._match_value(tok.value):
+            self._record_failure(
+                analyzer,
+                f"literal {self.literal!r}",
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"Literal rechazado: se esperaba {self.literal!r}, se recibió {tok.value!r}",
-                    "Warn",
+                    "warn",
                 )
             if not ignore_errors:
-                if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                if config.PARSER_ADD_ERROR:
                     target_node.note(
                         f"Error: se esperaba literal {self.literal!r}, se recibió {tok.value!r}",
-                        "Error",
+                        "error",
                     )
                 error.ParserError(
                     "Literal incorrecto",
@@ -321,10 +298,10 @@ class Literal(Combinator):
         if current is not None and parser.not_empty() and parser.tokens[parser.pos] is current:
             parser.advance()
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note(f"Literal aceptado: {tok.value!r}", "Success")
+        if config.PARSER_ADD_INFO:
+            target_node.note(f"Literal aceptado: {tok.value!r}", "success")
 
-        return tok
+        return LiteralNode([tok])
 
     def _match_value(self, token_value: Any) -> bool:
         """
@@ -347,6 +324,7 @@ class Literal(Combinator):
 
 __all__ = [
     "Item",
-    "ItemResult",
+    "ItemNode",
     "Literal",
+    "LiteralNode",
 ]

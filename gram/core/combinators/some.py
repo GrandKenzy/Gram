@@ -82,7 +82,7 @@ class Some(Combinator):
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"SOME iniciado con {self.combinator!r}",
                 "Normal",
@@ -127,24 +127,35 @@ class Some(Combinator):
         if not results:
             parser.restore(initial_checkpoint, node=target_node)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"SOME rechazado: se requería al menos 1 coincidencia para {self.combinator!r}",
                     "Warn",
                 )
 
             if not ignore_errors:
+                failure_context = self._failure_context(analyzer)
                 curr_tok = current or parser.peek()
-                tok_info = f" en {curr_tok}" if curr_tok else ""
+                tok_info = (
+                    ""
+                    if failure_context
+                    else f" en {curr_tok}" if curr_tok else ""
+                )
+                caution = (
+                    f"Se esperaba al menos una ocurrencia de "
+                    f"{self.combinator!r}{tok_info}.",
+                )
+                if failure_context:
+                    caution += (failure_context,)
                 error.ParserError(
                     "Ocurrencia mínima no alcanzada",
                     errors.COMBINATOR_FAILED,
-                    f"Se esperaba al menos una ocurrencia de {self.combinator!r}{tok_info}.",
+                    *caution,
                 ).raise_error()
 
             return None
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"SOME completado: {len(results)} coincidencias",
                 "Success",

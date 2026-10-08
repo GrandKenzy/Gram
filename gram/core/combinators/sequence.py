@@ -93,7 +93,7 @@ class Seq(Combinator):
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"SEQ iniciado con {len(self.combinators)} combinadores",
                 "Normal",
@@ -102,7 +102,7 @@ class Seq(Combinator):
         checkpoint = parser.savepoint(node=target_node)
         results: list[Any] = []
 
-        watcher = getattr(analyzer, "watcher", None)
+        watcher = analyzer.watcher
         if watcher:
             watcher.enter_sequence(self, len(self.combinators))
 
@@ -122,7 +122,7 @@ class Seq(Combinator):
                         ignore_errors=ignore_errors,
                     )
                 except (SkipFlowSignal, BreakFlowSignal):
-                    if target_node and getattr(config, "PARSER_ADD_INFO", True):
+                    if config.PARSER_ADD_INFO:
                         target_node.note(
                             f"Señal de interrupción en paso {index} de secuencia; finalizando temprano.",
                             "Advice",
@@ -132,19 +132,30 @@ class Seq(Combinator):
                 if res is None:
                     parser.restore(checkpoint, node=target_node)
 
-                    if target_node and getattr(config, "PARSER_ADD_INFO", True):
+                    if config.PARSER_ADD_INFO:
                         target_node.note(
                             f"SEQ abortado: el elemento {index} ({combinator!r}) no coincidió",
                             "Warn",
                         )
 
                     if not ignore_errors:
+                        failure_context = self._failure_context(analyzer)
                         curr_tok = parser.peek()
-                        tok_info = f" en {curr_tok}" if curr_tok else ""
+                        tok_info = (
+                            ""
+                            if failure_context
+                            else f" en {curr_tok}" if curr_tok else ""
+                        )
+                        caution = (
+                            f"Fallo en elemento {index} de secuencia "
+                            f"Seq({combinator!r}){tok_info}.",
+                        )
+                        if failure_context:
+                            caution += (failure_context,)
                         error.ParserError(
                             "Fallo en secuencia",
                             errors.COMBINATOR_FAILED,
-                            f"Fallo en elemento {index} de secuencia Seq({combinator!r}){tok_info}.",
+                            *caution,
                         ).raise_error()
 
                     return None
@@ -154,7 +165,7 @@ class Seq(Combinator):
                 else:
                     results.append(res)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"SEQ completado correctamente ({len(self.combinators)} elementos)",
                     "Success",

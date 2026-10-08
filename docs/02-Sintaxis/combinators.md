@@ -121,7 +121,7 @@ Valida secuencias ordenadas de símbolos que componen un operador multicarácter
 Verifica que el valor literal del token (`token.value`) coincida exactamente con un valor escalar dado, independientemente del tipo de token.
 
 - **Firma:** `Literal(value: Any)`
-- **Consumo:** Consume 1 token.
+- **Consumo:** Consume 1 token. Si coincide, retorna un `LiteralNode` que contiene ese `TokenType`.
 - **Ejemplo:**
   ```python
   from gram.core.combinators import Literal
@@ -131,10 +131,10 @@ Verifica que el valor literal del token (`token.value`) coincida exactamente con
   ```
 
 ### `Item`
-Coincidencia de un token genérico con predicados configurables y asignación de nombre semántico.
+Agrupa combinadores en una secuencia atómica. Si todos coinciden, retorna un `ItemNode` con los tokens resultantes; si uno falla, restaura el parser al inicio.
 
-- **Firma:** `Item(name: str = "", predicate: Callable[[TokenType], bool] | None = None)`
-- **Consumo:** Consume 1 token si el predicado retorna `True`. Retorna un objeto `ItemResult`.
+- **Firma:** `Item(*matchs: Combinator)`
+- **Retorno:** `ItemNode`, una lista de `TokenType` coincidentes, o `None` si la secuencia falla.
 
 ---
 
@@ -254,12 +254,14 @@ Analiza contenido rodeado por delimitadores de apertura y cierre (paréntesis, c
 ### `Ref (Referencia Perezosa)`
 Referencia diferida a otra regla sintáctica declarada en el catálogo o diccionario de gramática. Permite recursión directa e indirecta sin problemas de orden de definición.
 
-- **Firma:** `Ref(rule: RuleItem | str)`
+- **Firma:** `Ref(rule: RuleItem | str, generate_node: bool = False, name: str | None = None)`
+- **AST:** Por defecto no añade un bloque `RefNode`; conserva el resultado de la regla referenciada directamente bajo el nodo contenedor. Con `generate_node=True`, añade un `RefNode` alrededor de ese resultado; `name` permite asignarle un nombre visible.
 - **Ejemplo:**
   ```python
   from gram.core.combinators import Ref, DECLARATION
 
   decl_ref = Ref(DECLARATION)
+  named_decl_ref = Ref(DECLARATION, generate_node=True, name="DeclarationRef")
   ```
 
 ### `Tokenize`

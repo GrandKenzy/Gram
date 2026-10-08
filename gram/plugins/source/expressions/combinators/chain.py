@@ -8,20 +8,32 @@ separados por operadores con asociatividad explícita:
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
-if TYPE_CHECKING:
-    from gram.core.ast import ASTAnalyzer
-    from gram.core.lexer.tokens import TokenType
-    from gram.utilities.info import Node
-
-from gram import config
+from gram import config, errors
 from gram.core.combinators.base import Combinator
 from gram.core.combinators.mods import register_custom_mod
-from gram.core.lexer.tokens import Token
-from gram.errors import codes
+from gram.core.lexer.tokens import TokenType
+from gram.utilities.error.codes import CodeError
 from gram.utilities import error
-from gram.plugins.source.expressions.evaluator import BinaryOpNode, ArithmeticNode
+from gram.plugins.source.expressions.evaluator import (
+    ArithmeticNode,
+    BinaryOpNode,
+    to_arithmetic_node,
+)
+
+
+def _chain_error(name: str) -> CodeError:
+    return CodeError(
+        (
+            errors.PLUGIN_ERROR,
+            errors.PARSER_ERROR,
+            errors.IMPLEMENTATION_ERROR,
+            errors.DOCUMENTED,
+            errors.REQUIRES_REPAIR,
+        ),
+        name,
+    )
 
 
 class ChainL(Combinator):
@@ -59,14 +71,16 @@ class ChainL(Combinator):
 
     def parse(
         self,
-        analyzer: ASTAnalyzer,
-        current: TokenType,
+        analyzer: Any,
+        current: TokenType | None = None,
         ignore_errors: bool = False,
     ) -> Any:
         target_node = self._get_node(analyzer)
-        parser = analyzer.parser
+        parser = self._get_parser(analyzer)
+        if current is None:
+            current = parser.current(node=target_node)
         saved_pos = parser.pos
-        saved_level = getattr(analyzer, "current_level", 0)
+        saved_level = analyzer.current_level
 
         # 1. Parsear el primer elemento
         try:
@@ -80,11 +94,10 @@ class ChainL(Combinator):
 
         if left is None:
             parser.restore(saved_pos, node=target_node)
-            if hasattr(analyzer, "current_level"):
-                analyzer.current_level = saved_level
+            analyzer.current_level = saved_level
             if ignore_errors:
                 return None
-            err_code = codes.CodeError((2, 1, 1, 0, 1), "ChainL.ElementExpected")
+            err_code = _chain_error("ChainL.ElementExpected")
             error.ParserError(
                 f"ChainL esperaba un operando inicial pero falló en '{current.value}'.",
                 err_code,
@@ -94,7 +107,7 @@ class ChainL(Combinator):
         # 2. Plegado secuencial hacia la izquierda mientras haya operador + elemento
         while parser.not_empty():
             loop_pos = parser.pos
-            loop_level = getattr(analyzer, "current_level", 0)
+            loop_level = analyzer.current_level
 
             op_token = parser.consume(node=target_node)
             try:
@@ -109,17 +122,15 @@ class ChainL(Combinator):
             if op_res is None:
                 # El siguiente token no es el operador esperado; revertir y salir con éxito
                 parser.restore(loop_pos, node=target_node)
-                if hasattr(analyzer, "current_level"):
-                    analyzer.current_level = loop_level
+                analyzer.current_level = loop_level
                 break
 
             if not parser.not_empty():
                 parser.restore(loop_pos, node=target_node)
-                if hasattr(analyzer, "current_level"):
-                    analyzer.current_level = loop_level
+                analyzer.current_level = loop_level
                 if ignore_errors:
                     break
-                err_code = codes.CodeError((2, 1, 1, 0, 1), "ChainL.IncompleteChain")
+                err_code = _chain_error("ChainL.IncompleteChain")
                 error.ParserError(
                     f"ChainL: se esperaba un operando después del operador '{op_token.value}'.",
                     err_code,
@@ -138,11 +149,10 @@ class ChainL(Combinator):
 
             if right_res is None:
                 parser.restore(loop_pos, node=target_node)
-                if hasattr(analyzer, "current_level"):
-                    analyzer.current_level = loop_level
+                analyzer.current_level = loop_level
                 if ignore_errors:
                     break
-                err_code = codes.CodeError((2, 1, 1, 0, 1), "ChainL.ElementExpectedAfterOp")
+                err_code = _chain_error("ChainL.ElementExpectedAfterOp")
                 error.ParserError(
                     f"ChainL: operando no válido tras operador '{op_token.value}'.",
                     err_code,
@@ -152,8 +162,12 @@ class ChainL(Combinator):
             left = self._apply_reduce(left, op_res, right_res)
 
         if target_node and config.PARSER_ADD_INFO:
-            target_node.note(f"ChainL completado exitosamente: {left}", "Success")
+            target_node.note(f"ChainL completado exitosamente: {left}", "success")
 
+        if isinstance(left, ArithmeticNode):
+            return left.to_ast_node()
+        if isinstance(left, TokenType):
+            return to_arithmetic_node(left).to_ast_node()
         return left
 
     def __repr__(self) -> str:
@@ -196,14 +210,16 @@ class ChainR(Combinator):
 
     def parse(
         self,
-        analyzer: ASTAnalyzer,
-        current: TokenType,
+        analyzer: Any,
+        current: TokenType | None = None,
         ignore_errors: bool = False,
     ) -> Any:
         target_node = self._get_node(analyzer)
-        parser = analyzer.parser
+        parser = self._get_parser(analyzer)
+        if current is None:
+            current = parser.current(node=target_node)
         saved_pos = parser.pos
-        saved_level = getattr(analyzer, "current_level", 0)
+        saved_level = analyzer.current_level
 
         # 1. Parsear el primer elemento
         try:
@@ -217,11 +233,10 @@ class ChainR(Combinator):
 
         if first_elem is None:
             parser.restore(saved_pos, node=target_node)
-            if hasattr(analyzer, "current_level"):
-                analyzer.current_level = saved_level
+            analyzer.current_level = saved_level
             if ignore_errors:
                 return None
-            err_code = codes.CodeError((2, 1, 1, 0, 1), "ChainR.ElementExpected")
+            err_code = _chain_error("ChainR.ElementExpected")
             error.ParserError(
                 f"ChainR esperaba un operando inicial pero falló en '{current.value}'.",
                 err_code,
@@ -234,7 +249,7 @@ class ChainR(Combinator):
         # 2. Recolectar la secuencia completa de operadores y elementos
         while parser.not_empty():
             loop_pos = parser.pos
-            loop_level = getattr(analyzer, "current_level", 0)
+            loop_level = analyzer.current_level
 
             op_token = parser.consume(node=target_node)
             try:
@@ -248,17 +263,15 @@ class ChainR(Combinator):
 
             if op_res is None:
                 parser.restore(loop_pos, node=target_node)
-                if hasattr(analyzer, "current_level"):
-                    analyzer.current_level = loop_level
+                analyzer.current_level = loop_level
                 break
 
             if not parser.not_empty():
                 parser.restore(loop_pos, node=target_node)
-                if hasattr(analyzer, "current_level"):
-                    analyzer.current_level = loop_level
+                analyzer.current_level = loop_level
                 if ignore_errors:
                     break
-                err_code = codes.CodeError((2, 1, 1, 0, 1), "ChainR.IncompleteChain")
+                err_code = _chain_error("ChainR.IncompleteChain")
                 error.ParserError(
                     f"ChainR: se esperaba un operando después del operador '{op_token.value}'.",
                     err_code,
@@ -277,11 +290,10 @@ class ChainR(Combinator):
 
             if right_res is None:
                 parser.restore(loop_pos, node=target_node)
-                if hasattr(analyzer, "current_level"):
-                    analyzer.current_level = loop_level
+                analyzer.current_level = loop_level
                 if ignore_errors:
                     break
-                err_code = codes.CodeError((2, 1, 1, 0, 1), "ChainR.ElementExpectedAfterOp")
+                err_code = _chain_error("ChainR.ElementExpectedAfterOp")
                 error.ParserError(
                     f"ChainR: operando no válido tras operador '{op_token.value}'.",
                     err_code,
@@ -297,8 +309,12 @@ class ChainR(Combinator):
             acc = self._apply_reduce(elements[i], operators[i], acc)
 
         if target_node and config.PARSER_ADD_INFO:
-            target_node.note(f"ChainR completado exitosamente: {acc}", "Success")
+            target_node.note(f"ChainR completado exitosamente: {acc}", "success")
 
+        if isinstance(acc, ArithmeticNode):
+            return acc.to_ast_node()
+        if isinstance(acc, TokenType):
+            return to_arithmetic_node(acc).to_ast_node()
         return acc
 
     def __repr__(self) -> str:

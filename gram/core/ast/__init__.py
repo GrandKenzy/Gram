@@ -15,7 +15,9 @@ from gram.core.ast.analyzer import ASTAnalyzer
 from gram.core.ast.nodes import (
     ASTNode,
     ASTProgram,
+    ExprResult,
     Identifier,
+    RefNode,
     generate_file_tree,
 )
 
@@ -23,6 +25,8 @@ __all__ = [
     "ASTAnalyzer",
     "ASTNode",
     "ASTProgram",
+    "ExprResult",
     "Identifier",
+    "RefNode",
     "generate_file_tree",
 ]

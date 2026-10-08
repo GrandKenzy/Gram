@@ -65,15 +65,21 @@ class MatchKeyword(Combinator):
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(f"MatchKeyword: esperando {self.keyword!r}", "Normal")
 
         checkpoint = parser.savepoint(node=target_node)
 
         if current is None:
             if not parser.not_empty():
+                self._record_failure(
+                    analyzer,
+                    f"palabra clave {self.keyword!r}",
+                    checkpoint.pos,
+                    None,
+                )
                 if not ignore_errors:
-                    if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                    if config.PARSER_ADD_ERROR:
                         target_node.note(
                             f"Error sintáctico: se esperaba palabra clave {self.keyword!r} pero se alcanzó EOF",
                             "Error",
@@ -89,20 +95,26 @@ class MatchKeyword(Combinator):
             tok = current
 
         current_token = tok.token
-        current_name = getattr(current_token, "name", str(current_token))
+        current_name = current_token.name
 
         # 1. El token debe ser de categoría KEYWORD
         if current_token != Token.KEYWORD and current_name != "KEYWORD":
+            self._record_failure(
+                analyzer,
+                f"palabra clave {self.keyword!r}",
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"Se recibió {current_name!r}; se esperaba KEYWORD",
                     "Warn",
                 )
 
             if not ignore_errors:
-                if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                if config.PARSER_ADD_ERROR:
                     target_node.note(
                         f"Error sintáctico: se esperaba palabra clave {self.keyword!r}",
                         "Error",
@@ -118,9 +130,15 @@ class MatchKeyword(Combinator):
 
         # 2. La palabra clave debe existir en el catálogo global del lexer
         if not words.keyword_exists(self.keyword):
+            self._record_failure(
+                analyzer,
+                f"palabra clave registrada {self.keyword!r}",
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
 
-            if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+            if config.PARSER_ADD_ERROR:
                 target_node.note(
                     f"La palabra clave {self.keyword!r} no está registrada en el lexer",
                     "Error",
@@ -136,16 +154,22 @@ class MatchKeyword(Combinator):
 
         # 3. Coincidencia exacta del valor textual de la palabra clave
         if tok.value != self.keyword:
+            self._record_failure(
+                analyzer,
+                f"palabra clave {self.keyword!r}",
+                checkpoint.pos,
+                tok,
+            )
             parser.restore(checkpoint, node=target_node)
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"Keyword no coincide: se esperaba {self.keyword!r}, se recibió {tok.value!r}",
                     "Warn",
                 )
 
             if not ignore_errors:
-                if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                if config.PARSER_ADD_ERROR:
                     target_node.note(
                         f"Discrepancia en palabra clave: {self.keyword!r} != {tok.value!r}",
                         "Error",
@@ -163,7 +187,7 @@ class MatchKeyword(Combinator):
         if current is not None and parser.not_empty() and parser.tokens[parser.pos] is current:
             parser.advance()
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"MatchKeyword exitoso: {self.keyword!r}",
                 "Success",

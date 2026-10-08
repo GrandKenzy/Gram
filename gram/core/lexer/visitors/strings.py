@@ -29,7 +29,7 @@ def process(
     start_line = lexer.line
     quote = char
 
-    if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_INFO:
         node.note(
             f'Inicio de literal de cadena con delimitador {quote!r}',
             'normal',
@@ -37,17 +37,17 @@ def process(
 
     # Detección de triple comilla para docstring
     if (
-        getattr(config, 'LEXER_SUPPORT_DOCSTRINGS', True)
+        config.LEXER_SUPPORT_DOCSTRINGS
         and lexer.currline[lexer.col:lexer.col + 3] == quote * 3
     ):
         node.name = 'VISITOR-DOCSTRING'
-        if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+        if config.LEXER_ADD_INFO:
             node.note('Triple comilla detectada; procesando docstring multilínea', 'success')
 
         return process_docstring(lexer, quote, start, start_line, node)
 
     node.name = 'VISITOR-STRING'
-    if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_INFO:
         node.note('Procesando cadena estándar', 'success')
 
     return process_string(lexer, quote, start, start_line, node)
@@ -71,7 +71,7 @@ def process_string(
 
         if char == '\\':
             if lexer.col >= len(lexer.currline):
-                if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(node, 'note'):
+                if config.LEXER_ADD_ERROR:
                     node.note('Barra invertida sin carácter de escape al final de la línea', 'error')
                 error.LexerError(
                     f'Cadena sin cerrar en línea {start_line}, columna {start}',
@@ -86,7 +86,7 @@ def process_string(
 
         if char == quote:
             value = ''.join(chars)
-            if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+            if config.LEXER_ADD_INFO:
                 node.note(f'Cadena cerrada con éxito: {value!r}', 'success')
 
             return TokenType(
@@ -98,7 +98,7 @@ def process_string(
 
         chars.append(char)
 
-    if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_ERROR:
         node.note('Fin de línea alcanzado sin encontrar comilla de cierre', 'error')
 
     error.LexerError(
@@ -129,7 +129,7 @@ def process_docstring(
         ):
             lexer.col += 3
             value = ''.join(chars)
-            if getattr(config, 'LEXER_ADD_INFO', True) and hasattr(node, 'note'):
+            if config.LEXER_ADD_INFO:
                 node.note(f'Docstring completado ({len(value)} caracteres)', 'success')
 
             return TokenType(
@@ -160,7 +160,7 @@ def process_docstring(
 
         chars.append(char)
 
-    if getattr(config, 'LEXER_ADD_ERROR', True) and hasattr(node, 'note'):
+    if config.LEXER_ADD_ERROR:
         node.note('Fin de archivo alcanzado sin cerrar docstring', 'error')
 
     error.LexerError(

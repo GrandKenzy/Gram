@@ -96,7 +96,7 @@ class Alt(Combinator):
         parser = self._get_parser(analyzer)
         target_node = self._get_node(analyzer)
 
-        if target_node and config.PARSER_ADD_INFO:
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"ALT iniciado con {len(self.combinators)} alternativas",
                 "Normal",
@@ -105,7 +105,7 @@ class Alt(Combinator):
         checkpoint = parser.savepoint(node=target_node)
 
         for index, combinator in enumerate(self.combinators, start=1):
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"Probando alternativa {index}: {combinator!r}",
                     "Normal",
@@ -122,7 +122,7 @@ class Alt(Combinator):
                     ignore_errors=True,
                 )
             except CutFlowSignal:
-                if target_node and getattr(config, "PARSER_ADD_INFO", True):
+                if config.PARSER_ADD_INFO:
                     target_node.note("Corte de flujo (CutFlowSignal) detectado en alternativa.", "Advice")
                 parser.restore(checkpoint, node=target_node)
                 if not ignore_errors:
@@ -139,7 +139,7 @@ class Alt(Combinator):
                 if isinstance(res, OptResult) and not res.matched:
                     continue
 
-                if target_node and getattr(config, "PARSER_ADD_INFO", True):
+                if config.PARSER_ADD_INFO:
                     target_node.note(
                         f"Alternativa {index} aceptada",
                         "Success",
@@ -147,7 +147,7 @@ class Alt(Combinator):
 
                 return res
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"Alternativa {index} rechazada",
                     "Advice",
@@ -159,19 +159,31 @@ class Alt(Combinator):
         if not ignore_errors:
             tried = [repr(c).splitlines()[0].strip() for c in self.combinators]
             tried_str = ", ".join(tried)
-            curr_tok = current or parser.peek()
-            tok_info = f" en {curr_tok}" if curr_tok else ""
+            failure_context = parser.control.failure_context()
+            tok_info = "" if failure_context else (
+                f" en {current or parser.peek()}"
+                if current or parser.peek()
+                else ""
+            )
 
-            if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+            if config.PARSER_ADD_ERROR:
                 target_node.note(
-                    f"Ninguna alternativa coincidió{tok_info}",
+                    f"Ninguna alternativa coincidió{tok_info}"
+                    + (f". {failure_context}" if failure_context else ""),
                     "Error",
                 )
+
+            caution = (
+                f"Ninguna alternativa sintáctica coincidió{tok_info}. "
+                f"Candidatos: [{tried_str}].",
+            )
+            if failure_context:
+                caution += (failure_context,)
 
             error.ParserError(
                 "Alternativa no encontrada",
                 errors.PARSER_UNEXPECTED_TOKEN,
-                f"Ninguna alternativa sintáctica coincidió{tok_info}. Candidatos: [{tried_str}].",
+                *caution,
             ).raise_error()
 
         return None

@@ -16,18 +16,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from gram import config, errors
-from gram.core.ast.nodes import ASTNode, ASTProgram
+from gram.core.ast.nodes import ASTNode, ASTProgram, RefNode
 from gram.core.combinators.additional_stack import CombinatorAdditionalStack
 from gram.core.combinators.alternative import Alt
 from gram.core.combinators.base import Combinator, RuleType
 from gram.core.combinators.defaults import DECLARATION, PROGRAM
 from gram.core.combinators.match import MatchToken
-from gram.core.combinators.mods import HARDCODED_MODS, is_hardcoded_mod
+from gram.core.combinators.mods import is_hardcoded_mod
 from gram.core.combinators.reference import Ref
 from gram.core.combinators.tokenize import Tokenize
 from gram.core.lexer.tokens import Token, TokenType
 from gram.core.watcher import Watcher
 from gram.utilities import error
+from gram.utilities.info import StackInfo
 
 if TYPE_CHECKING:
     from gram.core.parser import Parser
@@ -66,34 +67,47 @@ class ASTAnalyzer:
         """
         self.parser: Parser = parser
         self.grammar: dict[RuleType, Combinator] = grammar
-        self._root_node: InfoNode | None = (
-            node if node is not None
-            else getattr(parser, "node", None)
+        self.stack: StackInfo = StackInfo(
+            "ast-log",
+            "AST",
+            "Registro y diagnóstico del procesamiento del AST",
+            expose_nodes=True,
+            generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR,
+            generate_log_file=config.INFO_GENERATE_LOGFILE,
+        )
+        parent_node = node or parser.node
+        self.stack.main = parent_node.node(
+            "AST",
+            "Procesamiento y construcción del árbol sintáctico",
+            priority=2,
         )
 
         self.declarator: Alt | None = None
-        self.program: Combinator | None = None
         self.comments: list[TokenType] = []
         self.current_level: int = 0
         self.watcher: Watcher = Watcher()
         self.parser.watcher = self.watcher
 
-        if self._root_node and getattr(config, "PARSER_ADD_INFO", True):
-            self._root_node.note("Inicializando ASTAnalyzer", "Normal")
-            self._root_node.note(
+        if config.PARSER_ADD_INFO:
+            self.stack.note("Inicializando ASTAnalyzer", "normal")
+            self.stack.note(
                 f"Se recibieron {len(grammar)} reglas gramaticales",
-                "Normal",
+                "normal",
             )
 
     @property
-    def node(self) -> InfoNode | None:
+    def node(self) -> InfoNode:
         """
         EN: Active telemetry node (automatically retrieves child node from scoped_node if active).
         ES: Nodo de telemetría activo (devuelve automáticamente el sub-nodo hijo en scoped_node si está activo).
         """
-        if hasattr(self.parser, "control"):
-            return self.parser.control.node
-        return getattr(self.parser, "node", None)
+        return self.parser.node
+
+    @staticmethod
+    def _rule_name(rule: RuleType) -> str:
+        if isinstance(rule, str):
+            return rule
+        return rule.name or rule.__name__
 
     def is_started(self, node: InfoNode | None = None) -> None:
         """
@@ -111,33 +125,32 @@ class ASTAnalyzer:
         prog_rule = self.grammar.get(PROGRAM)
         if prog_rule is None:
             for key, val in self.grammar.items():
-                if getattr(key, "name", str(key)) == "PROGRAM":
+                if self._rule_name(key) == "PROGRAM":
                     prog_rule = val
                     break
 
         if prog_rule is None:
-            if target_node and getattr(config, "PARSER_ADD_ERROR", True):
-                target_node.note("No se encontró la regla PROGRAM", "Error")
+            if config.PARSER_ADD_ERROR:
+                target_node.note("No se encontró la regla PROGRAM", "error")
             error.ParserError(
                 "Regla PROGRAM no encontrada",
                 errors.PROGRAM_RULE_NOT_FOUND,
                 "No se encontró la regla PROGRAM para inicializar el programa.",
             ).raise_error()
+            return
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note(f"Regla PROGRAM encontrada: {prog_rule.type()}", "Success")
+        if config.PARSER_ADD_INFO:
+            target_node.note(f"Regla PROGRAM encontrada: {prog_rule.type()}", "success")
 
         if prog_rule.type() not in ("Many", "Some"):
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     f"PROGRAM no utiliza un combinador Many o Some: {prog_rule.type()}",
-                    "Advice",
+                    "advice",
                 )
 
-        self.program = prog_rule
-
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note("Regla PROGRAM configurada correctamente", "Success")
+        if config.PARSER_ADD_INFO:
+            target_node.note("Regla PROGRAM configurada correctamente", "success")
 
     def get_declaration(self, node: InfoNode | None = None) -> None:
         """
@@ -155,36 +168,38 @@ class ASTAnalyzer:
         decl_rule = self.grammar.get(DECLARATION)
         if decl_rule is None:
             for key, val in self.grammar.items():
-                if getattr(key, "name", str(key)) == "DECLARATION":
+                if self._rule_name(key) == "DECLARATION":
                     decl_rule = val
                     break
 
         if decl_rule is None:
-            if target_node and getattr(config, "PARSER_ADD_ERROR", True):
-                target_node.note("No se encontró la regla DECLARATION", "Error")
+            if config.PARSER_ADD_ERROR:
+                target_node.note("No se encontró la regla DECLARATION", "error")
             error.ParserError(
                 "Regla DECLARATION no encontrada",
                 errors.DECLARATION_RULE_NOT_FOUND,
                 "No se encontró el declarador DECLARATION en la gramática.",
             ).raise_error()
+            return
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 f"Declarador DECLARATION encontrado: {decl_rule.type()}",
-                "Success",
+                "success",
             )
 
         if not isinstance(decl_rule, Alt):
-            if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+            if config.PARSER_ADD_ERROR:
                 target_node.note(
                     f"DECLARATION no es de tipo Alt: {decl_rule.type()}",
-                    "Error",
+                    "error",
                 )
             error.ParserError(
                 "Tipo de DECLARATION inválido",
                 errors.DECLARATOR_INVALID_TYPE,
                 "El declarador DECLARATION solo admite el combinador Alt.",
             ).raise_error()
+            return
 
         self.declarator = decl_rule
 
@@ -201,30 +216,32 @@ class ASTAnalyzer:
         """
         target_node = node or self.node
 
-        if self.declarator is None:
-            if target_node and getattr(config, "PARSER_ADD_ERROR", True):
-                target_node.note("No existe declarador para validar", "Error")
+        declarator = self.declarator
+        if declarator is None:
+            if config.PARSER_ADD_ERROR:
+                target_node.note("No existe declarador para validar", "error")
             error.ParserError(
                 "Declarador no disponible",
                 errors.DECLARATION_RULE_NOT_FOUND,
                 "No existe un declarador válido configurado para validar.",
             ).raise_error()
+            return
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note("Validando elementos de DECLARATION", "Normal")
+        if config.PARSER_ADD_INFO:
+            target_node.note("Validando elementos de DECLARATION", "normal")
 
-        for declaration in self.declarator.items():
+        for declaration in declarator.items():
             if isinstance(declaration, Ref):
-                if target_node and getattr(config, "PARSER_ADD_INFO", True):
+                if config.PARSER_ADD_INFO:
                     target_node.note(
                         f"Referencia de declaración encontrada: {declaration}",
-                        "Success",
+                        "success",
                     )
             else:
-                if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+                if config.PARSER_ADD_ERROR:
                     target_node.note(
                         f"Elemento inválido en DECLARATION: {declaration}",
-                        "Error",
+                        "error",
                     )
                 error.ParserError(
                     "Elemento de DECLARATION inválido",
@@ -232,8 +249,8 @@ class ASTAnalyzer:
                     "El declarador solo admite objetos tipo Ref.",
                 ).raise_error()
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note("DECLARATION validado correctamente", "Success")
+        if config.PARSER_ADD_INFO:
+            target_node.note("DECLARATION validado correctamente", "success")
 
     def process(self, node: InfoNode | None = None) -> ASTProgram:
         """
@@ -246,41 +263,45 @@ class ASTAnalyzer:
         Returns:
             ASTProgram: Structured abstract syntax tree with statements, comments, and levels.
         """
-        target_node = node or self.node
+        with self.parser.use_node(node or self.stack):
+            return self._process()
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note("Iniciando procesamiento del AST", "Normal")
+    def _process(self) -> ASTProgram:
+        target_node = self.node
 
-        self.is_started(node=target_node)
-        self.get_declaration(node=target_node)
-        self.fix_declaration(node=target_node)
+        if config.PARSER_ADD_INFO:
+            target_node.note("Iniciando procesamiento del AST", "normal")
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
+        self.is_started()
+        self.get_declaration()
+        self.fix_declaration()
+
+        if config.PARSER_ADD_INFO:
             target_node.note(
                 "Gramática inicial validada; iniciando recorrido de tokens",
-                "Success",
+                "success",
             )
 
         statements: list[ASTNode] = []
 
         while self.parser.not_empty():
-            current = self.parser.peek(node=target_node)
+            current = self.parser.peek()
             if current is None:
                 break
 
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
-                target_node.note(f"Analizando token: {current}", "Normal")
+            if config.PARSER_ADD_INFO:
+                target_node.note(f"Analizando token: {current}", "normal")
 
-            if self.quit_trash(current, node=target_node):
-                if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if self.quit_trash(current):
+                if config.PARSER_ADD_INFO:
                     target_node.note(
                         f"Token descartado: {current.token.name}",
-                        "Advice",
+                        "advice",
                     )
-                self.parser.consume(node=target_node)
+                self.parser.consume()
                 continue
 
-            decl_node = self.match_with_declaration(current, node=target_node)
+            decl_node = self.match_with_declaration(current)
             if decl_node is not None:
                 if isinstance(decl_node, ASTNode):
                     statements.append(decl_node)
@@ -289,8 +310,8 @@ class ASTAnalyzer:
                         if isinstance(item, ASTNode):
                             statements.append(item)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note("No quedan tokens por procesar", "Success")
+        if config.PARSER_ADD_INFO:
+            target_node.note("No quedan tokens por procesar", "success")
 
         return ASTProgram(
             body=statements,
@@ -299,11 +320,13 @@ class ASTAnalyzer:
 
     def process_rule(
         self,
-        rule: Any,
+        rule: RuleType,
         grammar: Combinator,
         current: TokenType | None = None,
         ignore_errors: bool = False,
         node: InfoNode | None = None,
+        generate_node: bool = False,
+        node_name: str | None = None,
     ) -> Any:
         """
         EN: Executes a grammar rule and wraps its result into an ASTNode (bypasses wrapping for structural rules).
@@ -315,16 +338,18 @@ class ASTAnalyzer:
             current (TokenType | None, optional): Current token positioned under cursor.
             ignore_errors (bool, optional): If True, suppresses exceptions upon mismatch. Defaults to False.
             node (InfoNode | None, optional): Target telemetry node.
+            generate_node (bool, optional): If True, wraps the rule result in a RefNode.
+            node_name (str | None, optional): Optional name for a generated RefNode.
 
         Returns:
             Any: Generated ASTNode or raw result if the rule is structural.
         """
         target_node = node or self.node
         start_level = self.current_level
-        rule_name = getattr(rule, "name", str(rule))
+        rule_name = self._rule_name(rule)
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note(f"Procesando regla {rule_name}", "Normal")
+        if config.PARSER_ADD_INFO:
+            target_node.note(f"Procesando regla {rule_name}", "normal")
 
         result = self.process_combinator(
             grammar,
@@ -333,10 +358,12 @@ class ASTAnalyzer:
         )
 
         if result is not None:
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
-                target_node.note(f"Regla {rule_name} aceptada", "Success")
+            if config.PARSER_ADD_INFO:
+                target_node.note(f"Regla {rule_name} aceptada", "success")
 
-            is_structural = getattr(rule, "is_structural", False)
+            is_structural = (
+                False if isinstance(rule, str) else rule.is_structural or rule.ignore
+            )
             if not is_structural and (
                 rule_name in (
                     "ENDLINE",
@@ -351,16 +378,24 @@ class ASTAnalyzer:
                 is_structural = True
 
             if not is_structural:
-                return ASTNode.from_rule_result(
+                result = ASTNode.from_rule_result(
                     rule=rule,
                     result=result,
                     level=start_level,
                 )
 
+            if generate_node:
+                return RefNode.from_result(
+                    rule=rule,
+                    result=result,
+                    level=start_level,
+                    name=node_name or "RefNode",
+                )
+
             return result
         else:
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
-                target_node.note(f"Regla {rule_name} no coincidió", "Advice")
+            if config.PARSER_ADD_INFO:
+                target_node.note(f"Regla {rule_name} no coincidió", "advice")
             return None
 
     def process_combinator(
@@ -383,7 +418,7 @@ class ASTAnalyzer:
         """
         self.watcher.enter_combinator(combinator, current)
         try:
-            if getattr(config, "PARSER_ADD_INFO", True) and self.node is not None:
+            if config.PARSER_ADD_INFO:
                 child = self.node.node(
                     combinator.type(),
                     f"{combinator.type()} ← {current}",
@@ -424,15 +459,7 @@ class ASTAnalyzer:
             )
 
         # 3. Soporte transparente para Custom Mods derivados de Combinator
-        if isinstance(combinator, Combinator) and hasattr(combinator, "parse"):
-            return combinator.parse(self, current, ignore_errors=ignore_errors)
-
-        # 4. Combinador no soportado
-        error.ParserError(
-            "Combinador no soportado",
-            errors.COMBINATOR_UNSUPPORTED,
-            f"El combinador {combinator!r} no está soportado por el motor de análisis.",
-        ).raise_error()
+        return combinator.parse(self, current, ignore_errors=ignore_errors)
 
     def quit_trash(self, current: TokenType, node: InfoNode | None = None) -> bool:
         """
@@ -451,10 +478,10 @@ class ASTAnalyzer:
         if token_name == "COMMENT":
             self.comments.append(current)
             target_node = node or self.node
-            if target_node and getattr(config, "PARSER_ADD_INFO", True):
+            if config.PARSER_ADD_INFO:
                 target_node.note(
                     "COMMENT almacenado en la colección de comentarios",
-                    "Advice",
+                    "advice",
                 )
             return True
 
@@ -477,23 +504,25 @@ class ASTAnalyzer:
         """
         target_node = node or self.node
 
-        if self.declarator is None:
-            if target_node and getattr(config, "PARSER_ADD_ERROR", True):
+        declarator = self.declarator
+        if declarator is None:
+            if config.PARSER_ADD_ERROR:
                 target_node.note(
                     "No existe DECLARATION para realizar matching",
-                    "Error",
+                    "error",
                 )
             error.ParserError(
                 "Declarador no disponible",
                 errors.DECLARATION_RULE_NOT_FOUND,
                 "No existe un declarador disponible para procesar alternativas de sentencias.",
             ).raise_error()
+            return None
 
-        if target_node and getattr(config, "PARSER_ADD_INFO", True):
-            target_node.note(f"Procesando DECLARATION con {current}", "Normal")
+        if config.PARSER_ADD_INFO:
+            target_node.note(f"Procesando DECLARATION con {current}", "normal")
 
         return self.process_combinator(
-            self.declarator,
+            declarator,
             current,
             ignore_errors=False,
         )

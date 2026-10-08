@@ -22,18 +22,17 @@ ES:
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Iterator, Sequence
+from typing import TYPE_CHECKING, Any, Generator, Sequence
 
-from gram import config, errors
+from gram import config
+from gram.core.lexer.items import TokenStream
+from gram.core.lexer.tokens import CustomToken, Token, TokenType
 from gram.core.parser.checkpoint import Checkpoint
-from gram.utilities import error
+from gram.utilities import Format, error
 from gram.utilities.info import Node as InfoNode, StackInfo
 
 if TYPE_CHECKING:
     from gram.codes import CodeError
-    from gram.core.lexer.items import TokenStream
-    from gram.core.lexer.tokens import Token, TokenType
-    from gram.utilities.info import Node
 
 
 class ParseControl:
@@ -52,78 +51,42 @@ class ParseControl:
     def __init__(
         self,
         tokens: Sequence[TokenType] | TokenStream | None = None,
-        node: Node | StackInfo | None = None,
-        stack: StackInfo | Node | None = None,
-        default_node_name: str = "PARSER-INFO-NODE",
     ) -> None:
         """
-        EN: Initialize a ParseControl instance with tokens and optional telemetry target.
-        ES: Inicializa una instancia de ParseControl con tokens y nodo de telemetría opcional.
+        EN: Initialize parser state, token stream, and telemetry stack.
+        ES: Inicializa el estado del parser, el flujo de tokens y la pila de telemetría.
 
         Args:
             tokens: Token sequence or TokenStream to control.
                     Flujo de tokens o TokenStream a controlar.
-            node: Target external telemetry Node or StackInfo.
-                  Nodo o StackInfo de telemetría externo de destino.
-            stack: Optional external telemetry stack (alias for `node`).
-                   Pila de telemetría externa opcional (alias de `node`).
-            default_node_name: Name assigned to default node when no external target is given.
-                               Nombre asignado al nodo por defecto cuando no se pasa uno externo.
         """
-        self._tokens: list[TokenType] = []
-        if tokens is not None:
-            self._bind_tokens_internal(tokens)
+        self._tokens: list[TokenType] = self._normalize_tokens(tokens)
 
         self._pos: int = 0
         self._virtual_pos: int = 0
         self.watcher: Any = None
         self._errors: list[error.ParserError] = []
         self._bracket_depth: int = 0
+        self._furthest_failure_pos: int = -1
+        self._failure_expectations: set[str] = set()
+        self._failure_token: TokenType | None = None
 
-        # Gestión de nodos y telemetría
-        from gram.core.parser.stack import stack as default_parser_stack
+        self._stack: StackInfo = StackInfo(
+            'parser-log',
+            'PARSER',
+            'Registro y diagnóstico del analizador sintáctico',
+            expose_nodes=True,
+            generate_log_file=config.INFO_GENERATE_LOGFILE,
+            generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR,
+        )
+        self._default_node: InfoNode = self._stack.node(
+            "PARSER-INFO-NODE",
+            f"Control de parsing inicializado ({len(self._tokens)} tokens)",
+            priority=2,
+        )
+        self._target_node: InfoNode | None = None
 
-        target_input = node if node is not None else stack
-
-        if target_input is not None:
-            if isinstance(target_input, StackInfo):
-                self._stack: StackInfo | None = target_input
-                self._default_node: InfoNode = target_input.node(
-                    default_node_name,
-                    f"Control de parsing inicializado ({len(self._tokens)} tokens)",
-                    priority=2,
-                )
-                self._target_node: InfoNode | None = self._default_node
-            elif isinstance(target_input, InfoNode):
-                self._stack = None
-                self._default_node = target_input
-                self._target_node = target_input
-            elif hasattr(target_input, 'main') and isinstance(target_input.main, InfoNode):
-                self._stack = target_input if isinstance(target_input, StackInfo) else None
-                self._default_node = target_input.main
-                self._target_node = target_input.main
-            else:
-                self._stack = None
-                self._default_node = target_input  # type: ignore
-                self._target_node = target_input  # type: ignore
-        else:
-            default_parser_stack = StackInfo(
-                'parser-log',
-                'PARSER',
-                'Registro y diagnóstico del analizador sintáctico',
-                expose_nodes=True,
-                generate_log_file=config.INFO_GENERATE_LOGFILE,
-                generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR
-            )
-            self._stack = default_parser_stack
-            self._default_node = self._stack.node(
-                default_node_name,
-                f"Control de parsing inicializado ({len(self._tokens)} tokens)",
-                priority=2,
-            )
-            self._target_node = None
-
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self.note(
                 f"ParseControl inicializado con {len(self._tokens)} tokens",
                 "success",
@@ -133,15 +96,19 @@ class ParseControl:
     # VINCULACIÓN Y FLUJO DE TOKENS
     # ==========================================================================
 
-    def _bind_tokens_internal(self, tokens: Sequence[TokenType] | TokenStream) -> None:
+    @staticmethod
+    def _normalize_tokens(
+        tokens: Sequence[TokenType] | TokenStream | None,
+    ) -> list[TokenType]:
         """
         EN: Extract token list from sequence or TokenStream.
         ES: Extrae la lista de tokens tanto de secuencias como de TokenStream.
         """
-        if hasattr(tokens, 'tokens'):
-            self._tokens = list(tokens.tokens)
-        else:
-            self._tokens = list(tokens)
+        if tokens is None:
+            return []
+        if isinstance(tokens, TokenStream):
+            return list(tokens.tokens)
+        return list(tokens)
 
     @property
     def tokens(self) -> list[TokenType]:
@@ -164,15 +131,58 @@ class ParseControl:
             tokens: New token sequence or TokenStream.
                     Nueva secuencia de tokens o TokenStream.
         """
-        self._bind_tokens_internal(tokens)
+        self._tokens = self._normalize_tokens(tokens)
         self._pos = 0
         self._virtual_pos = 0
         self._bracket_depth = 0
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        self.clear_failures()
+        if config.PARSER_ADD_INFO:
             self.note(
                 f"Nuevo flujo de tokens vinculado ({len(self._tokens)} tokens)",
                 "normal",
             )
+
+    def clear_failures(self) -> None:
+        """Reset speculative syntax failures before a new parsing operation."""
+        self._furthest_failure_pos = -1
+        self._failure_expectations.clear()
+        self._failure_token = None
+
+    def record_failure(
+        self,
+        expected: str,
+        position: int,
+        token: TokenType | None,
+    ) -> None:
+        """Remember the most specific mismatch encountered during backtracking."""
+        if position > self._furthest_failure_pos:
+            self._furthest_failure_pos = position
+            self._failure_expectations = {expected}
+            self._failure_token = token
+        elif position == self._furthest_failure_pos:
+            self._failure_expectations.add(expected)
+            if self._failure_token is None and token is not None:
+                self._failure_token = token
+
+    def failure_context(self) -> str | None:
+        """Format the furthest mismatch for inclusion in a top-level parser error."""
+        if self._furthest_failure_pos < 0:
+            return None
+
+        expected = " o ".join(sorted(self._failure_expectations))
+        token = self._failure_token
+        if token is None:
+            actual = f"fin de entrada (posición {self._furthest_failure_pos})"
+        elif token.token == Token.EOF:
+            actual = (
+                f"EOF en línea {token.line}, columna {token.col} "
+                f"(posición {self._furthest_failure_pos})"
+            )
+        else:
+            actual = f"{token.token.name} ({token.value!r})"
+            actual += f" en línea {token.line}, columna {token.col}"
+            actual += f" (posición {self._furthest_failure_pos})"
+        return f"Fallo más profundo: se esperaba {expected}; se encontró {actual}."
 
     # ==========================================================================
     # CURSORES Y ACCESO POSICIONAL
@@ -260,7 +270,6 @@ class ParseControl:
         if self._bracket_depth <= 0:
             return
 
-        from gram.core.lexer.tokens import Token
         whitespace_types = (Token.NEWLINE, Token.INDENT, Token.DEDENT)
         while self._pos < len(self._tokens) and self._tokens[self._pos].token in whitespace_types:
             self._pos += 1
@@ -270,16 +279,12 @@ class ParseControl:
     # ==========================================================================
 
     @property
-    def stack(self) -> StackInfo | None:
+    def stack(self) -> StackInfo:
         """
         EN: Parser diagnostics and telemetry StackInfo instance.
         ES: Pila (StackInfo) de telemetría y diagnóstico del parser.
         """
         return self._stack
-
-    @stack.setter
-    def stack(self, value: StackInfo | None) -> None:
-        self._stack = value
 
     @property
     def errors(self) -> list[error.ParserError]:
@@ -318,16 +323,13 @@ class ParseControl:
             if isinstance(node, StackInfo):
                 self._stack = node
                 self._target_node = node.main
-            elif hasattr(node, 'main') and isinstance(node.main, InfoNode):
-                self._stack = node if isinstance(node, StackInfo) else None
-                self._target_node = node.main
             else:
-                self._target_node = node  # type: ignore
+                self._target_node = node
         else:
             self._target_node = None
 
-        if getattr(config, 'PARSER_ADD_INFO', True):
-            nombre = getattr(self._target_node, 'name', 'POR_DEFECTO') if self._target_node is not None else 'POR_DEFECTO'
+        if config.PARSER_ADD_INFO:
+            nombre = self._target_node.name if self._target_node is not None else "PARSER-INFO-NODE"
             self.note(f"Nodo de telemetría redirigido a '{nombre}'", 'advice')
 
     def reset_node(self) -> None:
@@ -336,11 +338,11 @@ class ParseControl:
         ES: Restaura el destino de telemetría al nodo raíz por defecto.
         """
         self._target_node = None
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self.note("Nodo de telemetría restaurado al nodo por defecto", 'advice')
 
     @contextmanager
-    def scoped_node(self, node: InfoNode | StackInfo) -> Iterator[InfoNode]:
+    def scoped_node(self, node: InfoNode | StackInfo) -> Generator[InfoNode, None, None]:
         """
         EN: Context manager to temporarily redirect telemetry and errors to a node.
         ES: Gestor de contexto para redirigir temporalmente la telemetría y errores a un nodo.
@@ -354,12 +356,7 @@ class ParseControl:
             Nodo InfoNode de destino.
         """
         previous_node = self._target_node
-        if isinstance(node, StackInfo):
-            target = node.main
-        elif hasattr(node, 'main') and isinstance(node.main, InfoNode):
-            target = node.main
-        else:
-            target = node  # type: ignore
+        target = node.main if isinstance(node, StackInfo) else node
 
         self._target_node = target
         try:
@@ -367,27 +364,19 @@ class ParseControl:
         finally:
             self._target_node = previous_node
 
-    # Alias idiomático
-    use_node = scoped_node
-
     def _get_target_node(self, node: InfoNode | StackInfo | None) -> InfoNode:
         """
         EN: Resolve effective telemetry target node, prioritizing explicit argument.
         ES: Determina el nodo destino priorizando el argumento explícito sobre el configurado.
         """
         if node is not None:
-            if isinstance(node, StackInfo):
-                return node.main
-            if hasattr(node, 'main') and isinstance(node.main, InfoNode):
-                return node.main
-            return node  # type: ignore
+            return node.main if isinstance(node, StackInfo) else node
         return self.node
 
     def note(
         self,
         message: str,
-        note_type: str = 'normal',
-        priority: int = 1,
+        note_type: Format.LogType = 'normal',
         node: InfoNode | StackInfo | None = None,
     ) -> None:
         """
@@ -399,15 +388,12 @@ class ParseControl:
                      Texto del mensaje de telemetría.
             note_type: Note category ('normal', 'success', 'advice', 'warning', 'error').
                        Tipo de nota ('normal', 'success', 'advice', 'warning', 'error').
-            priority: Telemetry priority level (default 1).
-                      Nivel de prioridad de la nota (por defecto 1).
             node: Optional specific target node override.
                   Nodo destino específico opcional.
         """
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             target = self._get_target_node(node)
-            if hasattr(target, 'note'):
-                target.note(message, note_type.lower())
+            target.note(message, note_type)
 
     def fail(
         self,
@@ -439,7 +425,7 @@ class ParseControl:
         """
         target = self._get_target_node(node)
 
-        if getattr(config, 'PARSER_ADD_ERROR', True) and hasattr(target, 'note'):
+        if config.PARSER_ADD_ERROR:
             target.note(f"Error sintáctico: {message} ({code})", 'error')
 
         err = error.ParserError(message, code, *caution)
@@ -489,9 +475,9 @@ class ParseControl:
             return True
         from gram.core.lexer.tokens import Token
         curr = self._tokens[self._pos]
-        return curr.token == Token.EOF or curr.token.name == 'EOF'
+        return curr.token == Token.EOF
 
-    def peek(self, offset: int = 0, node: InfoNode | None = None) -> TokenType | None:
+    def peek(self, offset: int = 0) -> TokenType | None:
         """
         EN: Non-destructively inspect token at relative offset from physical cursor.
         ES: Inspecciona el token ubicado a `offset` posiciones del cursor físico actual.
@@ -499,9 +485,6 @@ class ParseControl:
         Args:
             offset: Relative index offset from physical cursor (default 0).
                     Desplazamiento relativo respecto al cursor físico (por defecto 0).
-            node: Optional telemetry node for diagnostic logging.
-                  Nodo de telemetría opcional para registro de diagnóstico.
-
         Returns:
             TokenType at relative position or None if out of bounds.
             TokenType en la posición relativa o None si excede los límites.
@@ -511,7 +494,10 @@ class ParseControl:
             return self._tokens[index]
         return None
 
-    def peek_token(self, offset: int = 0, node: InfoNode | None = None) -> Token | None:
+    def peek_token(
+        self,
+        offset: int = 0,
+    ) -> Token | CustomToken | None:
         """
         EN: Return the enum Token type at relative offset from physical cursor.
         ES: Devuelve el tipo de token (Enum Token) en la posición relativa `offset`.
@@ -519,17 +505,14 @@ class ParseControl:
         Args:
             offset: Relative index offset from physical cursor (default 0).
                     Desplazamiento relativo respecto al cursor físico (por defecto 0).
-            node: Optional telemetry node for diagnostic logging.
-                  Nodo de telemetría opcional para registro de diagnóstico.
-
         Returns:
             Enum Token type or None if out of bounds.
             Tipo Enum Token o None si excede los límites.
         """
-        tok = self.peek(offset, node=node)
+        tok = self.peek(offset)
         return tok.token if tok is not None else None
 
-    def lookahead(self, count: int = 1, node: InfoNode | None = None) -> list[TokenType]:
+    def lookahead(self, count: int = 1) -> list[TokenType]:
         """
         EN: Fetch next `count` tokens ahead of physical cursor without consuming.
         ES: Obtiene los siguientes `count` tokens a partir del cursor físico actual sin consumirlos.
@@ -537,9 +520,6 @@ class ParseControl:
         Args:
             count: Number of upcoming tokens to inspect (default 1).
                    Cantidad de tokens a inspeccionar hacia adelante (por defecto 1).
-            node: Optional telemetry node for diagnostic logging.
-                  Nodo de telemetría opcional para registro de diagnóstico.
-
         Returns:
             List of upcoming tokens up to end of stream.
             Lista de próximos tokens hasta el final del flujo.
@@ -551,7 +531,6 @@ class ParseControl:
         self,
         *expected: Token | str,
         offset: int = 0,
-        node: InfoNode | None = None,
     ) -> bool:
         """
         EN: Check whether token at relative offset matches any expected token type or value.
@@ -563,14 +542,11 @@ class ParseControl:
                        Variantes de Token enum, nombres de token o cadenas literales esperadas.
             offset: Relative index offset from physical cursor (default 0).
                     Desplazamiento relativo respecto al cursor físico (por defecto 0).
-            node: Optional telemetry node for diagnostic logging.
-                  Nodo de telemetría opcional para registro de diagnóstico.
-
         Returns:
             True if matched, False otherwise.
             True si coincide, False en caso contrario.
         """
-        tok = self.peek(offset, node=node)
+        tok = self.peek(offset)
         if tok is None:
             return False
 
@@ -626,7 +602,7 @@ class ParseControl:
             target_node=target,
         )
 
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self.note(
                 f"Savepoint creado: pos={cp.pos}, virtual={cp.virtual_pos}, bracket={cp.bracket_depth}",
                 'normal',
@@ -661,7 +637,7 @@ class ParseControl:
             new_pos = checkpoint
             new_virtual = checkpoint
 
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self.note(
                 f"Backtracking: restaurando cursor físico {self._pos} -> {new_pos}",
                 'advice',
@@ -672,7 +648,10 @@ class ParseControl:
         self._virtual_pos = max(0, min(new_virtual, len(self._tokens)))
 
     @contextmanager
-    def transaction(self, node: InfoNode | None = None) -> Iterator[Checkpoint]:
+    def transaction(
+        self,
+        node: InfoNode | None = None,
+    ) -> Generator[Checkpoint, None, None]:
         """
         EN: Context manager for atomic syntax transactions with automatic rollback on error.
         ES: Gestor de contexto para transacciones sintácticas atómicas con rollback automático.
@@ -717,7 +696,7 @@ class ParseControl:
             return None
 
         token = self._tokens[self._virtual_pos]
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self.note(
                 f"Consultando virtual [{self._virtual_pos}]: {token.token.name} = {token.value!r}",
                 'normal',
@@ -727,7 +706,7 @@ class ParseControl:
         self._virtual_pos += 1
         return token
 
-    def peek_virtual(self, offset: int = 0, node: InfoNode | None = None) -> TokenType | None:
+    def peek_virtual(self, offset: int = 0) -> TokenType | None:
         """
         EN: Inspect token relative to current virtual cursor without moving it.
         ES: Inspecciona un token relativo a la posición virtual actual sin mover el cursor.
@@ -735,9 +714,6 @@ class ParseControl:
         Args:
             offset: Relative index offset from virtual cursor (default 0).
                     Desplazamiento relativo respecto al cursor virtual (por defecto 0).
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
-
         Returns:
             Token at offset or None if out of bounds.
             Token en la posición relativa o None si excede límites.
@@ -772,7 +748,7 @@ class ParseControl:
             new_pos = pos
 
         if new_pos < 0 or new_pos > self.count():
-            if getattr(config, 'PARSER_ADD_ERROR', True):
+            if config.PARSER_ADD_ERROR:
                 self.note(
                     f"Posición virtual fuera de rango: {new_pos} (válido: 0..{self.count()})",
                     'error',
@@ -783,7 +759,7 @@ class ParseControl:
         old_pos = self._virtual_pos
         self._virtual_pos = new_pos
 
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self.note(
                 f"Cursor virtual actualizado: {old_pos} -> {self._virtual_pos}",
                 'success',
@@ -802,7 +778,7 @@ class ParseControl:
                   Nodo de telemetría de destino opcional.
         """
         target = self._get_target_node(node)
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self.note(
                 f"Restableciendo cursor virtual: {self._virtual_pos} -> {self._pos}",
                 'advice',
@@ -839,7 +815,7 @@ class ParseControl:
 
         if self._virtual_pos > self._pos:
             consumed = self._tokens[self._pos:self._virtual_pos]
-            if getattr(config, 'PARSER_ADD_INFO', True):
+            if config.PARSER_ADD_INFO:
                 self.note(
                     f"Commit: consumidos físicamente {len(consumed)} tokens ({self._pos} -> {self._virtual_pos})",
                     'success',
@@ -876,7 +852,7 @@ class ParseControl:
         self._tokens = [t for t in self._tokens if t.token != tok]
         removed = initial_size - len(self._tokens)
 
-        if getattr(config, 'PARSER_ADD_INFO', True):
+        if config.PARSER_ADD_INFO:
             self.note(
                 f"Quit: se eliminaron {removed} tokens de tipo {tok.name}",
                 'success',
@@ -919,7 +895,7 @@ class ParseControl:
             discarded.append(curr)
             self._pos += 1
 
-        if discarded and getattr(config, 'PARSER_ADD_INFO', True):
+        if discarded and config.PARSER_ADD_INFO:
             self.note(
                 f"Sincronización: se descartaron {len(discarded)} tokens hasta delimitador seguro",
                 'advice',
