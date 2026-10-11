@@ -134,6 +134,9 @@ class VsixManager:
                         is_structural=compiled.get("is_structural", getattr(r_item, "is_structural", False)),
                         suggestions=compiled.get("suggestions", getattr(r_item, "suggestions", {})),
                         suggestions_autocomplete=compiled.get("suggestions_autocomplete", True),
+                        queries=compiled.get("queries", getattr(r_item, "queries", [])),
+                        hints=compiled.get("hints", getattr(r_item, "hints", {})),
+                        grammar=compiled.get("grammar", getattr(r_item, "grammar", None)),
                         source_plugin=source,
                     )
                 except Exception:
@@ -400,6 +403,9 @@ class VsixManager:
                                 is_structural=comp["is_structural"],
                                 suggestions=comp["suggestions"],
                                 suggestions_autocomplete=comp.get("suggestions_autocomplete", True),
+                                queries=comp.get("queries", []),
+                                hints=comp.get("hints", {}),
+                                grammar=comp.get("grammar"),
                                 source_plugin=plugin_name,
                             )
             except Exception:
@@ -426,6 +432,9 @@ class VsixManager:
                                 is_structural=comp["is_structural"],
                                 suggestions=comp["suggestions"],
                                 suggestions_autocomplete=comp.get("suggestions_autocomplete", True),
+                                queries=comp.get("queries", []),
+                                hints=comp.get("hints", {}),
+                                grammar=comp.get("grammar"),
                                 source_plugin=plugin_name,
                             )
                 except Exception:

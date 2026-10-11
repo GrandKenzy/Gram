@@ -15,7 +15,7 @@ from gram.core.ast.nodes import ASTProgram
 from gram.core.combinators.base import Combinator, RuleItem, RuleType
 from gram.core.combinators.many import Many
 from gram.core.combinators.reference import Ref
-from gram.core.lexer import Lexer
+from gram.core.lexer import Lexer, TokenStream
 from gram.core.lexer.tokens import Token
 from gram.core.parser import Parser
 from gram.native.rules import DECLARATION, PROGRAM
@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from gram.plugins.base import PluginBase
 
 
-SAVED_STACK: gram.utilities.info.StackInfo | None = None
 def process(
     grammar: Any,
     source_or_file: str | Path | Sequence[str],
@@ -170,15 +169,9 @@ def process(
     # -------------------------------------------------------------------------
     # 4. Tokenización y Análisis Sintáctico (Lexer + Parser + ASTAnalyzer)
     # -------------------------------------------------------------------------
-    lexer = Lexer(
-        content,
-        comment_token=comment_token,
-        save_comments=save_comments,
-        ignore_newlines=ignore_newlines,
-    )
+    lexer = Lexer(content)
     tokens = lexer.process()
-
-    parser = Parser(tokens)
+    parser = Parser(TokenStream(tokens))
     ast: ASTProgram = parser.parse(normalized_grammar)
 
     # -------------------------------------------------------------------------
@@ -198,11 +191,7 @@ def process(
     # -------------------------------------------------------------------------
     ast.prune_empty()
 
-    SAVED_STACK = parser.stack
-    
     return ast
 
-def get_stack():
-    return SAVED_STACK
 
 __all__ = ["process"]

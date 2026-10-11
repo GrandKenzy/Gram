@@ -92,7 +92,6 @@ AST_ADD_ERROR: bool = True
 ERROR_EXIT_ON_ERROR: bool = True
 ERROR_GENERATE_LOGFILE: bool = False
 ERROR_HIDE_CONSOLE: bool = False
-ERROR_SUPPORT_ANSI: bool = False
 
 # ==============================================================================
 # 5. TELEMETRÍA, INFORMACIÓN Y LOGS
@@ -101,7 +100,6 @@ INFO_INIT: bool = False
 INFO_GENERATE_LOGFILE: bool = False
 INFO_GENERATE_LOGFILE_ON_ERROR: bool = False
 INFO_FLATTEN_OUTPUT: bool = True
-INFO_SUPPORT_ANSI: bool = False
 LOG_HIDE_CONSOLE: bool = True
 
 # ==============================================================================
@@ -276,12 +274,10 @@ __all__ = [
     "ERROR_EXIT_ON_ERROR",
     "ERROR_GENERATE_LOGFILE",
     "ERROR_HIDE_CONSOLE",
-    "ERROR_SUPPORT_ANSI",
     # Info & Logs
     "INFO_INIT",
     "INFO_GENERATE_LOGFILE",
     "INFO_FLATTEN_OUTPUT",
-    "INFO_SUPPORT_ANSI",
     "LOG_HIDE_CONSOLE",
     # Reglas
     "RULE_SET_WORK_INT",

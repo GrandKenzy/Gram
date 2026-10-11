@@ -11,14 +11,13 @@ import sys
 from typing import Any
 
 from gram import config, errors
-from gram.utilities import error
+from gram.utilities import error, Format
 
 
-def _log_lexer_note(message: str, note_type: str = 'normal') -> None:
+def _log_lexer_note(message: str, note_type: Format.LogType = 'normal') -> None:
     """Emite una nota de telemetría al stack léxico si está disponible."""
-    mod = sys.modules.get('gram.core.lexer.stack')
-    if mod is not None and mod.stack is not None:
-        mod.stack.note(message, note_type.lower())
+    from gram.core.lexer import Lexer
+    Lexer.get_stack().note(message, note_type)
 
 
 # ==============================================================================
@@ -46,12 +45,13 @@ class Keyword:
         hex_color: str = '#FFFFFF',
         group: str | WordGroup | None = None,
         description: str = '',
+        documentation: str = ''
     ) -> None:
         if not name or not name.strip():
             error.LexerError(
-                'El nombre de la palabra clave no puede estar vacío.',
+                'KeywordInvalidName',
                 errors.KEYWORD_INVALID_NAME,
-                'Proporcione un identificador no vacío y sin espacios en blanco.',
+                'El nombre de la palabra clave no puede estar vacío. Proporcione un identificador no vacío y sin espacios en blanco.',
             ).raise_error()
 
         self.name: str = name.strip()
@@ -59,7 +59,7 @@ class Keyword:
         group_name = group.name if isinstance(group, WordGroup) else group
         self.group: str | None = group_name
         self.description: str = description
-        self._source_plugin: str = 'native'
+        self.documentation: str = documentation
 
         if self.group is not None and not group_exists(self.group):
             if config.LEXER_ADD_INFO:
@@ -99,6 +99,7 @@ def add_keyword(
     hex_color: str = '#FFFFFF',
     group: str | WordGroup | None = None,
     description: str = '',
+    documentation: str = '',
     *,
     allow_override: bool = False,
 ) -> Keyword:
@@ -117,25 +118,18 @@ def add_keyword(
     """
     if not name or not name.strip():
         error.LexerError(
-            'Nombre de keyword inválido',
+            'KeywordInvalidName',
             errors.KEYWORD_INVALID_NAME,
             'El nombre de la palabra clave no puede estar vacío.',
         ).raise_error()
 
     name = name.strip()
 
-    # Detección de procedencia de plugin
-    current_loading = 'native'
-    mod = sys.modules.get('gram.plugins.manager.core')
-    if mod is not None:
-        current_loading = mod.registry.get_current_loading() or 'native'
-
     if name in MAP_KEYWORDS and not allow_override:
-        existing_owner = MAP_KEYWORDS[name]._source_plugin
         error.LexerError(
-            'Keyword ya registrada',
+            'KeywordAlreadyExists',
             errors.KEYWORD_ALREADY_EXISTS,
-            f"La palabra clave {name!r} ya está registrada por '{existing_owner}'.",
+            f"La palabra clave {name!r} ya está registrada.",
             "Use allow_override=True para reemplazarla o elija un nombre diferente.",
         ).raise_error()
 
@@ -146,8 +140,8 @@ def add_keyword(
         hex_color=hex_color,
         group=group_name,
         description=description,
+        documentation=documentation
     )
-    kw._source_plugin = current_loading
     MAP_KEYWORDS[name] = kw
 
     # Si se especificó un grupo, sincronizar con el gestor de grupos
@@ -171,7 +165,7 @@ def get_keyword(name: str, *, strict: bool = False) -> Keyword | None:
     kw = MAP_KEYWORDS.get(name)
     if kw is None and strict:
         error.LexerError(
-            'Palabra clave no encontrada',
+            'KeywordNotFound',
             errors.KEYWORD_NOT_FOUND,
             f"La palabra clave {name!r} no está registrada.",
             "Verifique que la palabra clave haya sido registrada antes de consultarla con strict=True.",
@@ -192,7 +186,7 @@ def remove_keyword(name: str, *, strict: bool = False) -> Keyword | None:
     if kw is None:
         if strict:
             error.LexerError(
-                'Palabra clave no encontrada',
+                'KeywordNotFound',
                 errors.KEYWORD_NOT_FOUND,
                 f"La palabra clave {name!r} no está registrada.",
             ).raise_error()
@@ -269,7 +263,7 @@ class WordGroup:
         """Determina si una palabra clave forma parte del grupo (insensible a mayúsculas)."""
         return keyword_name.lower() in {k.lower() for k in self._keywords}
 
-    def add_keyword(self, item: str | Keyword) -> Keyword:
+    def add_keyword(self, item: str | Keyword):
         """
         Añade una palabra clave al grupo. Debe existir previamente en el catálogo de keywords.
         """
@@ -289,16 +283,16 @@ class WordGroup:
                     'error',
                 )
             error.LexerError(
-                f'Palabra clave no registrada: {name!r}',
+                f'WordgroupNotRegistered: {name!r}',
                 errors.WORDGROUP_KEYWORD_NOT_REGISTERED,
                 f'La palabra clave "{name}" debe registrarse previamente en el lexer antes de asociarla al grupo "{self.name}".',
             ).raise_error()
 
-        if kw.group is None:
+        elif kw.group is None:
             kw.group = self.name
 
-        self._keywords[name] = kw
-        return kw
+            self._keywords[name] = kw
+            return kw
 
     def remove_keyword(self, name: str) -> Keyword | None:
         """Elimina una palabra clave del grupo."""
@@ -346,7 +340,7 @@ class WordGroupManager:
             if config.LEXER_ADD_ERROR:
                 _log_lexer_note(f'El grupo {group_name!r} ya está registrado', 'error')
             error.LexerError(
-                'Grupo ya existente',
+                'GroupAlreadyExists',
                 errors.WORDGROUP_ALREADY_EXISTS,
                 f'El grupo de palabras clave "{group_name}" ya fue creado. Use allow_override=True para sobrescribirlo.',
             ).raise_error()
@@ -372,7 +366,7 @@ class WordGroupManager:
             if config.LEXER_ADD_ERROR:
                 _log_lexer_note(f'Grupo no encontrado: {group_name!r}', 'error')
             error.LexerError(
-                'Grupo no encontrado',
+                'GroupNotFound',
                 errors.WORDGROUP_NOT_FOUND,
                 f'El grupo de palabras clave "{group_name}" no está registrado.',
             ).raise_error()
@@ -403,6 +397,9 @@ class WordGroupManager:
 
 # Instancia singleton del gestor de grupos
 groups: WordGroupManager = WordGroupManager()
+"""
+Instancia singleton del gestor de grupos WordGroupManager
+"""
 
 
 def add_group(
@@ -421,9 +418,6 @@ def add_group(
         description=description,
         allow_override=allow_override,
     )
-
-
-create_group = add_group
 
 
 def get_group(name: str | WordGroup, *, strict: bool = False) -> WordGroup | None:
@@ -492,7 +486,6 @@ __all__ = [
     'count_keywords',
     # Operaciones de Grupos
     'add_group',
-    'create_group',
     'get_group',
     'group_exists',
     'remove_group',

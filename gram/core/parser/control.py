@@ -32,7 +32,7 @@ from gram.utilities import Format, error
 from gram.utilities.info import Node as InfoNode, StackInfo
 
 if TYPE_CHECKING:
-    from gram.codes import CodeError
+    from gram.errors import coderr as CodeError
 
 
 class ParseControl:
@@ -50,7 +50,7 @@ class ParseControl:
 
     def __init__(
         self,
-        tokens: Sequence[TokenType] | TokenStream | None = None,
+        tokens: TokenStream,
     ) -> None:
         """
         EN: Initialize parser state, token stream, and telemetry stack.
@@ -71,14 +71,9 @@ class ParseControl:
         self._failure_expectations: set[str] = set()
         self._failure_token: TokenType | None = None
 
-        self._stack: StackInfo = StackInfo(
-            'parser-log',
-            'PARSER',
-            'Registro y diagnóstico del analizador sintáctico',
-            expose_nodes=True,
-            generate_log_file=config.INFO_GENERATE_LOGFILE,
-            generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR,
-        )
+        from gram.core.parser import Parser
+        Parser.reset_stack()
+
         self._default_node: InfoNode = self._stack.node(
             "PARSER-INFO-NODE",
             f"Control de parsing inicializado ({len(self._tokens)} tokens)",
@@ -91,6 +86,11 @@ class ParseControl:
                 f"ParseControl inicializado con {len(self._tokens)} tokens",
                 "success",
             )
+            
+    @property
+    def _stack(self):
+        from gram.core.parser import Parser
+        return Parser.get_stack()
 
     # ==========================================================================
     # VINCULACIÓN Y FLUJO DE TOKENS
@@ -310,27 +310,6 @@ class ParseControl:
         """
         return self._target_node
 
-    def set_node(self, node: InfoNode | StackInfo | None) -> None:
-        """
-        EN: Designate an external node or stack as the target for all parser logs.
-        ES: Asigna un nodo o stack externo como destino para todos los registros del parser.
-
-        Args:
-            node: Target Node, StackInfo, or None to restore default node.
-                  Nodo o StackInfo de destino o None para restablecer al nodo por defecto.
-        """
-        if node is not None:
-            if isinstance(node, StackInfo):
-                self._stack = node
-                self._target_node = node.main
-            else:
-                self._target_node = node
-        else:
-            self._target_node = None
-
-        if config.PARSER_ADD_INFO:
-            nombre = self._target_node.name if self._target_node is not None else "PARSER-INFO-NODE"
-            self.note(f"Nodo de telemetría redirigido a '{nombre}'", 'advice')
 
     def reset_node(self) -> None:
         """
@@ -397,7 +376,7 @@ class ParseControl:
 
     def fail(
         self,
-        message: str,
+        name: str,
         code: CodeError,
         *caution: str,
         node: InfoNode | StackInfo | None = None,
@@ -408,7 +387,7 @@ class ParseControl:
         ES: Registra un error sintáctico en telemetría y opcionalmente levanta ParserError.
 
         Args:
-            message: Descriptive failure explanation.
+            name: Descriptive failure explanation.
                      Explicación descriptiva del fallo.
             code: Standardized CodeError token.
                   Código de error estandarizado CodeError.
@@ -426,9 +405,9 @@ class ParseControl:
         target = self._get_target_node(node)
 
         if config.PARSER_ADD_ERROR:
-            target.note(f"Error sintáctico: {message} ({code})", 'error')
+            target.note(f"Error sintáctico: {name} ({code})", 'error')
 
-        err = error.ParserError(message, code, *caution)
+        err = error.ParserError(name, code, *caution)
         self._errors.append(err)
         if raise_exception:
             err.raise_error()

@@ -31,6 +31,8 @@ from gram.utilities import error
 codes = error.codes.Codes
 coderr = error.codes.CodeError
 
+
+
 # Inicialización estricta del mapa de grupos y límites para el estándar OSGDC de 5 dígitos:
 # O: max 2, S: max 5, G: max 4, D: max 2, C: max 2
 error.codes.set_map_codes(
@@ -1262,6 +1264,7 @@ EN:
     OSGDC Code: S-23411 · Gram.Plugin.DuplicateDependency.
 """
 
+
 PLUGIN_REQUIREMENT_FILE_MISSING: coderr = coderr(
     (
         PLUGIN_ERROR,
@@ -1634,3 +1637,17 @@ __all__ = [
     'get_errors_by_scope',
     'get_errors_by_origin',
 ]
+
+
+# NEW ERRORS 1.1.0
+
+LEXER_FILE_NOT_FOUND: coderr = coderr(
+    (
+        NATIVE_ERROR,
+        LEXER_ERROR,
+        MINOR,
+        DOCUMENTED_AND_TRACEABLE,
+        USABLE
+    ),
+    'Gram.Lexer.FileNotFound'
+)

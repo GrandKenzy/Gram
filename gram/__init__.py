@@ -14,7 +14,7 @@ Exporta los componentes esenciales del framework para acceso directo:
 from __future__ import annotations
 
 # Submódulos del sistema
-from gram import cachesystem, cli, config, core, environment, errors, glang, native, plugins, utilities, vsix
+from gram import cachesystem, cli, config, core, environment, errors, native, plugins, utilities, vsix
 
 # Subpaquetes principales de core
 from gram.core import ast, combinators, lexer, parser
@@ -97,18 +97,10 @@ from gram.core.combinators import (
     query,
 )
 
-# Compilador y Parser de GLANG
-from gram.glang import (
-    LanguageCompiler,
-    parse_dsl,
-    parse_file,
-    parse_glang_file,
-)
 
 # Orquestación de Alto Nivel
 from gram.core.process import (
     process,
-    get_stack
 )
 
 __version__ = "1.0.0"
@@ -209,11 +201,6 @@ __all__ = [
     "SkipFlowSignal",
     "BreakFlowSignal",
     "AbortFlowSignal",
-    # GLANG DSL
-    "LanguageCompiler",
-    "parse_dsl",
-    "parse_file",
-    "parse_glang_file",
     # Orquestación de Alto Nivel
     "process",
 ]

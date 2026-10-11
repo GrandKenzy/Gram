@@ -598,8 +598,9 @@ class PluginWatcher(FileWatcher):
             except (ImportError, AttributeError):
                 target_paths = [Path("./plugins").resolve()]
 
+ 
         super().__init__(
-            paths=target_paths,
+            paths=target_paths, 
             recursive=True,
             debounce_seconds=debounce_seconds,
             on_change=self._handle_plugin_changes,

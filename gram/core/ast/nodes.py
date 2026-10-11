@@ -11,10 +11,10 @@ ES:
 """
 from __future__ import annotations
 
-import json
+import json, sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, Self
+from typing import Any, Iterator, Self, Iterable
 
 from gram.core.lexer.tokens import CustomToken, Token, TokenType
 

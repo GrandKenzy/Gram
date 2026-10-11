@@ -39,10 +39,11 @@ class RuleMetadata:
     color: str = "#FFFFFF"
     scope: str = ""
     is_structural: bool = False
-    suggestions: dict[int, Any] = field(default_factory=dict)
+    suggestions: dict[int | str, Any] = field(default_factory=dict)
     suggestions_autocomplete: bool = True
     queries: list[Any] = field(default_factory=list)
     hints: dict[int, Any] = field(default_factory=dict)
+    grammar: Any = None
     source_plugin: str = "native"
 
 
@@ -60,6 +61,7 @@ class SyntaxMetadata:
     file_extensions: list[str] = field(default_factory=lambda: [".gram", ".glang", ".g"])
     compiler_path: str = ""
     compiler_args: list[str] = field(default_factory=list)
+    snippets: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def get_keywords_by_group(self, group: str) -> list[str]:
         """Retorna las keywords pertenecientes a un grupo específico."""
@@ -69,7 +71,29 @@ class SyntaxMetadata:
         """Retorna las keywords registradas por un plugin específico."""
         return [k.name for k in self.keywords.values() if k.source_plugin == plugin_name]
 
-    def get_all_suggestions(self) -> list[dict[str, str]]:
+    def add_rule(self, rule: Any, source_plugin: str = "native") -> SyntaxMetadata:
+        """Add a RuleItem class and preserve its grammar for editor generation."""
+        compiled = rule.compile()
+        name = compiled.get("name") or rule.__name__
+        self.rules[name] = RuleMetadata(
+            name=name,
+            code=compiled.get("code", 0),
+            description=compiled.get("description", ""),
+            docs=compiled.get("docs", ""),
+            colors=dict(compiled.get("colors", {})),
+            color=compiled.get("color", "#FFFFFF"),
+            scope=compiled.get("scope", ""),
+            is_structural=compiled.get("is_structural", False),
+            suggestions=dict(compiled.get("suggestions", {})),
+            suggestions_autocomplete=compiled.get("suggestions_autocomplete", True),
+            queries=list(compiled.get("queries", [])),
+            hints=dict(compiled.get("hints", {})),
+            grammar=compiled.get("grammar"),
+            source_plugin=source_plugin,
+        )
+        return self
+
+    def get_all_suggestions(self) -> list[dict[str, Any]]:
         """
         Retorna una lista consolidada de sugerencias de autocompletado para el LSP.
         Incluye palabras clave registradas y sugerencias definidas en reglas.
@@ -97,9 +121,23 @@ class SyntaxMetadata:
             })
 
             # Sugerencias internas de la regla
-            if r_meta.suggestions and isinstance(r_meta.suggestions, dict):
+            if (
+                r_meta.suggestions_autocomplete
+                and r_meta.suggestions
+                and isinstance(r_meta.suggestions, dict)
+            ):
                 for pos, sug_list in r_meta.suggestions.items():
                     resolved = sug_list() if callable(sug_list) else sug_list
+                    if isinstance(resolved, dict) and "body" in resolved:
+                        body = resolved["body"]
+                        items.append({
+                            "label": str(resolved.get("prefix", pos)),
+                            "kind": "Snippet",
+                            "detail": f"Sugerencia para {r_name}",
+                            "documentation": str(resolved.get("description", "")),
+                            "insertText": "\n".join(body) if isinstance(body, list) else str(body),
+                            "insertTextFormat": 2,
+                        })
                     if isinstance(resolved, list):
                         for item in resolved:
                             if isinstance(item, tuple) and len(item) >= 2:
@@ -142,6 +180,7 @@ class SyntaxMetadata:
             self.compiler_path = other.compiler_path
         if other.compiler_args:
             self.compiler_args = list(other.compiler_args)
+        self.snippets.update(other.snippets)
         return self
 
     def copy(self) -> SyntaxMetadata:
@@ -155,6 +194,7 @@ class SyntaxMetadata:
             file_extensions=list(self.file_extensions),
             compiler_path=self.compiler_path,
             compiler_args=list(self.compiler_args),
+            snippets={name: dict(snippet) for name, snippet in self.snippets.items()},
         )
         return clone
 
@@ -228,6 +268,7 @@ def extract_metadata(
                             suggestions_autocomplete=compiled.get("suggestions_autocomplete", True),
                             queries=compiled.get("queries", []),
                             hints=compiled.get("hints", {}),
+                            grammar=compiled.get("grammar"),
                             source_plugin="native",
                         )
                     else:
@@ -240,6 +281,7 @@ def extract_metadata(
                             is_structural=getattr(attr, "is_structural", False),
                             queries=list(getattr(attr, "queries", []) or []),
                             hints=dict(getattr(attr, "hints", {}) or {}),
+                            grammar=getattr(attr, "grammar", None),
                             source_plugin="native",
                         )
         except Exception:
@@ -279,6 +321,7 @@ def extract_metadata(
                                 suggestions_autocomplete=compiled.get("suggestions_autocomplete", True),
                                 queries=compiled.get("queries", []),
                                 hints=compiled.get("hints", {}),
+                                grammar=compiled.get("grammar"),
                                 source_plugin=p_name,
                             )
             except Exception:

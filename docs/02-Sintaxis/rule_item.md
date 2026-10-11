@@ -62,9 +62,9 @@ A continuación se detallan todas las propiedades disponibles en `RuleItem`:
 | `description` | `str` | `""` | Resumen breve de la regla, expuesto en tooltips de autocompletado y hover de LSP. |
 | `docs` | `str` | `""` | Documentación técnica detallada (soporta Markdown), mostrada en tarjetas flotantes del editor. |
 | `grammar` | `Combinator \| None` | `None` | Árbol de combinadores sintácticos (`Seq`, `Alt`, `Many`, `Opt`, `MatchToken`, etc.) que define la producción. |
-| `colors` | `dict[int, str]` | `{}` | Mapeo de códigos o estados a colores HEX (ej. `{0: "#6A9955"}`) para temas del editor. |
-| `suggestions` | `dict[int, Any]` | `{}` | Plantillas y opciones de autocompletado para el motor de sugerencias o snippets de VS Code. |
-| `suggestions_autocomplete` | `bool` | `False` | Habilita o deshabilita la exportación de las sugerencias al archivo `snippets.json` del editor. |
+| `colors` | `dict[int, str]` | `{}` | Colores HEX por posición terminal de la gramática; solo la clave `0` define el color general de la regla. |
+| `suggestions` | `dict[int \| str, Any]` | `{}` | Opciones LSP o snippets con `prefix`, `body` y `description`. |
+| `suggestions_autocomplete` | `bool` | `False` | Habilita o deshabilita las sugerencias de la regla en el LSP y `snippets.json`. |
 | `is_structural` | `bool` | `False` | Si es `True`, el AST Analyzer omite la creación de un `ASTNode` y devuelve el resultado directo. |
 | `ignore` | `bool` | `False` | Si es `True`, omite el bloque AST de esta regla e integra directamente sus resultados en el padre. |
 | `queries` | `list[Query] \| set[Query] \| Query` | `None` | Consultas dinámicas de autocompletado contextual en vivo para LSP (ej. `Query.query_roots`). |
@@ -154,7 +154,7 @@ class IF_STMT(RuleItem):
 ### 3.6. `colors: dict[int, str]`
 Mapeo de códigos o subíndices a cadenas de color hexadecimal (ejemplo: `{0: "#4EC9B0"}`).
 - **Resolución de Color Primario:**
-  El método `compile()` extrae el color primario de la regla buscando primero la clave `0`. Si no existe la clave `0`, toma el primer valor del diccionario. Si el diccionario está vacío, el color por defecto es `#FFFFFF`.
+  El método `compile()` usa únicamente la clave `0` como color primario. Si no está declarada, el color general queda en `#FFFFFF`; un color de otra posición nunca se propaga al resto de la regla.
 - **Integración con Temas VSIX:**
   El generador de temas de Visual Studio Code (`gram.vsix.generate.generate_theme`) toma este color e inyecta una regla de token en `themes/gram-theme.json`:
   ```json
@@ -167,6 +167,17 @@ Mapeo de códigos o subíndices a cadenas de color hexadecimal (ejemplo: `{0: "#
       }
   }
   ```
+  Si la regla contiene una gramática traducible a TextMate, las claves de `colors` se aplican solo a los terminales indicados: `0` al primero, `1` al segundo, etc. Los terminales que no tengan un color explícito conservan sus scopes por defecto, así mantienen el color declarado por sus palabras clave, grupos o tipos de token. En `Alt`, las ramas de una misma alternativa comparten posición. Por ejemplo:
+  ```python
+  class CLAUSE(RuleItem):
+      colors = {0: "#E5C07B", 1: "#D4AF37", 2: "#88B04B"}
+      grammar = Seq(
+          MatchKeyword("clause"),
+          MatchGroup("clauses"),
+          Alt(MatchToken("STRING"), MatchToken("NUMBER")),
+      )
+  ```
+  La clave `2` colorea tanto el terminal `STRING` como el `NUMBER`, ya que son alternativas del mismo lugar gramatical. La generación por terminal está disponible para `Seq`, `Alt`, `Opt`, `Many`, `Some`, `MatchKeyword`, `MatchGroup`, `MatchToken` y `MatchSeqSymbol`; otros combinadores no generan capturas contextuales.
 
 ---
 
@@ -195,13 +206,13 @@ Define plantillas de código y sugerencias contextuales para el editor. Puede ad
        }
    }
    ```
-   El compilador de VSIX exporta estas definiciones directamente a `.vscode/snippets/snippets.json`.
+   El compilador de VSIX exporta estas definiciones a `snippets/snippets.json`. Las listas de opciones generan completion items LSP; los snippets estructurados generan tanto completion items LSP como snippets de VS Code.
 
 ---
 
 ### 3.8. `suggestions_autocomplete: bool`
 Bandera booleana (`True` o `False`).
-- Cuando es `True`, indica al generador de extensiones VSIX que procese e incluya las sugerencias de esta regla en el autocompletado global de VS Code.
+- Cuando es `True`, indica al generador de extensiones VSIX que procese e incluya las sugerencias de esta regla en los completion items del LSP y los snippets de VS Code.
 - Si es `False`, las sugerencias quedan reservadas únicamente para uso interno o análisis contextual.
 
 ---

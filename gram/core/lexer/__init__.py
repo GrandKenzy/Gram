@@ -5,14 +5,21 @@ Convierte líneas de código fuente en un flujo ordenado de objetos `TokenType`.
 Gestiona niveles de indentación jerárquica (INDENT/DEDENT), comentarios,
 espacios, saltos de línea (NEWLINE) y fin de archivo (EOF), delegando el
 reconocimiento de literales, identificadores y símbolos a los visitors especializados.
+
+Version 1.0.0
 """
 from __future__ import annotations
+def Version():
+    return "1.0.0"
 
 from typing import Sequence
-
+from pathlib import Path
 from gram import config, errors
-from gram.core.lexer import items, tokens, visit, words
+from gram.utilities import error
+from gram.utilities.info.stack import StackInfo
 from gram.core.lexer.items import TokenStream
+from gram.core.lexer import items, tokens, visitors, words
+
 from gram.core.lexer.tokens import (
     CustomToken,
     MAP_SYMBOLS,
@@ -33,7 +40,6 @@ from gram.core.lexer.words import (
     all_keywords,
     clear_all,
     count_keywords,
-    create_group,
     exists_in_group,
     get_group,
     get_keyword,
@@ -44,9 +50,6 @@ from gram.core.lexer.words import (
     remove_group,
     remove_keyword,
 )
-from gram.utilities import error
-from gram.utilities.info.stack import StackInfo
-
 
 def check_state() -> int:
     """
@@ -60,7 +63,7 @@ def check_state() -> int:
     """
     if words.is_empty():
         error.LexerError(
-            'EMPTY KEYWORDS',
+            'EmptyKeywords',
             errors.EMPTY_KEYWORDS,
             'No se encontró ninguna palabra clave registrada. Registre al menos una mediante words.add_keyword() o Keyword.add().',
         ).raise_error()
@@ -77,28 +80,22 @@ class Lexer:
         Main lexical analyzer for the Gram Framework.
         Transforms structured source code into a traceable token stream.
     """
-
-    def __init__(
-        self,
-        source: Sequence[str] | str,
-        comment_token: str | Token | None = None,
-        save_comments: bool | None = None,
-        ignore_newlines: bool | None = None,
-    ) -> None:
-        if isinstance(source, str):
-            self.source: list[str] = source.splitlines()
-        else:
-            self.source = list(source)
-
-        self.comment_token = comment_token if comment_token is not None else config.LEXER_COMMENT_TOKEN
-        self.save_comments = save_comments if save_comments is not None else config.LEXER_SAVE_COMMENTS
-        self.ignore_newlines = ignore_newlines if ignore_newlines is not None else config.LEXER_IGNORE_NEWLINES
-
-        self.line: int = 0
-        self.col: int = 0
-        self.indents: list[int] = [0]
-
-        self.stack: StackInfo = StackInfo(
+    _stack: StackInfo = StackInfo(
+        'lexer-log',
+        'LEXER',
+        'Registro y diagnóstico del analizador léxico',
+        expose_nodes=True,
+        generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR,
+        generate_log_file=config.INFO_GENERATE_LOGFILE and config.LEXER_ADD_INFO,
+    )
+    
+    @classmethod
+    def get_stack(cls):
+        return cls._stack
+    
+    @classmethod
+    def reset_stack(cls):
+        cls._stack: StackInfo = StackInfo(
             'lexer-log',
             'LEXER',
             'Registro y diagnóstico del analizador léxico',
@@ -106,6 +103,30 @@ class Lexer:
             generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR,
             generate_log_file=config.INFO_GENERATE_LOGFILE,
         )
+    
+    def __init__(
+        self,
+        source: Sequence[str] | str | Path,
+    ) -> None:
+        if isinstance(source, str):
+            self.source: list[str] = source.splitlines()
+        elif isinstance(source, Path):
+            if not source.exists():
+                self.stack.note(f"El archivo {source.as_uri()} no existe", 'fatal')
+                error.LexerError('FileNotFound',errors.LEXER_FILE_NOT_FOUND, f"El archivo {source.as_uri()} no existe")
+            else:
+                self.source = source.read_text(encoding='utf-8').splitlines(keepends=True)
+        else:
+            self.source = list(source)
+            
+        Lexer.reset_stack()
+            
+        self.line: int = 0
+        self.col: int = 0
+        self.indents: list[int] = [0]
+        self.comment_token = Token.from_string(config.LEXER_COMMENT_TOKEN)
+
+
         self.info_node = self.stack.node(
             'LEXER',
             f'Inicializando lexer con {len(self.source)} líneas',
@@ -117,6 +138,10 @@ class Lexer:
                 f'Lexer inicializado. Procesando {len(self.source)} líneas de entrada',
                 'success',
             )
+
+    @property
+    def stack(self):
+        return Lexer._stack
 
     @property
     def currline(self) -> str:
@@ -143,19 +168,19 @@ class Lexer:
         self.col += 1
         return char
 
-    def fail(self, message: str, code: int | errors.codes.CodeError, *caution: str) -> None:
+    def fail(self, name: str, code: errors.coderr, *caution: str) -> None:
         """
         Registra un error léxico en la pila de telemetría y detiene la ejecución.
 
         Args:
-            message: Descripción legible del error.
+            name: Descripción legible del error.
             code: Código OSGDC numérico o CodeError correspondiente.
             *caution: Sugerencias o precauciones para mitigar el error.
         """
         if config.LEXER_ADD_ERROR:
-            self.info_node.note(f'Error léxico: {message}', 'error')
+            self.info_node.note(f'Error léxico: {name}', 'error')
 
-        error.LexerError(message, code, *caution).raise_error()
+        error.LexerError(name, code, *caution).raise_error()
 
     def process_indent(self) -> list[TokenType]:
         """
@@ -290,7 +315,7 @@ class Lexer:
 
         while self.has_lines():
             if self.is_empty():
-                if not config.LEXER_IGNORE_EMPTY_LINES and not self.ignore_newlines:
+                if not config.LEXER_IGNORE_EMPTY_LINES and not config.LEXER_IGNORE_NEWLINES:
                     tokens_list.append(
                         TokenType(
                             Token.NEWLINE,
@@ -319,18 +344,18 @@ class Lexer:
 
                 # Comentarios de línea
                 if self.is_comment_start(char):
-                    if self.save_comments:
+                    if config.LEXER_SAVE_COMMENTS:
                         tokens_list.append(self.process_comment())
                     else:
                         self.col = len(self.currline)
                     break
 
                 # Despachar al visitor especializado correspondiente
-                token = visit.process(self, char)
+                token = visitors.visit(self, char)
                 tokens_list.append(token)
 
             # Salto de línea al terminar la línea física (omitido si ignore_newlines está activo)
-            if not self.ignore_newlines:
+            if not config.LEXER_IGNORE_NEWLINES:
                 tokens_list.append(
                     TokenType(
                         Token.NEWLINE,
@@ -379,71 +404,3 @@ class Lexer:
         """
         return TokenStream(self.process())
 
-
-def tokenize(
-    source: Sequence[str] | str,
-) -> list[TokenType]:
-    """
-    Función de alto nivel para tokenizar código fuente directamente en una lista de tokens.
-
-    Args:
-        source: Código fuente como cadena multilínea o lista de líneas.
-
-    Returns:
-        list[TokenType]: Secuencia completa de tokens.
-    """
-    return Lexer(source).process()
-
-
-def tokenize_stream(
-    source: Sequence[str] | str,
-) -> TokenStream:
-    """
-    Función de alto nivel para tokenizar código fuente y retornar un `TokenStream`.
-    """
-    return Lexer(source).stream()
-
-
-__all__ = [
-    # Analizador Léxico y Helpers
-    'Lexer',
-    'tokenize',
-    'tokenize_stream',
-    'check_state',
-    # Tokens
-    'Token',
-    'TokenType',
-    'CustomToken',
-    'MAP_SYMBOLS',
-    'get_tokens',
-    'get_sorted_symbols',
-    # Flujo de Tokens
-    'TokenStream',
-    # Catálogo de Palabras Clave y Grupos
-    'Keyword',
-    'WordGroup',
-    'WordGroupManager',
-    'groups',
-    'add_keyword',
-    'get_keyword',
-    'keyword_exists',
-    'remove_keyword',
-    'all_keywords',
-    'all_keyword_names',
-    'is_empty',
-    'count_keywords',
-    'add_group',
-    'create_group',
-    'get_group',
-    'group_exists',
-    'remove_group',
-    'all_groups',
-    'all_group_names',
-    'exists_in_group',
-    'clear_all',
-    # Módulos y submódulos
-    'tokens',
-    'words',
-    'visit',
-    'items',
-]

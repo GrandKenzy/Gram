@@ -288,7 +288,7 @@ class RuleItem(metaclass=RuleMeta):
     grammar: Combinator | None = None
     docs: str = ""
     colors: dict[int, str] = {}
-    suggestions: dict[int, Any] = {}
+    suggestions: dict[int | str, Any] = {}
     suggestions_autocomplete: bool = False
     is_structural: bool = False
     ignore: bool = False
@@ -361,8 +361,6 @@ class RuleItem(metaclass=RuleMeta):
         color_val = "#FFFFFF"
         if 0 in r_colors:
             color_val = r_colors[0]
-        elif r_colors:
-            color_val = next(iter(r_colors.values()))
 
         # Formato de scope TextMate sanitizado
         clean_name = re.sub(r"[^a-zA-Z0-9_]", "_", r_name).lower()

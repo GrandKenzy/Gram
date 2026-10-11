@@ -12,15 +12,18 @@ Arquitectura del Analizador Léxico:
 - `TokenType`: Unidad atómica (lexema) generada por el lexer con metadatos posicionales (línea, columna, valor).
 - `MAP_SYMBOLS`: Diccionario bidireccional optimizado para mapear operadores/símbolos con sus respectivos Tokens.
 """
+
 from __future__ import annotations
 
 from enum import Enum, auto
-from typing import Any, ClassVar
+from typing import Any
 
 from gram import errors
-from gram.utilities.error import Error, LexerError
+from gram.utilities.error import LexerError
 
 
+#stable
+# FRAME: Token
 class Token(Enum):
     """
     ES:
@@ -191,7 +194,9 @@ class Token(Enum):
         """
         return tuple(cls)
 
-
+# ___
+# stable
+# FRAME: CustomToken
 class CustomToken:
     """
     ES:
@@ -236,7 +241,9 @@ class CustomToken:
     def __hash__(self) -> int:
         return hash(self.name)
 
-
+# ___
+# stable
+# FRAME: TpkenType
 class TokenType:
     """
     ES:
@@ -276,6 +283,14 @@ class TokenType:
         self.col = col if col >= 0 else 0
         self.description = description
 
+    def long(self):
+        if self.value:
+            l = len(str(self.value))
+        else:
+            l = 0
+        
+        return self.col + l
+
     def formatter(self, msg: str) -> str:
         """
         ES:
@@ -306,6 +321,7 @@ class TokenType:
             .replace("$col", str(self.col))
             .replace("$symbol", symbol_val)
             .replace("$sym", symbol_val)
+            .replace("$long", str(self.long))
         )
 
     # Alias para compatibilidad hacia atrás
@@ -360,6 +376,7 @@ class TokenType:
     def __hash__(self) -> int:
         return hash((self.token, str(self.value), self.line, self.col))
 
+# ___
 
 class _MapSymbolsDict(dict[str, Token]):
     """
@@ -399,6 +416,8 @@ class _MapSymbolsDict(dict[str, Token]):
 
     def __contains__(self, key: object) -> bool:
         return super().__contains__(key) or key in self._rev
+
+# ___
 
 
 # ==============================================================================
@@ -495,6 +514,11 @@ MAP_SYMBOLS: _MapSymbolsDict = _MapSymbolsDict({
     '§': Token.SECTION,
     '...': Token.THREE_DOTS,
 })
+
+
+# ==============================================================================
+# Funciones
+# ==============================================================================
 
 
 def get_tokens() -> tuple[Token, ...]:

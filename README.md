@@ -89,6 +89,16 @@ python -m gram --version
 gram --version
 ```
 
+### Desinstalación:
+
+```bash
+gram uninstall
+# Omitir la confirmación:
+gram uninstall --yes
+```
+
+El comando desinstala `gram-framework` del entorno Python que ejecuta `gram` y elimina el lanzador de consola instalado por pip. No modifica la carpeta compartida del entorno que está en `PATH`, ya que también puede contener comandos de otros paquetes. Para elegir el entorno, ejecuta Gram desde ese entorno (por ejemplo, activando su entorno virtual antes).
+
 ---
 
 ## Inicio Rápido (API en Python)

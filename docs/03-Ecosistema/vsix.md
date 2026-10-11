@@ -39,11 +39,11 @@ A diferencia de aproximaciones tradicionales donde el soporte para editores se c
 ### Las 6 Características Cardinales
 
 #### 1. Colores y Resaltado de Sintaxis
-- **Extracción Automática:** Cada clase que hereda de `RuleItem` puede declarar un diccionario `colors = {0: "#4EC9B0"}` y cada palabra clave puede definir su color hexadecimal (`#569CD6`).
-- **Generación TextMate:** Gram compila estos colores en una gramática formal TextMate (`syntaxes/gram.tmLanguage.json`) y un tema de color VS Code (`themes/gram-theme.json`), asignando los ámbitos (*scopes*) adecuados (`keyword.control`, `entity.name.function`, `string.quoted`, etc.).
+- **Extracción Automática:** Cada clase que hereda de `RuleItem` puede declarar un diccionario `colors` indexado por terminales: por ejemplo `{0: "#E5C07B", 1: "#D4AF37", 2: "#88B04B"}`.
+- **Generación TextMate:** Para gramáticas compuestas por `Seq`, `Alt`, `Opt`, `Many`, `Some`, `MatchKeyword`, `MatchGroup`, `MatchToken` y `MatchSeqSymbol`, Gram genera capturas TextMate por terminal y scopes de color individuales. Los índices de ramas alternativas corresponden a la misma posición lógica. Las reglas con combinadores no representables como expresiones regulares conservan su metadato y resaltado general, pero no producen capturas contextuales por terminal.
 
 #### 2. Autocompletado y Snippets Inteligentes
-- **Extracción de Sugerencias:** Mediante la propiedad `suggestions` y `suggestions_autocomplete = True` en las clases `RuleItem`, Gram genera archivos de fragmentos de código (`snippets/gram.code-snippets`).
+- **Extracción de Sugerencias:** Con `suggestions_autocomplete = True`, cada valor de `suggestions` puede declarar `prefix`, `body` y `description`. Se publica tanto como snippet de VS Code (`snippets/snippets.json`) como completion item en el LSP. Si es `False`, se omiten las sugerencias de esa regla en ambos canales.
 - Provee autocompletado contextual tanto para palabras clave del lenguaje como para plantillas estructurales de reglas sintácticas.
 
 #### 3. Language Server Protocol (LSP) Embebido
@@ -58,8 +58,35 @@ Gram incluye un servidor LSP nativo (`gram.vsix.lsp.GramLanguageServer`) impleme
   - Muestra la descripción formal del fallo y sugerencias de corrección en el panel "Problemas" de VS Code.
 
 #### 5. Empaquetado Autónomo e Icono Personalizado
-- Genera la estructura de directorios requerida por VS Code con `package.json`, configuraciones de delimitadores (`language-configuration.json`), auto-cierre de comillas y llaves, y reglas de comentarios (`#` y `//`).
+- Genera la estructura de directorios requerida por VS Code con `package.json`, configuraciones de delimitadores (`language-configuration.json`), auto-cierre de comillas y llaves, y reglas de comentarios.
 - Genera procedimentalmente un archivo `icon.png` oficial con el logotipo de Gram para que la extensión luzca profesional en el catálogo de VS Code.
+
+### Generar una extensión para otro lenguaje
+
+`build_extension_directory()` acepta identidad, ID de lenguaje, extensiones, nombre y ruta de gramática/tema, configuración de lenguaje, snippets, contribuciones de VS Code y archivos adicionales. El cliente LSP de Gram es opcional y se desactiva con `include_lsp=False`. Para conservar los tooltips de documentación sin iniciar el LSP de Python, activa `include_hover=True`; el proveedor estático se genera a partir de la documentación de keywords y reglas.
+
+```python
+from gram.vsix import build_extension_directory, extract_metadata, LanguageConfiguration
+
+metadata = extract_metadata()
+metadata.file_extensions = [".sample"]
+build_extension_directory(
+    "build/sample-extension",
+    metadata=metadata,
+    ext_id="sample-language",
+    ext_name="Sample Language",
+    publisher="example",
+    language_id="sample",
+    scope_name="source.sample",
+    grammar_name="Sample",
+    grammar_file="sample.tmLanguage.json",
+    theme_file="sample-theme.json",
+    language_aliases=["Sample"],
+    language_configuration=LanguageConfiguration().LineComment(";"),
+    include_lsp=False,
+    include_hover=True,
+)
+```
 
 #### 6. Compilador Objetivo Enlazado
 - La extensión puede configurarse para invocar directamente el ejecutable de Gram o un compilador personalizado (`gram run <archivo>`, `gram glang compile <archivo>`) mediante comandos rápidos o atajos de teclado (`Ctrl+Shift+B`).

@@ -6,9 +6,8 @@ Proporciona la interfaz de consola para:
 - Validar e inspeccionar plugins sin ejecutar su código en memoria (CacheSystem).
 - Gestionar el entorno virtual dedicado de Gram (gram.environment).
 - Listar y consultar información técnica de extensiones instaladas.
-- Compilar y analizar gramáticas GLANG (.glang).
 - Generar, instalar, desinstalar e inspeccionar la extensión VSIX y LSP para VS Code (gram.vsix).
-- Ejecutar comandos expuestos por plugins instalados.
+- Ejecutar comandos expuestos por plugins instalados
 """
 from __future__ import annotations
 
@@ -16,8 +15,10 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -533,108 +534,39 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
-# ==============================================================================
-# SUBCOMANDO GLANG (COMPILACIÓN Y ANÁLISIS DE DSL .glang)
-# ==============================================================================
 
-def cmd_glang(args: argparse.Namespace) -> int:
-    """Gestiona el lenguaje declarativo GLANG (.glang), extensiones y compilación VSIX."""
-    import gram.glang as glang
-    from gram.glang.vsix import (
-        generate_glang_vsix,
-        install_glang_vsix,
-        uninstall_glang_vsix,
-    )
-
-    action = getattr(args, "action", None) or ""
-    target = getattr(args, "target", None) or ""
-    opt_install = getattr(args, "install_vsix", None)
-    opt_uninstall = getattr(args, "uninstall_vsix", None)
-    output_path = getattr(args, "output", None)
-
-    # 1. Comprobación de desinstalación: --uninstall vsix o comando 'uninstall vsix'
-    if opt_uninstall or action in ("uninstall", "--uninstall"):
-        print_banner("GLANG — Desinstalación de Extensión VS Code")
-        ok, msg = uninstall_glang_vsix()
-        if ok:
-            print(f"[OK GLANG] {msg}")
-            return 0
-        else:
-            print(f"[ERROR GLANG] {msg}")
-            return 1
-
-    # 2. Comprobación de instalación: --install vsix o comando 'install vsix'
-    if opt_install or action in ("install", "--install"):
-        print_banner("GLANG — Generación e Instalación de Extensión VS Code")
-        try:
-            target_vsix = generate_glang_vsix(output_path=output_path, force=True, install_after=True)
-            print(f"\n[OK GLANG] Extensión VSIX generada e instalada exitosamente:")
-            print(f"           Archivo: {target_vsix}")
-            return 0
-        except Exception as exc:
-            print(f"[ERROR GLANG] Falló la instalación de VSIX: {exc}")
-            return 1
-
-    # 3. Comprobación de generación: 'generate vsix'
-    if action == "generate" and (target.lower() == "vsix" or not target):
-        print_banner("GLANG — Generación de Extensión VSIX para VS Code")
-        try:
-            target_vsix = generate_glang_vsix(output_path=output_path, force=True, install_after=False)
-            print(f"\n[OK GLANG] Paquete VSIX de GLANG compilado exitosamente:")
-            print(f"           Ruta: {target_vsix}")
-            print(f"           Tamaño: {target_vsix.stat().st_size:,} bytes")
-            print("           Para instalarlo en VS Code use: gram glang --install vsix")
-            return 0
-        except Exception as exc:
-            print(f"[ERROR GLANG] Falló la generación de VSIX: {exc}")
-            return 1
-
-    # 4. Compilación o análisis de archivo .glang
-    file_to_parse = target if action == "compile" else action
-    if not file_to_parse:
-        print("[ERROR GLANG] Debe especificar un archivo .glang o un comando ('generate vsix', '--install vsix', '--uninstall vsix').")
+def cmd_uninstall(args: argparse.Namespace) -> int:
+    """Desinstala Gram del intérprete Python que ejecutó este comando."""
+    package_name = "gram-framework"
+    try:
+        installed_version = version(package_name)
+    except PackageNotFoundError:
+        print(f"[ERROR] {package_name} no está instalado en este entorno de Python.")
         return 1
 
-    glang_file = Path(file_to_parse).resolve()
-    if not glang_file.is_file():
-        print(f"[ERROR] Archivo GLANG no encontrado: {glang_file}")
-        return 1
+    print_banner("Desinstalación de Gram")
+    print(f"[INFO] Paquete: {package_name}=={installed_version}")
+    print(f"[INFO] Intérprete: {sys.executable}")
+    print("[INFO] Pip también eliminará el comando de consola 'gram'.")
+
+    command = [sys.executable, "-m", "pip", "uninstall"]
+    if getattr(args, "yes", False):
+        command.append("--yes")
+    command.append(package_name)
 
     try:
-        compiler = glang.parse_glang_file(glang_file)
-        print_banner(f"GLANG — Compilación de Gramática: '{glang_file.name}'")
-        print(f"  * Reglas definidas: {len(compiler.grammar)}")
-        for rule in compiler.grammar.keys():
-            r_name = getattr(rule, "name", str(rule))
-            r_code = getattr(rule, "code", "-")
-            print(f"      - {r_name} (código: {r_code})")
-        print("=" * 60)
-
-        source_path = getattr(args, "source", None)
-        if source_path:
-            s_file = Path(source_path).resolve()
-            if not s_file.is_file():
-                print(f"[ERROR] Archivo fuente no encontrado: {s_file}")
-                return 1
-            ast = compiler.parse_file(s_file)
-            print(f"\n[OK] Código fuente analizado exitosamente con la gramática de {glang_file.name}")
-            print(f"     Sentencias AST: {len(ast)}")
-            if getattr(args, "print_ast", False):
-                try:
-                    tree_str = ast.generate_decorated_tree()
-                except Exception:
-                    tree_str = ast.dump()
-                try:
-                    print(tree_str)
-                except UnicodeEncodeError:
-                    enc = sys.stdout.encoding or "utf-8"
-                    print(tree_str.encode(enc, errors="replace").decode(enc))
-        else:
-            print("[OK] Gramática GLANG compilada y validada exitosamente.")
-        return 0
-    except Exception as exc:
-        print(f"[ERROR GLANG] {exc}")
+        result = subprocess.run(command, check=False)
+    except OSError as exc:
+        print(f"[ERROR] No se pudo ejecutar pip para desinstalar Gram: {exc}")
         return 1
+
+    if result.returncode != 0:
+        print(f"[ERROR] La desinstalación de {package_name} falló (código {result.returncode}).")
+        return result.returncode
+
+    print("[OK] Gram se desinstaló del entorno de Python actual.")
+    print("[INFO] No se modificó el PATH compartido del entorno.")
+    return 0
 
 
 
@@ -820,6 +752,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Comando a ejecutar")
 
+    p_uninstall = subparsers.add_parser("uninstall", help="Desinstala Gram del entorno de Python actual")
+    p_uninstall.add_argument("-y", "--yes", action="store_true", help="Omitir la confirmación de pip")
+    p_uninstall.set_defaults(func=cmd_uninstall)
+
     # 1. install
     p_install = subparsers.add_parser("install", help="Instala un plugin en el catálogo (usando CacheSystem, sin load)")
     p_install.add_argument("path", help="Ruta al directorio del plugin")
@@ -827,14 +763,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_install.add_argument("-y", "--yes", action="store_true", help="Confirmar automáticamente reemplazos")
     p_install.add_argument("--check", action="store_true", help="Solo validar e inspeccionar sin copiar")
     p_install.set_defaults(func=cmd_install)
-
-    # 2. load
-    p_load = subparsers.add_parser("load", help="Carga o instala un plugin en el catálogo")
-    p_load.add_argument("path", help="Ruta al directorio del plugin")
-    p_load.add_argument("--name", help="Nombre opcional", default=None)
-    p_load.add_argument("-y", "--yes", action="store_true", help="Confirmar automáticamente")
-    p_load.add_argument("--check", action="store_true", help="Modo dry-run")
-    p_load.set_defaults(func=cmd_load)
 
     # 3. update
     p_update = subparsers.add_parser("update", help="Actualiza un plugin (usa CacheSystem para omitir si no hay cambios)")
@@ -863,12 +791,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_info = subparsers.add_parser("info", help="Muestra detalles técnicos de un plugin")
     p_info.add_argument("plugin_name", help="Nombre del plugin o ruta")
     p_info.set_defaults(func=cmd_info)
-
-    # 8. check
-    p_check = subparsers.add_parser("check", help="Inspecciona y valida un plugin sin instalarlo")
-    p_check.add_argument("path", help="Ruta al plugin")
-    p_check.add_argument("--name", help="Nombre opcional", default=None)
-    p_check.set_defaults(func=cmd_check)
 
     # 9. env
     p_env = subparsers.add_parser("env", help="Administra el entorno virtual dedicado de Gram")
@@ -918,17 +840,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--print-ast", "-a", action="store_true", help="Imprimir árbol sintáctico estructurado")
     p_run.add_argument("--json", "-j", action="store_true", help="Exportar AST en formato JSON")
     p_run.set_defaults(func=cmd_run)
-
-    # 13. glang
-    p_glang = subparsers.add_parser("glang", help="Compila gramáticas GLANG (.glang) o genera/instala extensiones VSIX")
-    p_glang.add_argument("action", nargs="?", default=None, help="Acción ('generate', 'compile', 'install', 'uninstall') o ruta al archivo .glang")
-    p_glang.add_argument("target", nargs="?", default=None, help="Objetivo ('vsix' o archivo .glang)")
-    p_glang.add_argument("--source", "-s", default=None, help="Archivo fuente a parsear con la gramática compilada")
-    p_glang.add_argument("--print-ast", "-a", action="store_true", help="Imprimir árbol sintáctico (AST)")
-    p_glang.add_argument("-o", "--output", default=None, help="Ruta de salida del paquete .vsix al generar")
-    p_glang.add_argument("--install", dest="install_vsix", nargs="?", const="vsix", default=None, help="Genera e instala la extensión en VS Code (--install vsix)")
-    p_glang.add_argument("--uninstall", dest="uninstall_vsix", nargs="?", const="vsix", default=None, help="Desinstala la extensión de VS Code (--uninstall vsix)")
-    p_glang.set_defaults(func=cmd_glang)
 
     # 14. vsix
     p_vsix = subparsers.add_parser("vsix", help="Gestiona la extensión y soporte de editor VS Code (VSIX, LSP, temas)")

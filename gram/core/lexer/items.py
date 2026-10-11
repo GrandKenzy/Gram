@@ -12,7 +12,6 @@ from gram import errors
 from gram.core.lexer.tokens import Token, TokenType
 from gram.utilities import error
 
-
 class TokenStream:
     """
     ES:
@@ -139,7 +138,7 @@ class TokenStream:
                 message or 'Se esperaba otro token pero se alcanzó el final de la secuencia.',
             ).raise_error()
 
-        if expected is not None and not self.check(expected):
+        elif expected is not None and not self.check(expected):
             exp_str = expected.name if isinstance(expected, Token) else str(expected)
             error.LexerError(
                 f'Token inesperado: {curr.token.name}',

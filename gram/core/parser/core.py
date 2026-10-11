@@ -19,15 +19,16 @@ from typing import TYPE_CHECKING, Any, Generator, Sequence
 from gram import config, errors
 from gram.core.lexer.tokens import CustomToken, Token
 from gram.core.parser.control import ParseControl
-from gram.utilities import Format
+from gram.utilities import Format, info
 
 if TYPE_CHECKING:
-    from gram.codes import CodeError
+    from gram.errors import coderr as CodeError
     from gram.core.lexer.items import TokenStream
     from gram.core.lexer.tokens import TokenType
     from gram.core.parser.checkpoint import Checkpoint
     from gram.utilities import error
     from gram.utilities.info import Node as InfoNode, StackInfo
+
 
 
 class Parser:
@@ -45,16 +46,41 @@ class Parser:
         y enrutamiento de telemetría a su componente `ParseControl`.
     """
 
+    _stack: info.StackInfo = info.StackInfo(
+        'parser-log',
+        'PARSER',
+        'Registro y diagnóstico del analizador sintáctico',
+        expose_nodes=True,
+        generate_log_file=config.PARSER_ADD_INFO and config.INFO_GENERATE_LOGFILE,
+        generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR
+    )
+    
+    @classmethod
+    def get_stack(cls):
+        return cls._stack
+    
+    @classmethod
+    def reset_stack(cls):
+        cls._stack: info.StackInfo = info.StackInfo(
+            'parser-log',
+            'PARSER',
+            'Registro y diagnóstico del analizador sintáctico',
+            expose_nodes=True,
+            generate_log_file=config.PARSER_ADD_INFO and config.INFO_GENERATE_LOGFILE,
+            generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR
+        )
+        
     def __init__(
         self,
-        tokens: Sequence[TokenType] | TokenStream | None = None,
+        tokens: TokenStream,
     ) -> None:
         """
         EN: Initializes the syntactic parser with its token stream.
         ES: Inicializa el analizador sintáctico con su flujo de tokens.
 
         Args:
-            tokens: Sequence of tokens or TokenStream to parse.
+            tokens: TokenStream to parse.
+   
         """
         self._control: ParseControl = ParseControl(tokens)
 
@@ -120,7 +146,7 @@ class Parser:
         EN: Active telemetry and error stack (StackInfo).
         ES: Pila (StackInfo) de telemetría y errores activa en el analizador sintáctico.
         """
-        return self._control.stack
+        return Parser._stack
 
     @property
     def errors(self) -> list[error.ParserError]:
@@ -145,13 +171,6 @@ class Parser:
     # ==========================================================================
     # GESTIÓN Y REDIRECCIÓN DE TELEMETRÍA / TELEMETRY ROUTING
     # ==========================================================================
-
-    def set_node(self, node: InfoNode | StackInfo | None) -> None:
-        """
-        EN: Redirects log and error destinations to the specified node or stack.
-        ES: Redirige el destino de logs y errores al nodo o stack especificado.
-        """
-        self._control.set_node(node)
 
     def reset_node(self) -> None:
         """

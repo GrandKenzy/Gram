@@ -345,6 +345,7 @@ class GramLanguageServer:
                     "value": sug.get("documentation", ""),
                 },
                 "insertText": sug.get("insertText", sug["label"]),
+                "insertTextFormat": sug.get("insertTextFormat", 1),
                 "sortText": f"{idx + 1000:04d}",
             })
 

@@ -31,6 +31,7 @@ from gram.vsix.generate import (
     GRAM_PUBLISHER,
     build_extension_directory,
     generate_icon_png,
+    generate_hover_client_js,
     generate_language_configuration,
     generate_lsp_client_js,
     generate_package_json,
@@ -39,6 +40,7 @@ from gram.vsix.generate import (
     generate_theme,
     package_vsix,
 )
+from gram.vsix.configuration import LanguageConfiguration
 from gram.vsix.lsp import (
     GramLanguageServer,
     start_lsp_server,
@@ -84,12 +86,14 @@ __all__ = [
     "extract_metadata",
     # Generadores
     "build_extension_directory",
+    "LanguageConfiguration",
     "generate_language_configuration",
     "generate_package_json",
     "generate_textmate_grammar",
     "generate_theme",
     "generate_snippets",
     "generate_lsp_client_js",
+    "generate_hover_client_js",
     "generate_icon_png",
     "package_vsix",
     # Language Server Protocol (LSP)
