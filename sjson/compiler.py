@@ -13,7 +13,7 @@ from typing import Any
 
 from gram.core.lexer import Lexer, Token, words
 from gram.core.lexer.tokens import TokenType
-from gram.sjson.errors import (
+from sjson.errors import (
     SJSONCalculationError,
     SJSONError,
     SJSONExtendError,

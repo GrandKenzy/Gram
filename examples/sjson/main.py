@@ -13,7 +13,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from gram.sjson import compile, compile_file
+from sjson import compile, compile_file
 
 
 def main() -> None:

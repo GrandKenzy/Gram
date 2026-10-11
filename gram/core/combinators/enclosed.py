@@ -169,110 +169,112 @@ class Enclosed(Combinator):
 
         # 2. Análisis del contenido interior
         if self.skip_whitespace:
+            res = None
+            empty_matched = False
             with parser.bracket_context():
                 parser.control._skip_whitespace()
 
-                # Caso de bloque vacío inmediato: "( )"
                 if parser.not_empty() and parser.current().token == self.close_token:
                     if self.allow_empty:
-                        parser.consume(node=target_node)
-                        if config.PARSER_ADD_INFO:
-                            target_node.note("Enclosed: contenido vacío", "Normal")
-                        return []
-
-                    self._record_failure(
-                        analyzer,
-                        "contenido no vacío",
-                        parser.pos,
-                        parser.peek(),
-                    )
-                    parser.restore(checkpoint, node=target_node)
-                    if not ignore_errors:
-                        failure_context = self._failure_context(analyzer)
-                        caution = (
-                            f"El contenido dentro de "
-                            f"'{self.open_token.name}...{self.close_token.name}' "
-                            "no puede estar vacío.",
+                        empty_matched = True
+                    else:
+                        self._record_failure(
+                            analyzer,
+                            "contenido no vacío",
+                            parser.pos,
+                            parser.peek(),
                         )
-                        if failure_context:
-                            caution += (failure_context,)
-                        error.ParserError(
-                            "Enclosed: contenido vacío",
-                            errors.COMBINATOR_FAILED,
-                            *caution,
-                        ).raise_error()
-                    return None
-
-                try:
-                    res = self._dispatch_sub(
-                        self.content,
-                        analyzer,
-                        None,
-                        ignore_errors=ignore_errors,
-                    )
-                except error.ParserError:
-                    parser.restore(checkpoint, node=target_node)
-                    raise
-
-                if res is None:
-                    parser.restore(checkpoint, node=target_node)
-                    if not ignore_errors:
-                        failure_context = self._failure_context(analyzer)
-                        caution = (
-                            f"El contenido dentro de "
-                            f"'{self.open_token.name}...{self.close_token.name}' "
-                            "no coincidió.",
+                        parser.restore(checkpoint, node=target_node)
+                        if not ignore_errors:
+                            failure_context = self._failure_context(analyzer)
+                            caution = (
+                                f"El contenido dentro de "
+                                f"'{self.open_token.name}...{self.close_token.name}' "
+                                "no puede estar vacío.",
+                            )
+                            if failure_context:
+                                caution += (failure_context,)
+                            error.ParserError(
+                                "Enclosed: contenido vacío",
+                                errors.COMBINATOR_FAILED,
+                                *caution,
+                            ).raise_error()
+                        return None
+                else:
+                    try:
+                        res = self._dispatch_sub(
+                            self.content,
+                            analyzer,
+                            None,
+                            ignore_errors=ignore_errors,
                         )
-                        if failure_context:
-                            caution += (failure_context,)
-                        error.ParserError(
-                            "Enclosed: contenido no coincidió",
-                            errors.COMBINATOR_FAILED,
-                            *caution,
-                        ).raise_error()
-                    return None
+                    except error.ParserError:
+                        parser.restore(checkpoint, node=target_node)
+                        raise
 
-                parser.control._skip_whitespace()
+                    if res is None:
+                        parser.restore(checkpoint, node=target_node)
+                        if not ignore_errors:
+                            failure_context = self._failure_context(analyzer)
+                            caution = (
+                                f"El contenido dentro de "
+                                f"'{self.open_token.name}...{self.close_token.name}' "
+                                "no coincidió.",
+                            )
+                            if failure_context:
+                                caution += (failure_context,)
+                            error.ParserError(
+                                "Enclosed: contenido no coincidió",
+                                errors.COMBINATOR_FAILED,
+                                *caution,
+                            ).raise_error()
+                        return None
 
-                # 3. Token de cierre
-                if not parser.not_empty():
-                    self._record_failure(
-                        analyzer,
-                        f"delimitador de cierre {self.close_token.name}",
-                        parser.pos,
-                        None,
-                    )
-                    parser.restore(checkpoint, node=target_node)
-                    if not ignore_errors:
-                        error.ParserError(
-                            "Enclosed: EOF antes del delimitador de cierre",
-                            errors.PARSER_EARLY_EOF,
-                            f"Se esperaba '{self.close_token.name}' pero se alcanzó EOF.",
-                        ).raise_error()
-                    return None
+                    parser.control._skip_whitespace()
 
-                close_pos = parser.pos
-                close_tok = parser.consume(node=target_node)
-                if close_tok.token != self.close_token:
-                    self._record_failure(
-                        analyzer,
-                        f"delimitador de cierre {self.close_token.name}",
-                        close_pos,
-                        close_tok,
-                    )
-                    parser.restore(checkpoint, node=target_node)
-                    if not ignore_errors:
-                        error.ParserError(
-                            f"Enclosed: se esperaba '{self.close_token.name}'",
-                            errors.PARSER_UNEXPECTED_TOKEN,
-                            f"Token recibido: '{close_tok.token.name}' ({close_tok.value!r}) en línea {close_tok.line}.",
-                        ).raise_error()
-                    return None
+            if not parser.not_empty():
+                self._record_failure(
+                    analyzer,
+                    f"delimitador de cierre {self.close_token.name}",
+                    parser.pos,
+                    None,
+                )
+                parser.restore(checkpoint, node=target_node)
+                if not ignore_errors:
+                    error.ParserError(
+                        "Enclosed: EOF antes del delimitador de cierre",
+                        errors.PARSER_EARLY_EOF,
+                        f"Se esperaba '{self.close_token.name}' pero se alcanzó EOF.",
+                    ).raise_error()
+                return None
 
+            close_pos = parser.pos
+            close_tok = parser.consume(node=target_node)
+            if close_tok.token != self.close_token:
+                self._record_failure(
+                    analyzer,
+                    f"delimitador de cierre {self.close_token.name}",
+                    close_pos,
+                    close_tok,
+                )
+                parser.restore(checkpoint, node=target_node)
+                if not ignore_errors:
+                    error.ParserError(
+                        f"Enclosed: se esperaba '{self.close_token.name}'",
+                        errors.PARSER_UNEXPECTED_TOKEN,
+                        f"Token recibido: '{close_tok.token.name}' ({close_tok.value!r}) en línea {close_tok.line}.",
+                    ).raise_error()
+                return None
+
+            if config.PARSER_ADD_INFO:
+                target_node.note(f"Enclosed: cierre '{self.close_token.name}' aceptado", "Success")
+
+            if empty_matched:
                 if config.PARSER_ADD_INFO:
-                    target_node.note(f"Enclosed: cierre '{self.close_token.name}' aceptado", "Success")
+                    target_node.note("Enclosed: contenido vacío", "Normal")
+                return []
 
-                return res
+            return res
         else:
             if parser.not_empty() and parser.current().token == self.close_token:
                 if self.allow_empty:

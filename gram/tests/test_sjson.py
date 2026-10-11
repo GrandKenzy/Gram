@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 
 from gram import config
-from gram.sjson import (
+from sjson import (
     SJSONCalculationError,
     SJSONCompiler,
     SJSONError,

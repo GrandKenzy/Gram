@@ -5,24 +5,21 @@ Proporciona la API pública directa para compilar y analizar documentos SJSON.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-# Garantizar que el paquete Gram local esté disponible en sys.path
-_LOCAL_GRAM = Path(__file__).resolve().parent
-if str(_LOCAL_GRAM) not in sys.path:
-    sys.path.insert(0, str(_LOCAL_GRAM))
-
-from gram.sjson import (
-    SJSONCalculationError,
+from sjson.compiler import (
     SJSONCompiler,
-    SJSONError,
-    SJSONExtendError,
-    SJSONVariableError,
     compile,
     compile_file,
     deep_merge,
     parse,
+)
+from sjson.errors import (
+    SJSONCalculationError,
+    SJSONError,
+    SJSONExtendError,
+    SJSONVariableError,
+)
+from sjson.grammar import (
+    get_sjson_grammar,
 )
 
 __all__ = [
@@ -35,4 +32,5 @@ __all__ = [
     "SJSONVariableError",
     "SJSONCalculationError",
     "SJSONExtendError",
+    "get_sjson_grammar",
 ]

@@ -5,7 +5,7 @@ Provee las utilidades de parseo y compilación de Super JSON a JSON estándar.
 """
 from __future__ import annotations
 
-from gram.sjson import (
+from sjson import (
     SJSONCalculationError,
     SJSONCompiler,
     SJSONError,

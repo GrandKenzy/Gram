@@ -9,12 +9,12 @@ Exporta los componentes esenciales del framework para acceso directo:
 - Combinadores: Seq, Alt, Many, Some, Opt, Sep, Enclosed, MatchToken, MatchKeyword,
                 MatchSymbol, MatchGroup, Ref, RuleItem, Combinator, Tokenize, Query
 - Gramáticas por defecto: PROGRAM, DECLARATION, BLOCK, INDENT_BLOCK, PASS, ENDLINE
-- DSL & SJSON: parse_dsl, parse_glang_file, LanguageCompiler, SJSONCompiler
+- DSL: parse_dsl, parse_glang_file, LanguageCompiler
 """
 from __future__ import annotations
 
 # Submódulos del sistema
-from gram import cachesystem, cli, config, core, environment, errors, glang, native, plugins, sjson, utilities, vsix
+from gram import cachesystem, cli, config, core, environment, errors, glang, native, plugins, utilities, vsix
 
 # Subpaquetes principales de core
 from gram.core import ast, combinators, lexer, parser
@@ -105,11 +105,6 @@ from gram.glang import (
     parse_glang_file,
 )
 
-# Compilador SJSON
-from gram.sjson import (
-    SJSONCompiler,
-)
-
 # Orquestación de Alto Nivel
 from gram.core.process import (
     process,
@@ -140,7 +135,6 @@ __all__ = [
     "glang",
     "native",
     "plugins",
-    "sjson",
     "utilities",
     "vsix",
     "ast",
@@ -220,8 +214,6 @@ __all__ = [
     "parse_dsl",
     "parse_file",
     "parse_glang_file",
-    # SJSON
-    "SJSONCompiler",
     # Orquestación de Alto Nivel
     "process",
 ]

@@ -81,21 +81,18 @@ class Lexer:
     def __init__(
         self,
         source: Sequence[str] | str,
+        comment_token: str | Token | None = None,
+        save_comments: bool | None = None,
+        ignore_newlines: bool | None = None,
     ) -> None:
-        """
-        Inicializa el analizador léxico con el código fuente.
-
-        Args:
-            source: Líneas de código fuente (o cadena con saltos de línea).
-        """
         if isinstance(source, str):
             self.source: list[str] = source.splitlines()
         else:
             self.source = list(source)
 
-        self.comment_token = config.LEXER_COMMENT_TOKEN
-        self.save_comments = config.LEXER_SAVE_COMMENTS
-        self.ignore_newlines = config.LEXER_IGNORE_NEWLINES
+        self.comment_token = comment_token if comment_token is not None else config.LEXER_COMMENT_TOKEN
+        self.save_comments = save_comments if save_comments is not None else config.LEXER_SAVE_COMMENTS
+        self.ignore_newlines = ignore_newlines if ignore_newlines is not None else config.LEXER_IGNORE_NEWLINES
 
         self.line: int = 0
         self.col: int = 0
@@ -233,6 +230,14 @@ class Lexer:
             if len(comment_config) == 1:
                 return char == comment_config
             return self.currline[self.col:self.col + len(comment_config)] == comment_config
+        if isinstance(comment_config, (tuple, list, set)):
+            for tok in comment_config:
+                if isinstance(tok, str):
+                    if (len(tok) == 1 and char == tok) or self.currline[self.col:self.col + len(tok)] == tok:
+                        return True
+                elif isinstance(tok, Token) and MAP_SYMBOLS.get(char) == tok:
+                    return True
+            return False
         if isinstance(comment_config, Token):
             return MAP_SYMBOLS.get(char) == comment_config
         return False
@@ -245,7 +250,14 @@ class Lexer:
             TokenType: Token de comentario con el contenido restante de la línea.
         """
         start = self.col
-        comment_len = len(self.comment_token) if isinstance(self.comment_token, str) else 1
+        comment_len = 1
+        if isinstance(self.comment_token, str):
+            comment_len = len(self.comment_token)
+        elif isinstance(self.comment_token, (tuple, list, set)):
+            for tok in self.comment_token:
+                if isinstance(tok, str) and self.currline[self.col:].startswith(tok):
+                    comment_len = len(tok)
+                    break
         self.col += comment_len
         content = self.currline[self.col:]
         self.col = len(self.currline)

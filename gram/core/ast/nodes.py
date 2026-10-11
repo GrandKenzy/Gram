@@ -501,7 +501,11 @@ class ASTNode:
         """
         name = getattr(rule, "name", str(rule))
         code = getattr(rule, "code", 0)
-        no_simplify = getattr(rule, "no_simplify", False)
+        no_simplify = (
+            getattr(rule, "no_simplify", False)
+            or getattr(getattr(rule, "grammar", None), "no_simplify", False)
+            or getattr(result, "no_simplify", False)
+        )
 
         node = cls(
             name=name,
@@ -519,11 +523,8 @@ class ASTNode:
             if item is None:
                 return
             if isinstance(item, ASTNode):
-                # Descartar nodos hijos vacíos (reglas opcionales no coincidentes)
                 if not item.tokens and not item.children and not getattr(item, "is_block", False):
                     return
-                if item.no_simplify:
-                    node.no_simplify = True
                 children.append(item)
             elif isinstance(item, (ItemNode, LiteralNode)):
                 children.append(
@@ -540,8 +541,6 @@ class ASTNode:
                 tokens.append(item)
             elif getattr(item, "_is_expr_result", False):
                 expr_node = item.to_ast_node(level=level + 1)
-                if getattr(expr_node, "no_simplify", False):
-                    node.no_simplify = True
                 children.append(expr_node)
             elif isinstance(item, (list, tuple)):
                 for sub in item:

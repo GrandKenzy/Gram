@@ -29,7 +29,10 @@ def process(
     grammar: Any,
     source_or_file: str | Path | Sequence[str],
     *,
-    plugins: list[str | Path | PluginBase | Any] | None = None
+    plugins: list[str | Path | PluginBase | Any] | None = None,
+    comment_token: str | Token | None = None,
+    save_comments: bool | None = None,
+    ignore_newlines: bool | None = None,
 ) -> ASTProgram:
     """
     Procesa y analiza código fuente contra una gramática formal en una sola llamada.
@@ -167,7 +170,12 @@ def process(
     # -------------------------------------------------------------------------
     # 4. Tokenización y Análisis Sintáctico (Lexer + Parser + ASTAnalyzer)
     # -------------------------------------------------------------------------
-    lexer = Lexer(content)
+    lexer = Lexer(
+        content,
+        comment_token=comment_token,
+        save_comments=save_comments,
+        ignore_newlines=ignore_newlines,
+    )
     tokens = lexer.process()
 
     parser = Parser(tokens)
