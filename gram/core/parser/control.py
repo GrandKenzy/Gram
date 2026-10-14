@@ -15,7 +15,7 @@ from gram import config, errors
 from gram.core.lexer import Token, TokenType
 from gram.core.parser import Checkpoint
 from gram.utilities import Diagnostics, Format, error
-
+from gram.core.parser.hookr import Hookr
 
 class ParseState(Diagnostics):
     """
@@ -45,6 +45,7 @@ class ParseState(Diagnostics):
             config.INFO_GENERATE_LOGFILE,
             config.INFO_GENERATE_LOGFILE_ON_ERROR,
         )
+        self.hookr = Hookr()
 
     def load(self, checkpoint: Checkpoint) -> None:
         self.pos = checkpoint.pos
@@ -355,6 +356,7 @@ class ParseState(Diagnostics):
         self.success(
             f'Savepoint created: pos={cp.pos}, virtual={cp.vpos}, target={cp.target}'
         )
+        self.hookr.ran('save', cp)
         return cp
     
     def replace_token_at(self, index: int, new_token: TokenType) -> None:
@@ -374,6 +376,7 @@ class ParseState(Diagnostics):
                 f'Checkpoint {checkpoint.name} is restoring target to {checkpoint.target}'
             )
         self.success(f'Backtracking: restored checkpoint {checkpoint.name}')
+        self.hookr.ran('restore', checkpoint)
 
     # ==========================================================================
     # VIRTUAL CURSOR CONTROL
@@ -512,6 +515,54 @@ class ParseState(Diagnostics):
         )
         self.pos = self.vpos
         return consumed
+
+    def peek_next_line(self) -> TokenType | None:
+        """Return the first token located on a subsequent line without advancing the physical cursor."""
+        if self.empty() or self.is_eof():
+            return None
+
+        current = self.peek()
+        if current is None:
+            return None
+
+        self.set_vtoken('sync')
+        while True:
+            vc = self.future()
+            if vc is None or vc.token == Token.EOF:
+                self.rollback()
+                return None
+
+            if vc.line != current.line:
+                self.rollback()
+                return vc
+
+    def skip_until_newline(self) -> list[TokenType]:
+        """
+        Consume and return all tokens on the current line, positioning the physical cursor at the next line.
+        """
+        if self.empty() or self.is_eof():
+            return []
+
+        current = self.peek()
+        if current is None:
+            return []
+
+        self.set_vtoken('sync')
+        while True:
+            vc = self.future()
+            if vc is None or vc.token == Token.EOF:
+                self.vpos -= 1
+                if self.vpos > self.pos:
+                    return self.commit()
+                self.rollback()
+                return []
+
+            if vc.line != current.line:
+                self.vpos -= 1
+                if self.vpos > self.pos:
+                    return self.commit()
+                self.rollback()
+                return []
 
     # ==========================================================================
     # CONTEXT AND DELIMITER CONTROL

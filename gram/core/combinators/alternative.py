@@ -29,14 +29,15 @@ class Alt(Combinator):
 
     header_class: bool = True
 
-    def __init__(self, *combinators: Combinator) -> None:
+    def __init__(self, *combinators: Combinator, ignore: bool = False) -> None:
         """
         Initialize the alternative combinator with one or more candidate branches.
 
         Args:
             *combinators (Combinator): Candidate combinator branches to evaluate in order.
+            ignore (bool): Whether to ignore this combinator in raytracing.
         """
-        super().__init__()
+        super().__init__(ignore=ignore)
         if not combinators:
             errors.GrammarError(
                 "EmptyAlternatives",

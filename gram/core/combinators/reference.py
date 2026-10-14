@@ -42,6 +42,16 @@ class Ref(Combinator):
         self.name: str | None = name
         if self.name is None and not strict and getattr(self.rule, "nodeable", False):
             self.name = self.rule_name
+        self.branchable: bool = False
+
+    @property
+    def brancheable(self) -> bool:
+        """Backward-compatible alias for `branchable`."""
+        return self.branchable
+
+    @brancheable.setter
+    def brancheable(self, value: bool) -> None:
+        self.branchable = value
 
     @property
     def rule_name(self) -> str:

@@ -207,41 +207,45 @@ if __name__ == '__main__':
         P = parser.Parser(R)
         R = P.parse(PROGRAM)
         print('Parsed AST:', R)
+        t = P.analyzer_ast_instance.raytracing.stringify()
+        p = P.analyzer_ast_instance.raytracing.path_tracing()
+        print(t)
+        print(p)
     except BaseException as err:
         print('CLI compilation notice for', source_path, ':', err)
     finally:
         config.ERROR_EXIT_ON_ERROR = prev_exit
 
-    analyzer = vsix.VSIXAnalyzer(output='default')
-    data = analyzer.process(PROGRAM)
+    # analyzer = vsix.VSIXAnalyzer(output='default')
+    # data = analyzer.process(PROGRAM)
 
-    for d, t in data.items():
-        print(d, ':', t)
+    # for d, t in data.items():
+    #     print(d, ':', t)
 
-    vsix.declare_info(
-        name='gram-language',
-        display_name='Gram Language Official Support',
-        description='Comprehensive language tooling and syntax support for Gram DSL.',
-        version='0.2.0',
-        publisher='gram-framework',
-        author='Kentucky & Gram Community',
-        license='MIT',
-        repository='https://github.com/Kentucky/Gram',
-        homepage='https://github.com/Kentucky/Gram#readme',
-        language_id='gram',
-        language_name='Gram',
-        file_extensions=['.gram', '.g'],
-        keywords=['gram', 'compiler', 'dsl', 'parser', 'vsix']
-    )
+    # vsix.declare_info(
+    #     name='gram-language',
+    #     display_name='Gram Language Official Support',
+    #     description='Comprehensive language tooling and syntax support for Gram DSL.',
+    #     version='0.2.0',
+    #     publisher='gram-framework',
+    #     author='Kentucky & Gram Community',
+    #     license='MIT',
+    #     repository='https://github.com/Kentucky/Gram',
+    #     homepage='https://github.com/Kentucky/Gram#readme',
+    #     language_id='gram',
+    #     language_name='Gram',
+    #     file_extensions=['.gram', '.g'],
+    #     keywords=['gram', 'compiler', 'dsl', 'parser', 'vsix']
+    # )
 
-    generator = vsix.VSIXGenerator(data)
-    extension_files = generator.export('./vscode_extension')
+    # generator = vsix.VSIXGenerator(data)
+    # extension_files = generator.export('./vscode_extension')
 
-    print('Generated VS Code extension files:')
-    for key, filepath in extension_files.items():
-        print(key, '->', filepath)
+    # print('Generated VS Code extension files:')
+    # for key, filepath in extension_files.items():
+    #     print(key, '->', filepath)
 
-    status = vsix.up(generator)
-    print('VSIX Up status:')
-    print('Packaged VSIX file:', status['vsix_file'])
-    print('Installed extension ID:', status['install_info']['extension_id'])
+    # status = vsix.up(generator)
+    # print('VSIX Up status:')
+    # print('Packaged VSIX file:', status['vsix_file'])
+    # print('Installed extension ID:', status['install_info']['extension_id'])

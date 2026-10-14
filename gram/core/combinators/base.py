@@ -27,9 +27,11 @@ class Combinator:
     """
 
     header_class: bool = False
+    ignore: bool = False
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, ignore: bool = False, **kwargs: Any) -> None:
         self.header_class: bool = self.__class__.header_class
+        self.ignore: bool = ignore
         super().__init__()
 
     def parse(self, analyzer: ASTAnalyzer) -> Any:

@@ -12,10 +12,23 @@ from gram import errors
 from gram.core.ast import ASTAnalyzer
 from gram.core.parser.control import ParseState
 
+from dataclasses import dataclass
+
 if TYPE_CHECKING:
     from gram.core.combinators import RuleItem
     from gram.core.lexer import TokenType
 
+
+@dataclass(slots=True, frozen=True)
+class TokenInfo:
+    line: int
+    col: int
+    token: TokenType
+    token_pos: int
+
+
+# Backward-compatible alias
+TokenInf = TokenInfo
 
 class Parser(ParseState):
     """
@@ -32,6 +45,7 @@ class Parser(ParseState):
         """
         super().__init__(log_file)
         self.tokens = tokens
+        self.analyzer_ast_instance: ASTAnalyzer | None = None
 
     def parse(self, entrypoint: type[RuleItem]) -> Any:
         """
@@ -57,7 +71,24 @@ class Parser(ParseState):
 
         self.debug('Starting syntactic analysis')
         analyzer = ASTAnalyzer(self, entrypoint)
+        self.analyzer_ast_instance = analyzer
         return analyzer.process()
 
 
-__all__ = ['Parser']
+    def get_token_info(self) -> TokenInfo | None:
+        """
+        Return an immutable snapshot of current token metadata at physical cursor.
+        """
+        current = self.peek()
+        if not current:
+            return None
+
+        return TokenInfo(
+            line=current.line,
+            col=current.col,
+            token=current,
+            token_pos=self.pos,
+        )
+
+
+__all__ = ['Parser', 'TokenInfo', 'TokenInf']

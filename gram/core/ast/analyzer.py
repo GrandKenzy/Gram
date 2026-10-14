@@ -14,6 +14,8 @@ from gram.core.ast.control import ASTState
 from gram.core.ast.visitor import Visitor
 from gram.core.combinators import Combinator, RuleItem
 from gram.core.lexer import Token
+from gram.core.ast.raytracing import RayTracing
+
 
 if TYPE_CHECKING:
     from gram.core.lexer import TokenType
@@ -43,6 +45,15 @@ class ASTAnalyzer(ASTState):
         self.debug(
             f"Analizador AST Inicializado. Entrada={self.entrypoint.name} grámaticas"
         )
+        
+        self.raytracing = RayTracing()
+        self.parser.hookr.add(self.dispatch_raytracing_process)
+
+    def dispatch_raytracing_process(self, state: str, checkpoint: Any = None) -> None:
+        if state == 'save':
+            self.raytracing.lift(checkpoint)
+        elif state == 'restore':
+            self.raytracing.unreach(checkpoint)
 
     def visitor(self, combinator: Combinator) -> Any:
         """Dispatch `combinator` to the AST `Visitor` function."""

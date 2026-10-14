@@ -173,6 +173,7 @@ class ASTState(utilities.Diagnostics):
             )
             return False
 
+        entrypoint.grammar.ignore = True
         for i, child in enumerate(entrypoint.grammar.combinators):
             if not isinstance(child, Ref):
                 self.error(
@@ -189,6 +190,8 @@ class ASTState(utilities.Diagnostics):
                     )
                 )
                 return False
+            child.branchable = True
+            child.brancheable = True
 
         self.success("El entrypoint es válido")
         return True
