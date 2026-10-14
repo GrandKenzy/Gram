@@ -9,7 +9,6 @@ Exporta los componentes esenciales del framework para acceso directo:
 - Combinadores: Seq, Alt, Many, Some, Opt, Sep, Enclosed, MatchToken, MatchKeyword,
                 MatchSymbol, MatchGroup, Ref, RuleItem, Combinator, Tokenize, Query
 - Gramáticas por defecto: PROGRAM, DECLARATION, BLOCK, INDENT_BLOCK, PASS, ENDLINE
-- DSL: parse_dsl, parse_glang_file, LanguageCompiler
 """
 from __future__ import annotations
 

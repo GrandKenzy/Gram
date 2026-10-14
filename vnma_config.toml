@@ -1,0 +1,22 @@
+# VNMA Package Configuration (vnma_config.toml)
+# Specification: https://github.com/GrandKenzy/vnma/blob/main/docs/en/01-Use/03-configuration-specs.md
+
+[package]
+name = "gram-framework"
+version = "2.0.0b0"
+type = "pure-python"
+
+[runtime]
+# Gram is 100% pure Python with zero external C dependencies:
+dll_directories = []
+
+# Enforce hermetic isolation to prevent host site-packages leakage:
+hermetic = true
+
+[exports]
+# Top-level packages/modules to expose to sys.path:
+modules = ["gram"]
+
+# Command-line entry points exposed as executable wrappers in vendor/.bin/:
+[exports.entry_points]
+gram = "gram.__main__:main"

@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Pure-Python Meta-Interpretation & Language Design Engine</strong><br>
-  Combinator parsing with atomic backtracking, AST RayTracing telemetry, Pratt expression engine, GLANG DSL, and Language Server Protocol (LSP) tooling for VS Code.
+  Combinator parsing with atomic backtracking, AST RayTracing telemetry, Pratt expression engine, and Language Server Protocol (LSP) tooling for VS Code.
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 </p>
 
 > **Gram v2.0.0 Beta Release:**  
-> Gram has evolved into **v2.0.0 Beta**, introducing unified AST **RayTracing** telemetry, immutable **TokenInfo** snapshots, the **Hookr** event observer pattern for LSP/IDE tools, a modernized **Pratt expression climbing engine**, and an exhaustive test suite with comprehensive documentation.
+> Gram has evolved into **v2.0.0 Beta**, introducing unified AST **RayTracing** telemetry, immutable **TokenInfo** snapshots, the **Hookr** event observer pattern for LSP/IDE tools, a modernized **Pratt expression climbing engine**, VNMA vendor compatibility (`vnma_config.toml`), and an exhaustive test suite with comprehensive documentation.
 
 ---
 
@@ -29,7 +29,7 @@ Rather than relying on external parser generators or complex C extensions, Gram 
 - **TokenInfo Snapshots:** Immutable, rich token metadata (row, column, length, value, token type, custom group, source text) for diagnostics and language tooling.
 - **Pratt Expression Engine:** Infix, prefix, and ternary operator precedence parsing (`DualExpr`, `ArithmeticExpr`, `ConditionalExpr`, `ChainL`, `ChainR`).
 - **VS Code Extension & LSP Tooling:** Native generator creating VS Code extensions (VSIX) with TextMate syntax highlighting, live completion, and Language Server Protocol (`gram.vsix.lsp`) communication.
-- **GLANG DSL & Plugin Architecture:** Declarative grammar definition language with AST static security auditing (`gram check`).
+- **VNMA Vendor Support:** Full compatibility with [VNMA](https://github.com/GrandKenzy/vnma) via `vnma_config.toml` for zero-overhead, hermetic vendoring without virtualenv bloat.
 
 ---
 
@@ -55,12 +55,12 @@ Rather than relying on external parser generators or complex C extensions, Gram 
                          │   ASTAnalyzer Engine    │ <== RayTracing Telemetry
                          └───────────┬─────────────┘     (call stack, profiling, AST nodes)
                                      │
-            ┌────────────────────────┼────────────────────────┐
-            ▼                        ▼                        ▼
-     ┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-     │  Plugin      │         │  GLANG DSL   │         │  VSIX & LSP  │
-     │  Sandbox AST │         │  Compiler    │         │  for VS Code │
-     └──────────────┘         └──────────────┘         └──────────────┘
+                        ┌────────────┴────────────┐
+                        ▼                         ▼
+             ┌─────────────────────┐   ┌─────────────────────┐
+             │  Custom Rules &     │   │   VSIX & LSP        │
+             │  Modular Grammar    │   │   for VS Code       │
+             └─────────────────────┘   └─────────────────────┘
 ```
 
 ---
@@ -75,20 +75,17 @@ cd Gram
 pip install -e .
 ```
 
+### With VNMA (Hermetic Vendoring):
+
+```bash
+# In your project:
+vnma install git+https://github.com/GrandKenzy/Gram.git@main
+```
+
 ### Verification:
 
 ```bash
-python -m gram --version
-# Or using the console launcher:
-gram --version
-```
-
-### Uninstallation:
-
-```bash
-gram uninstall
-# Skip confirmation prompt:
-gram uninstall --yes
+python -m gram
 ```
 
 ---
@@ -165,6 +162,7 @@ if analyzer.raytracing:
 | **Hookr Observer Pipeline** | Reactive hooks (`before_match`, `after_match`, `on_backtrack`, `on_error`) for decoupled IDE/LSP listeners. | `gram.core.parser.hookr` |
 | **Combinator `ignore` Flag** | Explicit bypass of auxiliary wrapper nodes (e.g., entrypoint `Alt` wrappers) in tracing and AST generation. | `gram.core.combinators.base.Combinator` |
 | **Pratt Expression Engine** | Modernized precedence parsing (`DualExpr`, `ArithmeticExpr`, `ConditionalExpr`) with ternary and binary chains. | `gram.core.combinators.expressions` |
+| **VNMA Compatibility** | Native `vnma_config.toml` specification for zero-overhead, zero-magic dependency vendoring. | `vnma_config.toml` |
 | **Exhaustive Test Suite** | 45 comprehensive unit tests covering all combinator variants, return types, and failure states. | `tests/combinators/` |
 | **English Technical Docs** | Fully updated documentation modules with practical usage guides and code examples. | `docs/en/01-Combinadores/` |
 
@@ -196,7 +194,7 @@ python -m unittest discover -s tests
 ```text
 .............................................
 ----------------------------------------------------------------------
-Ran 45 tests in 2.276s
+Ran 45 tests in 2.002s
 
 OK
 ```
@@ -205,40 +203,6 @@ The test suite systematically verifies:
 1. Expected result structures (values, lists, tuples, dictionaries).
 2. Combinator variations, arguments, and configuration options.
 3. Strict error handling, fail modes, and recovery paths.
-
----
-
-## Command Line Interface (CLI)
-
-Gram provides a unified CLI via `gram` or `python -m gram`:
-
-```bash
-# Verify and audit a plugin with static AST analysis
-gram check gram/plugins/source/expressions
-
-# Install and inspect plugins
-gram install gram/plugins/source/expressions
-gram list
-
-# Manage isolated virtual environments
-gram env create
-gram env list
-
-# Compile a GLANG grammar file to Python
-gram glang compile my_grammar.glang
-
-# Generate and package a VS Code VSIX extension with LSP
-gram vsix install
-```
-
----
-
-## Sample Projects
-
-Explore real-world implementations built on Gram inside [`examples/`](examples/):
-
-1. **[`CExample`](examples/CExample/):** A parser for an expressive subset of the C language, handling primitive types, pointers (`int*`), function prototypes, recursive loops, `#include` directives, symbol tables, and AST generation.
-2. **[`sjson`](examples/sjson/):** A **Super JSON** compiler supporting variables (`let`/`var`), arithmetic expressions, comments (`//`), and file inheritance (`{ extend: "base.json" }`), compiling deterministically to RFC 8259 JSON.
 
 ---
 
@@ -263,5 +227,5 @@ Gram is distributed under the **Free Use & Commercial Output License** (see [LIC
 
 - **Free of Charge:** You may freely use Gram for personal, educational, research, and commercial projects.
 - **Commercial Output Allowed:** Products built with Gram (custom languages, parsers, compilers, DSL tools) belong entirely to their creators and may be commercialized without restrictions or royalties.
-- **Core Immutability:** Gram core remains immutable to downstream redistribution; extensions and grammar enhancements should be authored via plugins or custom rules.
+- **Core Immutability:** Gram core remains immutable to downstream redistribution; extensions and grammar enhancements should be authored via external modular rules or plugins.
 - **Non-Commercial Framework Resale:** The framework itself may not be rebranded, sublicensed, or resold as a standalone library package.

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gram-framework"
 version = "2.0.0b0"
-description = "Meta-interpretation framework and DSL engine with combinator parsing, AST analysis, security sandbox, and VS Code extension generator."
+description = "Meta-interpretation framework with combinator parsing, AST analysis, RayTracing telemetry, and VS Code LSP support."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -21,7 +21,6 @@ keywords = [
     "language-server",
     "lsp",
     "vsix",
-    "glang",
     "grammar"
 ]
 classifiers = [
@@ -40,8 +39,7 @@ classifiers = [
 dependencies = []
 
 [project.scripts]
-gram = "gram.cli.core:main"
-sjson = "sjson.__main__:main"
+gram = "gram.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/GrandKenzy/Gram"
@@ -50,7 +48,7 @@ Repository = "https://github.com/GrandKenzy/Gram"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["gram*", "sjson*"]
+include = ["gram*"]
 exclude = ["examples*", "docs*", "scratch*", "tests*"]
 
 [tool.setuptools.package-data]

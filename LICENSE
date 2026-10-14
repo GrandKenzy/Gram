@@ -31,7 +31,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
    The core source code, internal architecture, and files of the Gram Framework
    itself may NOT be modified, altered, patched, or reverse-engineered directly,
    WITH THE SOLE EXCEPTION of extensions developed through Gram's official
-   Plugin Architecture (via `gram.plugins` and `*.glang.py` extension points).
+   Plugin Architecture (via gram.plugins and modular extension points).
    Any custom behavior, combinator, keyword, or rule must be introduced through
    the official plugin system rather than altering the core codebase.
 
@@ -55,57 +55,57 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
    SOFTWARE.
 
 ================================================================================
-[VERSIÓN EN ESPAÑOL]
+[VERSIÃN EN ESPAÃOL]
 
 Licencia de Gram Framework
-Versión 1.0.0 (2026)
+VersiÃ³n 1.0.0 (2026)
 
 Copyright (c) 2026 GrandKenzy / Contribuidores de Gram Framework.
 Contacto: kencv3002003@gmail.com
 
-TÉRMINOS Y CONDICIONES DE USO, REPRODUCCIÓN Y DISTRIBUCIÓN
+TÃRMINOS Y CONDICIONES DE USO, REPRODUCCIÃN Y DISTRIBUCIÃN
 
-1. CONCESIÓN DE USO (GRATUITO):
+1. CONCESIÃN DE USO (GRATUITO):
    Por la presente se concede permiso, de manera totalmente gratuita, a cualquier
-   persona u organización que obtenga una copia del software Gram Framework y de
-   sus archivos de documentación asociados (el "Software"), para usar, ejecutar
-   y operar el Software con propósitos personales, educativos, académicos,
-   de investigación, internos o comerciales.
+   persona u organizaciÃ³n que obtenga una copia del software Gram Framework y de
+   sus archivos de documentaciÃ³n asociados (el "Software"), para usar, ejecutar
+   y operar el Software con propÃ³sitos personales, educativos, acadÃ©micos,
+   de investigaciÃ³n, internos o comerciales.
 
-2. COMERCIALIZACIÓN DE PRODUCTOS DERIVADOS DE SU USO:
-   Cualquier software, producto, lenguaje, Lenguaje de Dominio Específico (DSL),
-   compilador, transpilador, intérprete, analizador sintáctico (parser), árbol de
-   sintaxis abstracta (AST), formato de datos o aplicación creada, desarrollada
+2. COMERCIALIZACIÃN DE PRODUCTOS DERIVADOS DE SU USO:
+   Cualquier software, producto, lenguaje, Lenguaje de Dominio EspecÃ­fico (DSL),
+   compilador, transpilador, intÃ©rprete, analizador sintÃ¡ctico (parser), Ã¡rbol de
+   sintaxis abstracta (AST), formato de datos o aplicaciÃ³n creada, desarrollada
    o procesada mediante el uso de Gram es propiedad exclusiva de su creador.
    Se autoriza expresamente a vender, comercializar, monetizar, licenciar y
-   distribuir cualquier producto resultante del uso de Gram, sin obligación de
-   pagar regalías ni tarifas de licencia a los autores de Gram.
+   distribuir cualquier producto resultante del uso de Gram, sin obligaciÃ³n de
+   pagar regalÃ­as ni tarifas de licencia a los autores de Gram.
 
-3. RESTRICCIÓN DE MODIFICACIÓN:
-   El código fuente base, la arquitectura interna y los archivos propios de Gram
+3. RESTRICCIÃN DE MODIFICACIÃN:
+   El cÃ³digo fuente base, la arquitectura interna y los archivos propios de Gram
    Framework NO pueden ser modificados, alterados, parcheados ni sometidos a
-   ingeniería inversa de forma directa, CON LA ÚNICA EXCEPCIÓN de las extensiones
-   creadas a través del sistema oficial de Plugins de Gram (mediante `gram.plugins`
-   y puntos de extensión `*.glang.py`). Cualquier comportamiento personalizado,
+   ingenierÃ­a inversa de forma directa, CON LA ÃNICA EXCEPCIÃN de las extensiones
+   creadas a travÃ©s del sistema oficial de Plugins de Gram (mediante `gram.plugins`
+   y puntos de extension modulares). Cualquier comportamiento personalizado,
    combinador, palabra clave o regla adicional debe implementarse exclusivamente
-   a través del mecanismo oficial de plugins.
+   a travÃ©s del mecanismo oficial de plugins.
 
-4. RESTRICCIÓN DE COMERCIALIZACIÓN DEL FRAMEWORK:
-   Gram Framework en sí mismo, de manera total o parcial, no puede ser vendido,
+4. RESTRICCIÃN DE COMERCIALIZACIÃN DEL FRAMEWORK:
+   Gram Framework en sÃ­ mismo, de manera total o parcial, no puede ser vendido,
    revendido, alquilado, sublicenciado, redistribuido con fines comerciales bajo
-   otra marca, ni comercializado como paquete, librería o framework independiente.
-   No está permitido atribuirse la autoría original de Gram.
+   otra marca, ni comercializado como paquete, librerÃ­a o framework independiente.
+   No estÃ¡ permitido atribuirse la autorÃ­a original de Gram.
 
-5. ATRIBUCIÓN:
-   El aviso de copyright anterior y este aviso de licencia deberán incluirse en
+5. ATRIBUCIÃN:
+   El aviso de copyright anterior y este aviso de licencia deberÃ¡n incluirse en
    todas las copias o partes sustanciales del Software.
 
-6. EXENCIÓN DE RESPONSABILIDAD:
-   EL SOFTWARE SE PROPORCIONA "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O
-   IMPLÍCITA, INCLUYENDO, ENTRE OTRAS, LAS GARANTÍAS DE COMERCIABILIDAD, IDONEIDAD
-   PARA UN FIN DETERMINADO Y NO INFRACCIÓN. EN NINGÚN CASO LOS AUTORES O TITULARES
-   DEL COPYRIGHT SERÁN RESPONSABLES DE NINGUNA RECLAMACIÓN, DAÑO U OTRA
-   RESPONSABILIDAD, YA SEA EN UNA ACCIÓN CONTRACTUAL, EXTRACONTRACTUAL O DE OTRO
-   TIPO, QUE SURJA DE, O ESTÉ RELACIONADA CON EL SOFTWARE O EL USO U OTROS TRATOS
+6. EXENCIÃN DE RESPONSABILIDAD:
+   EL SOFTWARE SE PROPORCIONA "TAL CUAL", SIN GARANTÃA DE NINGÃN TIPO, EXPRESA O
+   IMPLÃCITA, INCLUYENDO, ENTRE OTRAS, LAS GARANTÃAS DE COMERCIABILIDAD, IDONEIDAD
+   PARA UN FIN DETERMINADO Y NO INFRACCIÃN. EN NINGÃN CASO LOS AUTORES O TITULARES
+   DEL COPYRIGHT SERÃN RESPONSABLES DE NINGUNA RECLAMACIÃN, DAÃO U OTRA
+   RESPONSABILIDAD, YA SEA EN UNA ACCIÃN CONTRACTUAL, EXTRACONTRACTUAL O DE OTRO
+   TIPO, QUE SURJA DE, O ESTÃ RELACIONADA CON EL SOFTWARE O EL USO U OTROS TRATOS
    EN EL SOFTWARE.
 ================================================================================

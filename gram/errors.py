@@ -628,29 +628,6 @@ COMPILATION_DSL_INCLUDE_NOT_FOUND: CodeError = CodeError(
 )
 """Raised when a file or module referenced by an `include` directive is not found (S-15411)."""
 
-COMPILATION_GLANG_INCLUDE_PLUGIN_NOT_LOADED: CodeError = CodeError(
-    (
-        CODE_NATIVE_ERROR,
-        CODE_COMPILATION_ERROR,
-        CODE_FATAL,
-        CODE_DOCUMENTED_AND_TRACEABLE,
-        CODE_REQUIRES_REPAIR,
-    ),
-    'Gram.DSL.IncludePluginNotLoaded',
-)
-"""Raised when including rules from a plugin that is not loaded (S-15411)."""
-
-COMPILATION_GLANG_IMMUTABILITY_VIOLATION: CodeError = CodeError(
-    (
-        CODE_NATIVE_ERROR,
-        CODE_COMPILATION_ERROR,
-        CODE_FATAL,
-        CODE_DOCUMENTED_AND_TRACEABLE,
-        CODE_REQUIRES_REPAIR,
-    ),
-    'Gram.DSL.ImmutabilityViolation',
-)
-"""Raised when attempting to mutate an immutable DSL definition during compilation (S-15411)."""
 
 
 # ==============================================================================
@@ -1082,8 +1059,6 @@ __all__ = [
     'COMPILATION_DSL_INCLUDE_NOT_FOUND',
     # Compilation & DSL Catalog (COMPILATION_*)
     'COMPILATION_DSL_SYNTAX_ERROR',
-    'COMPILATION_GLANG_IMMUTABILITY_VIOLATION',
-    'COMPILATION_GLANG_INCLUDE_PLUGIN_NOT_LOADED',
     # Grammar & Combinator Catalog (GRAMMAR_*)
     'GRAMMAR_ANY_NOT_IMPLEMENTED',
     'GRAMMAR_COMBINATOR_FAILED',

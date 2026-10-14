@@ -1,12 +1,18 @@
 """
-Punto de entrada directo para el paquete Gram: python -m gram [comando]
-=======================================================================
-Redirige directamente al motor CLI de Gram Framework.
+Punto de entrada directo para el paquete Gram: python -m gram
+=============================================================
 """
 from __future__ import annotations
 
 import sys
-from gram.cli.core import main
+from gram import __version__
+
+
+def main() -> int:
+    """Imprime información de versión del framework."""
+    print(f"Gram Framework v{__version__}")
+    return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
