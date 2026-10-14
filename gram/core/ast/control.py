@@ -89,8 +89,12 @@ class ASTState(utilities.Diagnostics):
             return self.stage_failure(err, weight=cursor_pos)
 
         self.discard_staged_failure()
-        self.record_failure(err)
-        if config.ERROR_EXIT_ON_ERROR:
+        res = self.record_failure(err)
+        if (
+            res is not None
+            and not getattr(err, "_suppress_raise", False)
+            and config.ERROR_EXIT_ON_ERROR
+        ):
             self.fail(err, exit=True)
         return err
 
@@ -102,7 +106,11 @@ class ASTState(utilities.Diagnostics):
         `config.ERROR_EXIT_ON_ERROR` is enabled.
         """
         target = self.promote_staged_failure(fallback=fallback)
-        if target is not None and config.ERROR_EXIT_ON_ERROR:
+        if (
+            target is not None
+            and not getattr(target, "_suppress_raise", False)
+            and config.ERROR_EXIT_ON_ERROR
+        ):
             self.fail(target, exit=True)
         return target
 

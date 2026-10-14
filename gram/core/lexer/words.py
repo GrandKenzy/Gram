@@ -49,7 +49,11 @@ class Keyword:
         group: str | WordGroup | None = None,
         description: str = "",
         documentation: str = "",
+        *,
+        color: str | None = None,
     ) -> None:
+        if color is not None:
+            hex_color = color
         if not name or not name.strip():
             errors.LexerError(
                 "KeywordInvalidName",
@@ -66,19 +70,22 @@ class Keyword:
         self.documentation: str = documentation
         MAP_KEYWORDS[self.name] = self
 
-        if self.group is None:
-            return
+        if self.group is not None:
+            if not group_exists(self.group):
+                _log_lexer_note(
+                    f"El grupo {self.group!r} no existe aún al registrar la palabra clave "
+                    f"{self.name!r}. Créelo usando words.add_group.",
+                    "warn",
+                )
+            else:
+                grp = group if isinstance(group, WordGroup) else get_group(self.group)
+                if grp is not None:
+                    grp.add_keyword(self)
 
-        if not group_exists(self.group):
-            _log_lexer_note(
-                f"El grupo {self.group!r} no existe aún al registrar la palabra clave "
-                f"{self.name!r}. Créelo usando words.add_group.",
-                "warn",
-            )
-        else:
-            grp = group if isinstance(group, WordGroup) else get_group(self.group)
-            if grp is not None:
-                grp.add_keyword(self)
+    @property
+    def color(self) -> str:
+        """Return hex color of keyword."""
+        return self.hex_color
 
     @classmethod
     def count(cls) -> int:
@@ -294,9 +301,12 @@ def add_keyword(
     description: str = "",
     documentation: str = "",
     *,
+    color: str | None = None,
     allow_override: bool = False,
 ) -> Keyword:
     """Register a keyword in the global lexer catalog."""
+    if color is not None:
+        hex_color = color
     if not name or not name.strip():
         errors.LexerError(
             "KeywordInvalidName",

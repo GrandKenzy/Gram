@@ -14,8 +14,8 @@ Exporta los componentes esenciales del framework para acceso directo:
 from __future__ import annotations
 
 # Submódulos del sistema
-from gram import config, errors, utilities
-from gram.core import ast, combinators, lexer, parser
+from gram import config, errors, utilities, vsix
+from gram.core import ast, combinators, lexer, parser, rules
 from gram.core.process import (
     process,
 )
@@ -40,6 +40,8 @@ __all__ = [
     "lexer",
     "parser",
     "process",
+    "rules",
     "utilities",
-    "version"
+    "version",
+    "vsix",
 ]

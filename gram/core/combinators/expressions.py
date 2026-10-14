@@ -4,7 +4,7 @@ Pratt Expression Combinators (`gram.core.combinators.expressions`).
 Provides `ArithmeticExpr`, `ConditionalExpr`, and `DualExpr` powered by a
 single-pass Top-Down Operator Precedence (Pratt) engine with native strict
 parenthesis grouping, $O(1)$ static binding-power tables, and strict operand
-validation (`Token` members and named `Ref` combinators).
+validation (`Token` members, named `Ref` combinators, and `nodeable` `RuleItem` classes).
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from collections.abc import Iterable, MutableMapping
 from typing import TYPE_CHECKING, Any
 
 from gram import errors
-from gram.core.ast.nodes import ASTNode
-from gram.core.combinators.base import Combinator
+from gram.core.ast.nodes import ASTNode, ASTRef
+from gram.core.combinators.base import Combinator, RuleItem
 from gram.core.combinators.reference import Ref
 from gram.core.lexer.tokens import Token, TokenType
 
@@ -124,8 +124,9 @@ class ASTUnaryOp(ASTNode):
         operand (ASTNode): The right-hand operand node.
     """
 
+    __slots__ = ("operator", "operand")
+
     def __init__(self, operator: TokenType, operand: ASTNode) -> None:
-        super().__init__(operator)
         self.operator: TokenType = operator
         self.operand: ASTNode = operand
 
@@ -143,13 +144,14 @@ class ASTBinaryOp(ASTNode):
         right (ASTNode): The right-hand operand node.
     """
 
+    __slots__ = ("left", "operator", "right")
+
     def __init__(
         self,
         left: ASTNode,
         operator: TokenType,
         right: ASTNode,
     ) -> None:
-        super().__init__(operator)
         self.left: ASTNode = left
         self.operator: TokenType = operator
         self.right: ASTNode = right
@@ -166,7 +168,7 @@ class ASTBinaryOp(ASTNode):
 # 3. BASE PRATT EXPRESSION COMBINATOR
 # ==============================================================================
 
-ValueSpec = Token | str | Ref
+ValueSpec = Token | str | Ref | type[RuleItem]
 
 
 class BaseExpr(Combinator):
@@ -174,8 +176,8 @@ class BaseExpr(Combinator):
     Base Top-Down Operator Precedence (Pratt) expression combinator.
 
     Enforces two architectural invariants:
-    1. Only `Token` members (or token name strings) and named `Ref` combinators
-       (`Ref(RULE, name=...)`) are permitted as atomic `values`.
+    1. Only `Token` members (or token name strings), named `Ref` combinators,
+       or `RuleItem` classes with `nodeable=True` are permitted as atomic `values`.
     2. Parentheses (`Token.LPAREN` ... `Token.RPAREN`) are handled natively and
        strictly as precedence-resetting groups with bracket-aware whitespace skipping.
     """
@@ -190,9 +192,9 @@ class BaseExpr(Combinator):
 
         Args:
             *values (ValueSpec | Iterable[ValueSpec]): Allowed operand specifications.
-                Each entry must be a `Token`, a valid `Token` string name, or a
-                named `Ref(rule, name='...')`. If omitted, defaults to
-                `(Token.NUMBER, Token.IDENT)`.
+                Each entry must be a `Token`, a valid `Token` string name, a named
+                `Ref(rule, name='...')`, or a `RuleItem` class with `nodeable=True`.
+                If omitted, defaults to `(Token.NUMBER, Token.IDENT)`.
         """
         super().__init__()
 
@@ -210,13 +212,17 @@ class BaseExpr(Combinator):
         tok_set: set[Token] = set()
 
         for spec in flattened:
+            # Allow passing a nodeable RuleItem class directly by wrapping it in Ref(spec)
+            if isinstance(spec, type) and issubclass(spec, RuleItem):
+                spec = Ref(spec)
+
             if isinstance(spec, Ref):
                 if not spec.name or not spec.name.strip():
                     errors.GrammarError(
                         "UnnamedRefInExpression",
                         errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
-                        f"El combinador {self.type()} recibió un Ref({spec.rule_name!r}) sin atributo 'name'.",
-                        "Por razones de trazabilidad en el AST de expresiones, use únicamente Refs nombrados: Ref(REGLA, name='alias').",
+                        f"El combinador {self.type()} recibió un Ref({spec.rule_name!r}) que no genera nodo ASTRef (name=None y nodeable=False).",
+                        f"Active 'nodeable = True' en la regla {spec.rule_name!r} o pase un nombre explícito: Ref({spec.rule_name}, name='alias').",
                     ).raise_error()
                 ref_list.append(spec)
             elif isinstance(spec, Token):
@@ -237,7 +243,7 @@ class BaseExpr(Combinator):
                     "UnsupportedExpressionValue",
                     errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
                     f"Valor no permitido en {self.type()}: {spec!r} ({type(spec).__name__}).",
-                    "Las expresiones solo admiten miembros de Token y combinadores Ref(..., name='...').",
+                    "Las expresiones solo admiten miembros de Token, reglas RuleItem(nodeable=True) y combinadores Ref(..., name='...').",
                 ).raise_error()
 
         self._ref_values: tuple[Ref, ...] = tuple(ref_list)
@@ -299,6 +305,7 @@ class BaseExpr(Combinator):
                     found_info = (
                         f"'{close_peek.value}' ({close_peek.token.name}) en línea {close_peek.line}, columna {close_peek.col}"
                         if close_peek is not None
+                        and close_peek.token != Token.EOF
                         else "EOF"
                     )
                     analyzer.report_error(
@@ -331,23 +338,21 @@ class BaseExpr(Combinator):
                 return None
             return ASTUnaryOp(op_tok, operand)
 
-        # 3. Named Ref combinators (prioritized before raw Tokens so `call(x)` beats `IDENT`)
         for ref_comb in self._ref_values:
             chk = parser.savepoint("EXPR-RefAtom")
+            had_prior_staged = analyzer.staged_failure is not None
+
             with analyzer.safe_mode():
                 ref_node = analyzer.visitor(ref_comb)
 
             if ref_node is not None:
                 analyzer.discard_staged_failure(min_weight=parser.pos)
-                return ref_node  # Guaranteed to be an ASTRef node
+                return ref_node
 
             parser.restore(chk)
-            # If the named Ref partially consumed tokens (>1 token deep) and failed,
-            # preserve its deep staged error and abort atom resolution.
-            if analyzer.staged_weight > chk.pos:
-                return None
+            if not had_prior_staged and analyzer.staged_weight == chk.pos:
+                analyzer.discard_staged_failure()
 
-        # 4. Atomic Token values ($O(1)$ set membership)
         if curr.token in self._token_values and curr.token != Token.KEYWORD:
             tok = parser.consume()
             analyzer.discard_staged_failure(min_weight=parser.pos)
@@ -480,7 +485,8 @@ class ConditionalExpr(BaseExpr):
     boolean operators (`CONDITIONAL_BINARY_OPS` and `CONDITIONAL_UNARY_OPS`).
 
     If `strict=True` (default), requires the resulting expression tree to be a
-    comparison/logical operation or a boolean/identifier atom.
+    comparison/logical operation, a named `ASTRef` (e.g. predicate call), or a
+    boolean/identifier atom.
     """
 
     binary_ops = CONDITIONAL_BINARY_OPS
@@ -502,13 +508,13 @@ class ConditionalExpr(BaseExpr):
     ) -> bool:
         if not self.strict:
             return True
-        if isinstance(root, (ASTBinaryOp, ASTUnaryOp)):
+        if isinstance(root, (ASTBinaryOp, ASTUnaryOp, ASTRef)):
             return True
         tok = getattr(root, "token", None)
         if isinstance(tok, TokenType) and tok.token in (Token.BOOL, Token.IDENT):
             return True
 
-        curr_Info = (
+        curr_info = (
             f" cerca de '{tok.value}' (línea {tok.line}, columna {tok.col})"
             if isinstance(tok, TokenType)
             else ""
@@ -517,7 +523,7 @@ class ConditionalExpr(BaseExpr):
             errors.GrammarError(
                 "InvalidConditionalExpression",
                 errors.GRAMMAR_COMBINATOR_FAILED,
-                f"ConditionalExpr requiere una comparación u operación lógica válida{curr_Info}.",
+                f"ConditionalExpr requiere una comparación u operación lógica válida{curr_info}.",
                 "Un valor literal aislado no constituye una condición válida cuando strict=True.",
             ),
             pos=start_pos,
@@ -549,11 +555,13 @@ class DualExpr(BaseExpr):
         self.require_condition: bool = require_condition
 
     def _is_condition_tree(self, node: ASTNode) -> bool:
-        """Verify that `node` evaluates to a relational or logical result at its top level."""
+        """Verify that `node` evaluates to a relational, logical, or predicate result at its top level."""
         if isinstance(node, ASTBinaryOp):
             return node.operator.token in CONDITIONAL_BINARY_OPS
         if isinstance(node, ASTUnaryOp):
             return node.operator.token in CONDITIONAL_UNARY_OPS
+        if isinstance(node, ASTRef):
+            return True
         tok = getattr(node, "token", None)
         return isinstance(tok, TokenType) and tok.token in (Token.BOOL, Token.IDENT)
 

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Gram",
+  "scopeName": "source.gram",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.semicolon.gram",
+          "match": ";.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.gram",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.gram",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.gram",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.gram",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.gram",
+          "match": "\\b\\d+(\\.\\d+)?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "storage.type",
+          "match": "\\bint\\b"
+        },
+        {
+          "name": "storage.type",
+          "match": "\\bstr\\b"
+        },
+        {
+          "name": "keyword.control.flow",
+          "match": "\\breturn\\b"
+        },
+        {
+          "name": "keyword.control.block",
+          "match": "\\bblock\\b"
+        },
+        {
+          "name": "keyword.control.block",
+          "match": "\\bend\\b"
+        },
+        {
+          "name": "keyword.control.import",
+          "match": "\\bimport\\b"
+        }
+      ]
+    }
+  }
+}

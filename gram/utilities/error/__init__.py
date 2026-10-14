@@ -179,6 +179,11 @@ class Error(Exception):
             exit (bool | None): Explicit override for `config.ERROR_EXIT_ON_ERROR`.
         """
         from gram import config
+        from gram.utilities import Diagnostics, ErrorAction
+
+        action = Diagnostics.dispatch_error_hooks(self, self)
+        if action == ErrorAction.OMIT or getattr(self, "_suppress_raise", False):
+            return
 
         if not getattr(config, 'ERROR_HIDE_CONSOLE', False):
             self.print()

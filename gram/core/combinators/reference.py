@@ -1,7 +1,7 @@
 """
 Grammar Rule Reference Combinator (`gram.core.combinators.reference`).
 ======================================================================
-Provides the `Ref` combinator (and `Reference` alias) to dynamically resolve
+Provides the `Ref` combinator to dynamically resolve
 and evaluate production rules, supporting mutual recursion, forward references,
 and named `ASTRef` node wrapping.
 """
@@ -27,6 +27,7 @@ class Ref(Combinator):
         self,
         rule: type[RuleItem],
         name: str | None = None,
+        strict: bool = False,
     ) -> None:
         """
         Initialize a reference to a target grammar rule.
@@ -39,6 +40,8 @@ class Ref(Combinator):
         super().__init__()
         self.rule: type[RuleItem] = rule
         self.name: str | None = name
+        if self.name is None and not strict and getattr(self.rule, "nodeable", False):
+            self.name = self.rule_name
 
     @property
     def rule_name(self) -> str:

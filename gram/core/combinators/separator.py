@@ -11,9 +11,10 @@ from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from gram import errors
-from gram.core.combinators.base import Combinator
+from gram.core.combinators.base import Combinator, RuleItem
 from gram.core.combinators.item import ItemNode, Literal, LiteralNode
-from gram.core.combinators.match import MatchToken
+from gram.core.combinators.match import MatchSymbol, MatchToken
+from gram.core.combinators.reference import Ref
 from gram.core.combinators.signals import BreakFlowSignal, SkipFlowSignal
 from gram.core.lexer.tokens import MAP_SYMBOLS, Token, TokenType
 
@@ -69,31 +70,20 @@ class SeparatorResult(list[Any]):
         )
 
 
-def _normalize_value(val: Any) -> Combinator:
-    """Coerce an arbitrary value specification into a valid `Combinator` instance."""
-    if isinstance(val, Combinator):
-        return val
-    if isinstance(val, Token):
-        return MatchToken(val)
-    if isinstance(val, str):
-        tok_enum = Token.from_string(val)
+def _normalize_sep(sep: Any) -> Combinator:
+    """Coerce a separator delimiter specification into a valid `Combinator` instance."""
+    if isinstance(sep, Combinator):
+        return sep
+    if isinstance(sep, Token):
+        return MatchToken(sep)
+    if isinstance(sep, str):
+        tok_enum = Token.from_string(sep)
         if tok_enum is not None:
             return MatchToken(tok_enum)
-        if val in MAP_SYMBOLS:
-            return MatchToken(MAP_SYMBOLS[val])
-        return Literal(val)
-    if isinstance(val, (int, float)):
-        return Literal(val)
-    if isinstance(val, type) and issubclass(val, Combinator):
-        return val()
-
-    errors.GrammarError(
-        "UnsupportedSeparatorValue",
-        errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
-        f"Valor no permitido en la configuración de Separator: {val!r} ({type(val).__name__}).",
-        "Use una instancia de Combinator, Token, cadena o literal numérico.",
-    ).raise_error()
-    raise TypeError(f"Unsupported value in Separator: {val!r}")
+        if sep in MAP_SYMBOLS:
+            return MatchToken(MAP_SYMBOLS[sep])
+        return MatchSymbol(sep)
+    return MatchToken(Token.COMMA)
 
 
 class Separator(Combinator):
@@ -125,13 +115,60 @@ class Separator(Combinator):
             allow_trailing (bool): If True, permits a trailing delimiter after the final element.
         """
         super().__init__()
-        if isinstance(values, (list, tuple)):
-            self.values: tuple[Combinator, ...] = tuple(
-                _normalize_value(v) for v in values
-            )
+
+        flattened: list[Any] = []
+        if isinstance(values, (list, tuple, set, frozenset)):
+            for item in values:
+                if isinstance(item, (list, tuple, set, frozenset)):
+                    flattened.extend(item)
+                else:
+                    flattened.append(item)
         else:
-            self.values = (_normalize_value(values),)
-        self.sep: Combinator = _normalize_value(sep)
+            flattened.append(values)
+
+        ref_list: list[Ref] = []
+        tok_list: list[Combinator] = []
+
+        for spec in flattened:
+            if isinstance(spec, type) and issubclass(spec, RuleItem):
+                spec = Ref(spec)
+
+            if isinstance(spec, Ref):
+                if not spec.name or not spec.name.strip():
+                    errors.GrammarError(
+                        "UnnamedRefInSeparator",
+                        errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                        f"El combinador {self.type()} recibió un Ref({spec.rule_name!r}) que no genera nodo ASTRef (name=None y nodeable=False).",
+                        f"Active 'nodeable = True' en la regla {spec.rule_name!r} o pase un nombre explícito: Ref({spec.rule_name}, name='alias').",
+                    ).raise_error()
+                ref_list.append(spec)
+            elif isinstance(spec, MatchToken):
+                tok_list.append(spec)
+            elif isinstance(spec, Token):
+                tok_list.append(MatchToken(spec))
+            elif isinstance(spec, str):
+                tok_enum = Token.from_string(spec)
+                if tok_enum is not None:
+                    tok_list.append(MatchToken(tok_enum))
+                elif spec in MAP_SYMBOLS:
+                    tok_list.append(MatchToken(MAP_SYMBOLS[spec]))
+                else:
+                    errors.GrammarError(
+                        "InvalidSeparatorTokenName",
+                        errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                        f"El nombre '{spec}' no corresponde a ningún Token válido en {self.type()}.",
+                        "Pase miembros del enum Token o combinadores Ref(nodeable=True) en 'values'.",
+                    ).raise_error()
+            else:
+                errors.GrammarError(
+                    "UnsupportedSeparatorValue",
+                    errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                    f"Valor no permitido en la configuración de Separator: {spec!r} ({type(spec).__name__}).",
+                    "Separator solo admite miembros de Token, reglas RuleItem(nodeable=True) y combinadores Ref(..., name='...').",
+                ).raise_error()
+
+        self.values: tuple[Combinator, ...] = tuple(ref_list + tok_list)
+        self.sep: Combinator = _normalize_sep(sep)
         self.min: int = min
         self.max: int | None = max
         self.allow_trailing: bool = allow_trailing

@@ -9,17 +9,31 @@ Completely decoupled from any host framework or global configuration.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from typing import ClassVar
 
 from . import Format, ansi_colors, error, info
+
+ErrorHook = Callable[['Diagnostics', error.Error], str | None]
+
+
+class ErrorAction:
+    """Action directives returned by error hooks to dictate error handling."""
+
+    STORE = "store"
+    OMIT = "omit"
+    RAISE = "raise"
+    SUPPRESS_RAISE = "suppress"
 
 
 class Diagnostics:
     """
     Framework-agnostic controller for hierarchical telemetry trees, reentrant
-    failure contexts, and weighted candidate error staging.
+    failure contexts, weighted candidate error staging, and error hooks.
     """
+
+    _global_hooks: ClassVar[list[ErrorHook]] = []
 
     def __init__(
         self,
@@ -42,6 +56,39 @@ class Diagnostics:
         self._errors: list[error.Error] = []
         self._context_depth: int = 0
         self._staged_failure: tuple[int, error.Error] | None = None
+        self._hooks: list[ErrorHook] = []
+
+    @classmethod
+    def register_global_hook(cls, hook: ErrorHook) -> None:
+        """Register a framework-wide error interceptor hook."""
+        if hook not in cls._global_hooks:
+            cls._global_hooks.append(hook)
+
+    @classmethod
+    def unregister_global_hook(cls, hook: ErrorHook) -> None:
+        """Remove a previously registered framework-wide error hook."""
+        if hook in cls._global_hooks:
+            cls._global_hooks.remove(hook)
+
+    @classmethod
+    @contextmanager
+    def hook_errors(cls, hook: ErrorHook) -> Iterator[None]:
+        """Context manager to intercept errors across all Diagnostics instances."""
+        cls.register_global_hook(hook)
+        try:
+            yield
+        finally:
+            cls.unregister_global_hook(hook)
+
+    def add_hook(self, hook: ErrorHook) -> None:
+        """Register an instance-level error hook."""
+        if hook not in self._hooks:
+            self._hooks.append(hook)
+
+    def remove_hook(self, hook: ErrorHook) -> None:
+        """Remove an instance-level error hook."""
+        if hook in self._hooks:
+            self._hooks.remove(hook)
 
     # ==========================================================================
     # TELEMETRY TARGET STACK
@@ -57,7 +104,7 @@ class Diagnostics:
         name: str,
         description: str = "",
         set_target: bool = False,
-        from_target: bool = False,
+        from_target: bool = True,
     ) -> info.Node:
         """Create a telemetry node and optionally push it onto the active target stack."""
         parent = (
@@ -138,6 +185,8 @@ class Diagnostics:
         finally:
             self._context_depth = max(0, self._context_depth - 1)
 
+
+
     @property
     def staged_failure(self) -> error.Error | None:
         """Return the highest-weight staged `Error` candidate, or `None`."""
@@ -163,7 +212,7 @@ class Diagnostics:
         or only if `min_weight > staged_weight`.
         """
         if min_weight is None or (
-            self._staged_failure is not None and min_weight > self._staged_failure[0]
+            self._staged_failure is not None and min_weight >= self._staged_failure[0]
         ):
             self._staged_failure = None
 
@@ -181,10 +230,49 @@ class Diagnostics:
             self.record_failure(target)
         return target
 
-    def record_failure(self, err: error.Error) -> error.Error:
-        """Append an error to the permanent `_errors` list without duplicates."""
+    @classmethod
+    def dispatch_error_hooks(cls, sender: Any, err: error.Error) -> str:
+        """
+        Evaluate globally registered error hooks and return the resulting ErrorAction.
+        """
+        action = ErrorAction.STORE
+        for hook in cls._global_hooks:
+            decision = hook(sender, err)
+            if decision is not None:
+                action = decision
+                if action == ErrorAction.OMIT:
+                    break
+
+        if action == ErrorAction.SUPPRESS_RAISE:
+            setattr(err, "_suppress_raise", True)
+
+        return action
+
+    def record_failure(self, err: error.Error) -> error.Error | None:
+        """
+        Evaluate registered error hooks and record or suppress the failure.
+        """
+        all_hooks = list(self._global_hooks) + list(self._hooks)
+        action = ErrorAction.STORE
+        for hook in all_hooks:
+            decision = hook(self, err)
+            if decision is not None:
+                action = decision
+                if action == ErrorAction.OMIT:
+                    return None
+
+        if action == ErrorAction.OMIT:
+            return None
+
+        if action == ErrorAction.SUPPRESS_RAISE:
+            setattr(err, "_suppress_raise", True)
+
         if not self._errors or self._errors[-1] is not err:
             self._errors.append(err)
+
+        if action == ErrorAction.RAISE:
+            err.raise_error()
+
         return err
 
     def clear_failures(self) -> None:
@@ -199,17 +287,21 @@ class Diagnostics:
         exit: bool | None = None,
     ) -> None:
         """
-        Promote and immediately raise `err`, the staged candidate, or the last
-        recorded error in `_errors`.
+        Promote and raise err unless suppressed by an active error hook.
         """
         target = (
             err
             or self.promote_staged_failure()
             or (self._errors[-1] if self._errors else None)
         )
-        if target is not None:
-            self.record_failure(target)
-            target.raise_error(exit=exit)
+        if target is None:
+            return
+
+        res = self.record_failure(target)
+        if res is None or getattr(target, "_suppress_raise", False):
+            return
+
+        target.raise_error(exit=exit)
 
 
-__all__ = ["Diagnostics", "ansi_colors", "error", "info"]
+__all__ = ["Diagnostics", "ErrorAction", "ErrorHook", "ansi_colors", "error", "info"]

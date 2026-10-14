@@ -147,21 +147,26 @@ class LexerState(Diagnostics):
         Record a lexical diagnostic error and raise it immediately if configured
         to exit on error.
         """
-        err = self.record_failure(err)
-        if config.ERROR_EXIT_ON_ERROR:
+        res = self.record_failure(err)
+        if (
+            res is not None
+            and not getattr(err, "_suppress_raise", False)
+            and config.ERROR_EXIT_ON_ERROR
+        ):
             err.raise_error()
         return err
 
-    def fail(self, name: str, code: errors.CodeError, *caution: str) -> None: # type: ignore
+    def fail(self, name: str, code: errors.CodeError, *caution: str) -> None:
         """
         Log a lexical error to the active telemetry node, record it in diagnostics,
-        and raise `errors.LexerError`.
+        and raise errors.LexerError unless suppressed by error hooks.
         """
         if getattr(config, "LEXER_ADD_ERROR", True):
             self.error(f"Error léxico: {name}")
         err = errors.LexerError(name, code, *caution)
-        self.record_failure(err)
-        err.raise_error()
+        res = self.record_failure(err)
+        if res is not None and not getattr(err, "_suppress_raise", False):
+            err.raise_error()
 
     # ==========================================================================
     # LINE AND CHARACTER NAVIGATION

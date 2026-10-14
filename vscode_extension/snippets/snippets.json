@@ -1,0 +1,82 @@
+{
+  "BLOCK_DECL Snippet": {
+    "prefix": "block",
+    "body": [
+      "block <name>:",
+      "    <statements>",
+      "end <name>"
+    ],
+    "description": "Insert BLOCK_DECL declaration syntax."
+  },
+  "VAR_DECL Snippet": {
+    "prefix": "<type>",
+    "body": [
+      "<type> <identifier> [= <value>]"
+    ],
+    "description": "Insert VAR_DECL declaration syntax."
+  },
+  "IMPORT_DECL Snippet": {
+    "prefix": "import",
+    "body": [
+      "import <module>"
+    ],
+    "description": "Insert IMPORT_DECL declaration syntax."
+  },
+  "FUNC_DECL Snippet": {
+    "prefix": "<type>",
+    "body": [
+      "<type> <name>(<args>):",
+      "    <body>"
+    ],
+    "description": "Insert FUNC_DECL declaration syntax."
+  },
+  "RETURN_DECL Snippet": {
+    "prefix": "return",
+    "body": [
+      "return <expression>"
+    ],
+    "description": "Insert RETURN_DECL declaration syntax."
+  },
+  "Keyword block": {
+    "prefix": "block",
+    "body": [
+      "block "
+    ],
+    "description": "Insert block keyword."
+  },
+  "Keyword end": {
+    "prefix": "end",
+    "body": [
+      "end "
+    ],
+    "description": "Insert end keyword."
+  },
+  "Keyword int": {
+    "prefix": "int",
+    "body": [
+      "int "
+    ],
+    "description": "Insert int keyword."
+  },
+  "Keyword str": {
+    "prefix": "str",
+    "body": [
+      "str "
+    ],
+    "description": "Insert str keyword."
+  },
+  "Keyword import": {
+    "prefix": "import",
+    "body": [
+      "import "
+    ],
+    "description": "Insert import keyword."
+  },
+  "Keyword return": {
+    "prefix": "return",
+    "body": [
+      "return "
+    ],
+    "description": "Insert return keyword."
+  }
+}

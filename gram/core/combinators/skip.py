@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.signals import SkipFlowSignal
+from gram.core.combinators.signals import *
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
@@ -21,6 +21,9 @@ class Skip(Combinator):
     Flow-control combinator that cleanly interrupts the current sequence (`Seq`)
     or repetition loop and marks the enclosing evaluation as successful.
     """
+    
+    def __init__(self, signal: type[ControlFlowSignal]) -> None:
+        self.signal = signal
 
     def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
@@ -30,7 +33,7 @@ class Skip(Combinator):
         analyzer.parser.advice(
             "Skip() alcanzado: interrumpiendo flujo de secuencia con éxito."
         )
-        raise SkipFlowSignal()
+        raise self.signal()
 
     def __repr__(self) -> str:
         return "Skip()"

@@ -100,31 +100,35 @@ class RuleMeta(type):
     """
     Metaclass for declarative `RuleItem` grammar rules.
 
-    Automatically allocates unique rule codes via `AutoCode` and registers
-    positive integer rule IDs in the central `code_manager`.
+    Automatically resolves `name = 'auto'` (or omitted `name`) to the class
+    identifier, allocates unique rule codes via `AutoCode`, and registers
+    user-defined rules in `code_manager`.
     """
+
+    grammar: Combinator | None = None
+    name: str = ""
+    code: int = 0
+    nodeable: bool = True
 
     def __new__(
         mcls, name: str, bases: tuple[type, ...], namespace: dict[str, Any]
     ) -> type:
-        raw_code = namespace.get("code")
+        # Avoid allocating an AutoCode for the base RuleItem class itself
+        if not bases:
+            return super().__new__(mcls, name, bases, namespace)
 
-        if raw_code is AutoCode or (
-            isinstance(raw_code, type) and issubclass(raw_code, AutoCode)
-        ) or "code" not in namespace and bases:
+        raw_name = namespace.get("name")
+        if raw_name == "auto" or not raw_name:
+            namespace["name"] = name
+
+        raw_code = namespace.get("code")
+        if callable(raw_code):
+            namespace["code"] = raw_code()
+        elif not raw_code:
             namespace["code"] = AutoCode()
-        elif callable(raw_code) and not isinstance(raw_code, type):
-            try:
-                namespace["code"] = raw_code()
-            except TypeError:
-                pass
 
         cls = super().__new__(mcls, name, bases, namespace)
-
-        code_val = getattr(cls, "code", 0)
-        if isinstance(code_val, int) and code_val > 0:
-            code_manager.register(code_val, rule=cls)
-
+        code_manager.register(cls.code, cls)
         return cls
 
     def __repr__(cls) -> str:
@@ -132,109 +136,36 @@ class RuleMeta(type):
             f"{cls.__name__}("
             f"code={cls.code!r}, "
             f"name={cls.name or cls.__name__!r}, "
+            f"nodeable={cls.nodeable!r}, "
             f"grammar={bool(cls.grammar)}"
             f")"
         )
-    grammar = None
-    name = None
-    code = None
 
+
+
+from collections.abc import Callable
+from typing import Any
+
+SuggestionProvider = Callable[..., list[str]] | tuple[str, ...] | list[str]
+TokenIndexKey = int | str  # Soporta 0, 1, -1, "this", "this:-1", "this:1"
 
 class RuleItem(metaclass=RuleMeta):
-    """
-    Declarative base class for formal grammar production rules.
-
-    Associates a numeric rule code, root combinator expression, documentation,
-    syntax highlighting colors, and IDE/VSIX completion metadata.
-    """
-
     code: int = 0
     name: str = ""
+    nodeable: bool = True
     description: str = ""
     grammar: Combinator | None = None
-    docs: str = ""
-    colors: dict[int, str] = {}
-    suggestions: dict[int | str, Any] = {}
-    suggestions_autocomplete: bool = False
+
+    # Mapas declarativos VSIX / LSP (requieren nodeable = True)
+    colors: dict[TokenIndexKey, str] = {}
+    autocomplete: dict[TokenIndexKey, str] = {}
+    suggestions: dict[TokenIndexKey, SuggestionProvider] = {}
+    hints: dict[TokenIndexKey, str] = {}
+    playhints: dict[TokenIndexKey, str] = {}
+
     is_structural: bool = False
     ignore: bool = False
     no_simplify: bool = False
-    queries: Any = None
-    hints: dict[int, Any] = {}
-
-    @classmethod
-    def contain_grammar(cls) -> bool:
-        """Return True if this rule defines a non-null `grammar` combinator."""
-        return cls.grammar is not None
-
-    @classmethod
-    def compile(cls) -> dict[str, Any]:
-        """
-        Compile rule metadata into a structured dictionary suitable for
-        editor extensions (VSIX, TextMate grammars, and Language Servers).
-        """
-        r_name = cls.name or cls.__name__
-        r_colors = dict(cls.colors) if isinstance(cls.colors, dict) else {}
-        r_sugg = dict(cls.suggestions) if isinstance(cls.suggestions, dict) else {}
-        r_hints = dict(cls.hints) if isinstance(cls.hints, dict) else {}
-
-        raw_queries = cls.queries
-        if raw_queries is None:
-            r_queries: list[Any] = []
-        elif isinstance(raw_queries, (list, tuple, set)):
-            r_queries = list(raw_queries)
-        else:
-            r_queries = [raw_queries]
-
-        auto_keywords: list[str] = []
-
-        def _collect_keywords(comb: Any) -> None:
-            if comb is None:
-                return
-            if hasattr(comb, "keyword") and isinstance(comb.keyword, str):
-                auto_keywords.append(comb.keyword)
-            if hasattr(comb, "combinators") and isinstance(
-                comb.combinators, (list, tuple)
-            ):
-                for sub in comb.combinators:
-                    _collect_keywords(sub)
-            if hasattr(comb, "combinator"):
-                _collect_keywords(comb.combinator)
-            if hasattr(comb, "values") and isinstance(comb.values, (list, tuple)):
-                for sub in comb.values:
-                    _collect_keywords(sub)
-
-        _collect_keywords(cls.grammar)
-        for q in r_queries:
-            if (
-                hasattr(q, "trigger_keywords")
-                and not q.trigger_keywords
-                and auto_keywords
-            ):
-                q.trigger_keywords = list(auto_keywords)
-
-        color_val = r_colors.get(0, "#FFFFFF")
-        clean_name = _NON_IDENT_RE.sub("_", r_name).lower()
-        scope_name = f"entity.name.rule.gram.{clean_name}"
-
-        return {
-            "name": r_name,
-            "code": cls.code,
-            "description": cls.description,
-            "docs": cls.docs,
-            "colors": r_colors,
-            "color": color_val,
-            "scope": scope_name,
-            "is_structural": cls.is_structural,
-            "ignore": cls.ignore,
-            "suggestions": r_sugg,
-            "suggestions_autocomplete": cls.suggestions_autocomplete,
-            "queries": r_queries,
-            "hints": r_hints,
-            "contain_grammar": cls.contain_grammar(),
-            "grammar": cls.grammar,
-        }
-
 
 RuleType = type[RuleItem] | str
 

@@ -83,7 +83,7 @@ class Enclosed(Combinator):
 
         try:
             # 1. Validate opening delimiter token
-            if parser.empty():
+            if parser.empty() or (parser.is_eof() and self.open_token != Token.EOF):
                 analyzer.report_error(
                     errors.ParserError(
                         "UnexpectedEOFBeforeOpenDelimiter",
@@ -112,7 +112,10 @@ class Enclosed(Combinator):
                 return None
 
             parser.consume()
-            father.note(f"Enclosed: apertura '{self.open_token.name}' aceptada", "normal")
+            analyzer.discard_staged_failure(min_weight=parser.pos)
+            father.note(
+                f"Enclosed: apertura '{self.open_token.name}' aceptada", "normal"
+            )
 
             # 2. Evaluate inner content under bracket-aware mode
             if self.skip_whitespace:
@@ -120,7 +123,9 @@ class Enclosed(Combinator):
                 parser.skip_whitespace()
 
             try:
+                content_start_pos = parser.pos
                 current = parser.peek() if not parser.empty() else None
+
                 if current is not None and current.token == self.close_token:
                     if not self.allow_empty:
                         failed_pos = parser.pos
@@ -156,22 +161,40 @@ class Enclosed(Combinator):
                             analyzer.flush_failure(fallback=fallback)
                         return None
 
+                    if not self.allow_empty and parser.pos == content_start_pos:
+                        failed_pos = parser.pos
+                        parser.restore(checkpoint)
+                        analyzer.report_error(
+                            errors.GrammarError(
+                                "EmptyEnclosedContent",
+                                errors.GRAMMAR_COMBINATOR_FAILED,
+                                f"El contenido dentro de '{self.open_token.name}...{self.close_token.name}' "
+                                f"no consumió ningún elemento (línea {open_tok.line}, columna {open_tok.col}).",
+                                "Proporcione al menos un elemento válido dentro de los delimitadores.",
+                            ),
+                            pos=failed_pos,
+                        )
+                        return None
+
                 if self.skip_whitespace:
                     parser.skip_whitespace()
 
                 # 3. Validate closing delimiter token
-                if parser.empty():
+                if parser.empty() or (parser.is_eof() and self.close_token != Token.EOF):
                     failed_pos = parser.pos
                     parser.restore(checkpoint)
-                    analyzer.report_error(
-                        errors.ParserError(
-                            "UnclosedDelimiterEOF",
-                            errors.PARSER_EARLY_EOF,
-                            f"Se esperaba el delimitador de cierre '{self.close_token.name}', pero se alcanzó EOF.",
-                            f"Cierre el bloque abierto con '{self.close_token.name}'.",
-                        ),
-                        pos=failed_pos,
+                    eof_err = errors.ParserError(
+                        "UnclosedDelimiterEOF",
+                        errors.PARSER_EARLY_EOF,
+                        f"Se esperaba el delimitador de cierre '{self.close_token.name}' "
+                        f"(abierto en línea {open_tok.line}, columna {open_tok.col}), pero se alcanzó EOF.",
+                        f"Cierre el bloque abierto con '{self.close_token.name}'.",
                     )
+                    if analyzer.safe_flag:
+                        analyzer.report_error(eof_err, pos=failed_pos)
+                    else:
+                        analyzer.stage_failure(eof_err, weight=failed_pos)
+                        analyzer.flush_failure(fallback=eof_err)
                     return None
 
                 close_tok = parser.peek()
@@ -179,16 +202,18 @@ class Enclosed(Combinator):
                     failed_pos = parser.pos
                     parser.restore(checkpoint)
                     if close_tok is not None:
-                        analyzer.report_error(
-                            errors.ParserError(
-                                "ClosingDelimiterMismatch",
-                                errors.PARSER_UNEXPECTED_TOKEN,
-                                f"Se esperaba el delimitador de cierre '{self.close_token.name}', pero se recibió "
-                                f"'{close_tok.token.name}' ({close_tok.value!r}) en línea {close_tok.line}, columna {close_tok.col}.",
-                                f"Asegúrese de cerrar correctamente con '{self.close_token.name}'.",
-                            ),
-                            pos=failed_pos,
+                        mismatch_err = errors.ParserError(
+                            "ClosingDelimiterMismatch",
+                            errors.PARSER_UNEXPECTED_TOKEN,
+                            f"Se esperaba el delimitador de cierre '{self.close_token.name}', pero se recibió "
+                            f"'{close_tok.token.name}' ({close_tok.value!r}) en línea {close_tok.line}, columna {close_tok.col}.",
+                            f"Asegúrese de cerrar correctamente con '{self.close_token.name}'.",
                         )
+                        if analyzer.safe_flag:
+                            analyzer.report_error(mismatch_err, pos=failed_pos)
+                        else:
+                            analyzer.stage_failure(mismatch_err, weight=failed_pos)
+                            analyzer.flush_failure(fallback=mismatch_err)
                     return None
 
                 parser.consume()
@@ -211,9 +236,7 @@ class Enclosed(Combinator):
         )
 
 
-Bracketed = Enclosed
 
 __all__ = [
-    "Bracketed",
     "Enclosed",
 ]

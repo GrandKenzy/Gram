@@ -1,0 +1,82 @@
+{
+  "name": "gram-language",
+  "displayName": "Gram Language Official Support",
+  "description": "Comprehensive language tooling and syntax support for Gram DSL.",
+  "version": "0.2.0",
+  "publisher": "gram-framework",
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:gram"
+  ],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "gram",
+        "aliases": [
+          "Gram",
+          "gram"
+        ],
+        "extensions": [
+          ".gram",
+          ".g"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "gram",
+        "scopeName": "source.gram",
+        "path": "./syntaxes/gram.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "gram",
+        "path": "./snippets/snippets.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "gram.restartServer",
+        "title": "Gram: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "Gram Language Official Support",
+      "properties": {
+        "gram.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Path to Python executable used for Gram Language Official Support Language Server."
+        },
+        "gram.entrypoint": {
+          "type": "string",
+          "default": "prueba:PROGRAM",
+          "description": "Grammar entrypoint (module:Class) used by Gram Language Official Support Language Server."
+        }
+      }
+    }
+  },
+  "author": "Kentucky & Gram Community",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kentucky/Gram"
+  },
+  "homepage": "https://github.com/Kentucky/Gram#readme",
+  "keywords": [
+    "gram",
+    "compiler",
+    "dsl",
+    "parser",
+    "vsix"
+  ]
+}

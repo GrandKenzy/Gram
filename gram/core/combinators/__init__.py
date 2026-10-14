@@ -12,7 +12,9 @@ from . import (
     conditional,
     enclosed,
     error_combinator,
+    expressions,
     item,
+    load,
     many,
     match,
     negation,
@@ -20,11 +22,13 @@ from . import (
     peek,
     reference,
     req,
+    save,
     separator,
     sequence,
     signals,
     skip,
     some,
+    tag,
     tokenize,
     until,
 )
@@ -38,9 +42,11 @@ from .base import (
     SetCode,
 )
 from .conditional import If
-from .enclosed import Bracketed, Enclosed
+from .enclosed import Enclosed
 from .error_combinator import ErrorCombinator
+from .expressions import ArithmeticExpr, ConditionalExpr, DualExpr
 from .item import Item, ItemNode, Literal, LiteralNode
+from .load import Load
 from .many import Many
 from .match import (
     MatchGroup,
@@ -55,6 +61,7 @@ from .optional import Opt
 from .peek import Peek
 from .reference import Ref
 from .req import Req
+from .save import Save
 from .separator import Sep, Separator, SeparatorResult
 from .sequence import Seq, Sequence
 from .signals import (
@@ -67,6 +74,7 @@ from .signals import (
 )
 from .skip import Skip
 from .some import Some
+from .tag import Tag
 from .tokenize import Tokenize
 from .until import Until
 
@@ -77,14 +85,16 @@ __all__ = [
     "AbortFlowSignal",
     # Core Structural & Repetition Combinators
     "Alt",
+    "ArithmeticExpr",
     # Base Classes & Metadata
     "AutoCode",
     "BacktrackSignal",
-    "Bracketed",
     "BreakFlowSignal",
     "Combinator",
+    "ConditionalExpr",
     "ControlFlowSignal",
     "CutFlowSignal",
+    "DualExpr",
     "Enclosed",
     # Advanced Control, Lookahead & Validation Combinators
     "ErrorCombinator",
@@ -94,6 +104,7 @@ __all__ = [
     "ItemNode",
     "Literal",
     "LiteralNode",
+    "Load",
     "Many",
     # Token Matchers
     "MatchGroup",
@@ -109,6 +120,7 @@ __all__ = [
     "RuleItem",
     "RuleMeta",
     "RuleType",
+    "Save",
     "Sep",
     "Separator",
     "SeparatorResult",
@@ -118,6 +130,7 @@ __all__ = [
     "Skip",
     "SkipFlowSignal",
     "Some",
+    "Tag",
     "Tokenize",
     "Until",
     # Submodules
@@ -126,8 +139,10 @@ __all__ = [
     "conditional",
     "enclosed",
     "error_combinator",
+    "expressions",
     "generador_expr",
     "item",
+    "load",
     "many",
     "match",
     "negation",
@@ -135,11 +150,13 @@ __all__ = [
     "peek",
     "reference",
     "req",
+    "save",
     "separator",
     "sequence",
     "signals",
     "skip",
     "some",
+    "tag",
     "tokenize",
     "until",
 ]

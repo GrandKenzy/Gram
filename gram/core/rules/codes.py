@@ -63,6 +63,12 @@ class CodeManager:
         with self._lock:
             return set(self._used_codes)
 
+    @property
+    def rules(self) -> dict[int, Any]:
+        """Devuelve una copia del diccionario de reglas registradas por código."""
+        with self._lock:
+            return dict(self._rule_by_code)
+
     def set_code(self, code: int = DEFAULT_BASE_CODE, step: int | None = None) -> int:
         """
         Establece el código base para la secuencia de generación automática.

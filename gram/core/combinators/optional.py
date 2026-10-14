@@ -2,8 +2,10 @@
 Optional Combinator (`gram.core.combinators.optional`).
 =======================================================
 Provides the `Opt` combinator for rules or subtrees with optional cardinality
-(`0..1`). Evaluates the inner combinator inside a reentrant `safe_mode` context;
-if it fails to match at the starting token, restores the checkpoint and returns `None`.
+(`0..1`). Evaluates the inner combinator inside a reentrant `safe_mode` context:
+- If omitted at the starting token, restores the checkpoint and returns `[]`.
+- If partially matched before failing (`staged_weight > checkpoint.pos`),
+  propagates the deep syntax failure and returns `None`.
 """
 from __future__ import annotations
 
@@ -21,8 +23,9 @@ class Opt(Combinator):
     """
     Optional combinator (`0..1` occurrence).
 
-    Evaluates its inner child combinator within `analyzer.safe_mode()`. On
-    mismatch, rewinds the parser state to its initial checkpoint and returns `None`.
+    Evaluates its inner child combinator within `analyzer.safe_mode()`.
+    Returns `[]` when cleanly omitted so enclosing `Seq` combinators succeed,
+    or `None` if the optional branch consumed tokens and failed mid-way.
     """
 
     header_class: bool = True
@@ -45,7 +48,7 @@ class Opt(Combinator):
 
         self.combinator: Combinator = combinator
 
-    def parse(self, analyzer: ASTAnalyzer) -> Any | None:
+    def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
         Evaluate `self.combinator` optionally against `analyzer`.
 
@@ -53,7 +56,10 @@ class Opt(Combinator):
             analyzer (ASTAnalyzer): Active AST analyzer managing the parser and visitor.
 
         Returns:
-            Any | None: The matched result from `self.combinator`, or `None` if omitted.
+            Any:
+            - The matched result from `self.combinator` if present.
+            - `[]` if cleanly omitted at `checkpoint.pos`.
+            - `None` if the optional branch partially matched and failed deep inside.
         """
         parser = analyzer.parser
         father = parser.node(
@@ -69,17 +75,27 @@ class Opt(Combinator):
                 response = analyzer.visitor(self.combinator)
 
             if response is None:
-                father.note(
-                    f"El combinador opcional {self.combinator!r} no coincidió (retornó None).",
-                    "warn",
-                )
                 parser.restore(checkpoint)
+
+                # Deep partial failure inside Opt (e.g., `int a = ` missing value after `=`)
                 if analyzer.staged_weight > checkpoint.pos:
+                    father.note(
+                        f"Fallo parcial profundo dentro de Opt({self.combinator!r}) "
+                        f"en pos={analyzer.staged_weight}.",
+                        "error",
+                    )
                     if not analyzer.safe_flag:
                         analyzer.flush_failure()
-                elif not had_prior_staged and analyzer.staged_weight == checkpoint.pos:
+                    return None
+
+                # Clean omission at starting position (0 tokens consumed)
+                father.note(
+                    f"El combinador opcional {self.combinator!r} fue omitido limpiamente.",
+                    "advice",
+                )
+                if not had_prior_staged and analyzer.staged_weight == checkpoint.pos:
                     analyzer.discard_staged_failure()
-                return None
+                return []
 
             father.note(
                 f"Secuencia opcional {self.combinator!r} evaluada exitosamente.",
@@ -90,13 +106,19 @@ class Opt(Combinator):
 
         except ControlFlowSignal:
             raise
-        except Exception as exc:
+        except errors.Error as err:
             father.note(
-                f"Excepción capturada durante evaluación opcional ({type(exc).__name__}): {exc}",
+                f"Error de Gram capturado durante evaluación opcional ({err.name}): {err}",
                 "error",
             )
+            failed_pos = parser.pos
             parser.restore(checkpoint)
-            return None
+            analyzer.report_error(err, pos=failed_pos)
+            if failed_pos > checkpoint.pos:
+                if not analyzer.safe_flag:
+                    analyzer.flush_failure()
+                return None
+            return []
         finally:
             parser.down()
 

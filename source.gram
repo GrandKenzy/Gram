@@ -1,0 +1,21 @@
+int b = 10
+str a = 20
+int x
+; comentario ignorado limpiamente
+
+int main(x: int, b: int):
+    return (x + b) * 2
+
+int res = main(10, 20) + 5 ** 2
+int cond = res >= 100 && !false
+
+int x = 10 + 10 - 20
+
+block mi_modulo:
+    int interno = 1
+end mi_modulo
+
+import core2
+import core
+import lana
+import compiler
