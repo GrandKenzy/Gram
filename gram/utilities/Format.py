@@ -1,9 +1,21 @@
 from typing import Literal
-
-
+import random
+from pathlib import Path
 line = '━'
 left = '├'
+class FileTar:
+    file: str = 'unknown'
+    rid: int = 0
 
+    @classmethod
+    def set(cls, file: str | Path):
+        cls.file = str(file)
+        cls.rid = random.randint(1, 100000)
+
+    @classmethod
+    def get(cls):
+        f = Path(cls.file).name
+        return f, cls.rid
 ARESET: str = '\033[0m'
 
 # Estilos

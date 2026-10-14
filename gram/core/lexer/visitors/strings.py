@@ -1,194 +1,171 @@
 """
-Visitante Léxico para Cadenas y Docstrings (`gram.core.lexer.visitors.strings`).
-================================================================================
-Procesa literales de cadena simples ('...'), dobles ("..."), cadenas multilínea
-o docstrings triples ('''...''' y \"\"\"...\"\"\"), secuencias de escape estándar
-y secuencias Unicode (\\uXXXX).
+String and Docstring Lexical Visitor (`gram.core.lexer.visitors.strings`).
+==========================================================================
+Processes single-quoted (`'...'`), double-quoted (`"..."`), and triple-quoted
+multiline docstring literals (`'''...'''` and `\"\"\"...\"\"\"`), including
+standard escape sequences and 4-digit Unicode escapes (`\\uXXXX`).
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from gram.utilities.info import Node
-
 from gram import config, errors
 from gram.core.lexer.tokens import Token, TokenType
-from gram.utilities import error
+
+if TYPE_CHECKING:
+    from gram.core.lexer.control import LexerState
+
+_ESCAPES: dict[str, str] = {
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "b": "\b",
+    "f": "\f",
+    "v": "\v",
+    "0": "\0",
+    "\\": "\\",
+    '"': '"',
+    "'": "'",
+}
 
 
 def process(
-    lexer: Any,
+    lexer: LexerState,
     char: str,
-    node: Node | Any,
+    node: Any = None,
 ) -> TokenType:
     """
-    Despacha el procesamiento de cadenas estándar o docstrings triples según el delimitador.
+    Dispatch string scanning to either `process_docstring` (if triple quotes
+    are detected and enabled) or `process_string`.
     """
     start = lexer.col
     start_line = lexer.line
     quote = char
 
-    if config.LEXER_ADD_INFO:
-        node.note(
-            f'Inicio de literal de cadena con delimitador {quote!r}',
-            'normal',
-        )
+    lexer.debug(f"Inicio de literal de cadena con delimitador {quote!r}")
 
-    # Detección de triple comilla para docstring
     if (
         config.LEXER_SUPPORT_DOCSTRINGS
-        and lexer.currline[lexer.col:lexer.col + 3] == quote * 3
+        and lexer.currline[lexer.col : lexer.col + 3] == quote * 3
     ):
-        node.name = 'VISITOR-DOCSTRING'
-        if config.LEXER_ADD_INFO:
-            node.note('Triple comilla detectada; procesando docstring multilínea', 'success')
+        if lexer._target is not None:
+            lexer._target.name = "VISITOR-DOCSTRING"
+        lexer.success("Triple comilla detectada; procesando docstring multilínea")
+        return process_docstring(lexer, quote, start, start_line)
 
-        return process_docstring(lexer, quote, start, start_line, node)
-
-    node.name = 'VISITOR-STRING'
-    if config.LEXER_ADD_INFO:
-        node.note('Procesando cadena estándar', 'success')
-
-    return process_string(lexer, quote, start, start_line, node)
+    lexer.success("Procesando cadena estándar")
+    return process_string(lexer, quote, start, start_line)
 
 
 def process_string(
-    lexer: Any,
+    lexer: LexerState,
     quote: str,
     start: int,
     start_line: int,
-    node: Node | Any,
+    node: Any = None,
 ) -> TokenType:
-    """
-    Procesa una cadena de texto en una sola línea física.
-    """
-    lexer.advance()  # Consumir la comilla inicial
+    """Scan a single-line string literal delimited by `quote`."""
+    lexer.advance()  # Consume opening quote
     chars: list[str] = []
+    line_str = lexer.currline
+    line_len = len(line_str)
 
-    while lexer.col < len(lexer.currline):
+    while lexer.col < line_len:
         char = lexer.advance()
 
-        if char == '\\':
-            if lexer.col >= len(lexer.currline):
-                if config.LEXER_ADD_ERROR:
-                    node.note('Barra invertida sin carácter de escape al final de la línea', 'error')
-                error.LexerError(
-                    f'Cadena sin cerrar en línea {start_line}, columna {start}',
-                    errors.LEXER_UNCLOSED_STRING,
-                    'La cadena finalizó inesperadamente tras un carácter de escape "\\".',
-                ).raise_error()
+        if char == "\\":
+            if lexer.col >= line_len:
+                lexer.error("Barra invertida sin carácter de escape al final de la línea")
+                lexer.report_error(
+                    errors.LexerError(
+                        "UnclosedStringEscape",
+                        errors.LEXER_UNCLOSED_STRING,
+                        f"Cadena sin cerrar en línea {start_line + 1}, columna {start}.",
+                        'La cadena finalizó inesperadamente tras un carácter de escape "\\".',
+                    )
+                )
+                return TokenType(Token.ERROR, "".join(chars), start_line, start)
 
             escaped = lexer.advance()
-            processed = process_escape(escaped, lexer)
-            chars.append(processed)
+            chars.append(process_escape(escaped, lexer))
             continue
 
         if char == quote:
-            value = ''.join(chars)
-            if config.LEXER_ADD_INFO:
-                node.note(f'Cadena cerrada con éxito: {value!r}', 'success')
-
-            return TokenType(
-                Token.STRING,
-                value,
-                start_line,
-                start,
-            )
+            value = "".join(chars)
+            lexer.success(f"Cadena cerrada con éxito: {value!r}")
+            return TokenType(Token.STRING, value, start_line, start)
 
         chars.append(char)
 
-    if config.LEXER_ADD_ERROR:
-        node.note('Fin de línea alcanzado sin encontrar comilla de cierre', 'error')
-
-    error.LexerError(
-        f'Cadena sin cerrar en línea {start_line}, columna {start}',
-        errors.LEXER_UNCLOSED_STRING,
-        f'Se esperaba comilla de cierre {quote!r} antes del final de línea.',
-    ).raise_error()
+    lexer.error("Fin de línea alcanzado sin encontrar comilla de cierre")
+    lexer.report_error(
+        errors.LexerError(
+            "UnclosedStringLiteral",
+            errors.LEXER_UNCLOSED_STRING,
+            f"Cadena sin cerrar en línea {start_line + 1}, columna {start}.",
+            f"Se esperaba comilla de cierre {quote!r} antes del final de la línea.",
+        )
+    )
+    return TokenType(Token.ERROR, "".join(chars), start_line, start)
 
 
 def process_docstring(
-    lexer: Any,
+    lexer: LexerState,
     quote: str,
     start: int,
     start_line: int,
-    node: Node | Any,
+    node: Any = None,
 ) -> TokenType:
-    """
-    Procesa cadenas multilínea delimitadas por tres comillas.
-    """
-    lexer.col += 3  # Consumir las 3 comillas de apertura
+    """Scan a multiline docstring literal delimited by triple `quote` characters."""
+    triple = quote * 3
+    lexer.col += 3  # Consume opening triple quotes
     chars: list[str] = []
 
     while lexer.has_lines():
-        # Comprobar cierre de docstring
-        if (
-            lexer.col + 2 < len(lexer.currline)
-            and lexer.currline[lexer.col:lexer.col + 3] == quote * 3
-        ):
+        line_str = lexer.currline
+        line_len = len(line_str)
+
+        if lexer.col + 2 < line_len and line_str[lexer.col : lexer.col + 3] == triple:
             lexer.col += 3
-            value = ''.join(chars)
-            if config.LEXER_ADD_INFO:
-                node.note(f'Docstring completado ({len(value)} caracteres)', 'success')
+            value = "".join(chars)
+            lexer.success(f"Docstring completado ({len(value)} caracteres)")
+            return TokenType(Token.DOCSTRING, value, start_line, start)
 
-            return TokenType(
-                Token.DOCSTRING,
-                value,
-                start_line,
-                start,
-            )
-
-        # Salto a la siguiente línea del docstring
-        if lexer.col >= len(lexer.currline):
-            chars.append('\n')
+        if lexer.col >= line_len:
+            chars.append("\n")
             lexer.line += 1
             lexer.col = 0
             continue
 
         char = lexer.advance()
 
-        if char == '\\':
-            if lexer.col >= len(lexer.currline):
-                chars.append('\\')
+        if char == "\\":
+            if lexer.col >= line_len:
+                chars.append("\\")
                 continue
 
             escaped = lexer.advance()
-            processed = process_escape(escaped, lexer)
-            chars.append(processed)
+            chars.append(process_escape(escaped, lexer))
             continue
 
         chars.append(char)
 
-    if config.LEXER_ADD_ERROR:
-        node.note('Fin de archivo alcanzado sin cerrar docstring', 'error')
+    lexer.error("Fin de archivo alcanzado sin cerrar docstring")
+    lexer.report_error(
+        errors.LexerError(
+            "UnclosedDocstringLiteral",
+            errors.LEXER_UNCLOSED_STRING,
+            f"Docstring sin cerrar iniciado en línea {start_line + 1}, columna {start}.",
+            f"Se esperaban tres comillas de cierre ({triple}) antes del final del archivo.",
+        )
+    )
+    return TokenType(Token.ERROR, "".join(chars), start_line, start)
 
-    error.LexerError(
-        f'Docstring sin cerrar iniciado en línea {start_line}, columna {start}',
-        errors.LEXER_UNCLOSED_STRING,
-        f'Se esperaban tres comillas de cierre ({quote * 3}) antes del final del archivo.',
-    ).raise_error()
 
-
-def process_escape(char: str, lexer: Any = None) -> str:
-    r"""
-    Interpreta secuencias de escape estándar (\n, \r, \t, etc.) y Unicode (\uXXXX).
-    """
-    escapes: dict[str, str] = {
-        'n': '\n',
-        'r': '\r',
-        't': '\t',
-        'b': '\b',
-        'f': '\f',
-        'v': '\v',
-        '0': '\0',
-        '\\': '\\',
-        '"': '"',
-        "'": "'",
-    }
-
-    if char == 'u' and lexer is not None and lexer.col + 4 <= len(lexer.currline):
-        hex_digits = lexer.currline[lexer.col:lexer.col + 4]
+def process_escape(char: str, lexer: LexerState | None = None) -> str:
+    r"""Resolve standard escape sequences (`\n`, `\t`, etc.) and `\uXXXX` Unicode escapes."""
+    if char == "u" and lexer is not None and lexer.col + 4 <= len(lexer.currline):
+        hex_digits = lexer.currline[lexer.col : lexer.col + 4]
         try:
             code_point = int(hex_digits, 16)
             lexer.col += 4
@@ -196,12 +173,12 @@ def process_escape(char: str, lexer: Any = None) -> str:
         except ValueError:
             pass
 
-    return escapes.get(char, f"\\{char}")
+    return _ESCAPES.get(char, f"\\{char}")
 
 
 __all__ = [
-    'process',
-    'process_string',
-    'process_docstring',
-    'process_escape',
+    "process",
+    "process_docstring",
+    "process_escape",
+    "process_string",
 ]

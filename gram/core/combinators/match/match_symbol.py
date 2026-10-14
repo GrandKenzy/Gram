@@ -1,39 +1,36 @@
 """
-Combinador de Coincidencia de Símbolos y Patrones (`gram.core.combinators.match.match_symbol`).
-=============================================================================================
-Valida secuencias de caracteres, operadores o patrones textuales mediante expresiones
-regulares sobre el valor del token bajo el cursor, con soporte para reetiquetado a CustomToken.
+Symbol and Pattern Matching Combinator (`gram.core.combinators.match.match_symbol`).
+====================================================================================
+Validates character sequences, operators, or textual patterns against the current
+token's value using compiled regular expressions, with optional relabeling to
+a synthesized `CustomToken`.
 """
 from __future__ import annotations
 
 import re
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.lexer.tokens import CustomToken, TokenType
-from gram.utilities import error
+from gram.core.lexer.tokens import CustomToken
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.parser.core import Parser
 
 
 def generador_expr(*parts: Any) -> str:
     """
-    Construye una expresión regular a partir de literales y rangos de caracteres.
+    Build a regular expression string from literal strings and character ranges.
 
-    Ejemplo:
-        generador_expr('#', ['A', 'F'], ['a', 'f'], [0, 9]) -> '#[A-Fa-f0-9]'
+    Example:
+        `generador_expr('#', ['A', 'F'], ['a', 'f'], [0, 9])` -> `'#[A-Fa-f0-9]'`
 
     Args:
-        *parts: Cadenas literales o tuplas/listas de 2 elementos representando rangos [inicio, fin].
+        *parts (Any): Literal strings or 2-element lists/tuples representing
+            inclusive character or digit ranges `[start, end]`.
 
     Returns:
-        str: Expresión regular compilable resultante.
-
-    Raises:
-        ValueError: Si un componente no es una cadena ni un rango válido de 2 elementos.
+        str: Compiled-ready regular expression pattern string.
     """
     result: list[str] = []
     char_class: list[str] = []
@@ -54,12 +51,16 @@ def generador_expr(*parts: Any) -> str:
             if isinstance(start, str) and isinstance(end, str):
                 char_class.append(f"{re.escape(start)}-{re.escape(end)}")
                 continue
-
             if isinstance(start, int) and isinstance(end, int):
                 char_class.append(f"{start}-{end}")
                 continue
 
-        raise ValueError(f"Componente de expresión regular inválido: {part!r}")
+        errors.GrammarError(
+            "InvalidRegexGeneratorPart",
+            errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+            f"Componente de expresión regular inválido en generador_expr: {part!r}.",
+            "Use cadenas literales o pares [inicio, fin] de caracteres o enteros.",
+        ).raise_error()
 
     flush_class()
     return "".join(result)
@@ -67,12 +68,8 @@ def generador_expr(*parts: Any) -> str:
 
 class MatchSeqSymbol(Combinator):
     """
-    ES:
-        Combinador que evalúa el valor textual del token bajo el cursor contra un patrón regex,
-        una lista de símbolos permitidos o una cadena literal.
-
-    EN:
-        Combinator evaluating token text against a regex pattern, symbol list, or literal string.
+    Combinator that evaluates the textual value of the current token against
+    a regular expression pattern, a list of allowed symbol strings, or a literal string.
     """
 
     def __init__(
@@ -86,17 +83,19 @@ class MatchSeqSymbol(Combinator):
         raw: bool = False,
     ) -> None:
         """
-        Inicializa el combinador de patrón de símbolos.
+        Initialize the symbol pattern matcher.
 
         Args:
-            pattern: Patrón o texto literal a comparar.
-            symbols: Lista alternativa de símbolos candidatos (combinados mediante '|').
-            regex: Expresión regular explícita (prevalece sobre pattern).
-            custom_token_name: Nombre opcional para reetiquetar el token con CustomToken al coincidir.
-            is_pattern: Si False, escapa el texto para coincidencia literal.
-            case_sensitive: Si False, ignora diferencias entre mayúsculas y minúsculas.
-            raw: Si True, opera sin normalizaciones adicionales.
+            pattern (str | None): Pattern or literal text to match.
+            symbols (list[str] | None): Candidate symbol strings joined via `|`.
+            regex (str | None): Explicit regular expression (overrides `pattern`).
+            custom_token_name (str | None): Optional name to relabel the matched token
+                with a `CustomToken`.
+            is_pattern (bool): If False, escapes `pattern` for exact literal matching.
+            case_sensitive (bool): If False, enables case-insensitive matching.
+            raw (bool): Reserved flag for raw unnormalized evaluation.
         """
+        super().__init__()
         if regex is not None:
             actual_pattern = regex
             is_pattern = True
@@ -108,128 +107,84 @@ class MatchSeqSymbol(Combinator):
         else:
             actual_pattern = ""
 
-        self.pattern = actual_pattern
-        self.symbols = symbols
-        self.regex = regex
-        self.custom_token_name = custom_token_name
-        self.is_pattern = is_pattern
-        self.case_sensitive = case_sensitive
-        self.raw = raw
+        self.pattern: str = actual_pattern
+        self.symbols: list[str] | None = symbols
+        self.regex: str | None = regex
+        self.custom_token_name: str | None = custom_token_name
+        self.is_pattern: bool = is_pattern
+        self.case_sensitive: bool = case_sensitive
+        self.raw: bool = raw
 
         flags = 0 if case_sensitive else re.IGNORECASE
         pattern_str = actual_pattern if is_pattern else re.escape(actual_pattern)
-        self._regex = re.compile(pattern_str, flags)
+        self._regex: re.Pattern[str] = re.compile(pattern_str, flags)
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> TokenType | None:
+    def parse(self, analyzer: ASTAnalyzer) -> Any | None:
         """
-        Evalúa el valor del token actual contra la expresión regular configurada.
+        Evaluate the current token's value against the compiled regular expression.
 
         Args:
-            analyzer: Instancia activa del analizador sintáctico o parser.
-            current: Token posicionado bajo el cursor, o None para consumir del parser.
-            ignore_errors: Si True, no genera excepciones ante discrepancias.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            TokenType | None: El token evaluado (posiblemente reetiquetado) si coincide; None en caso contrario.
-
-        Raises:
-            ParserError: Si el valor no cumple el patrón e ignore_errors es False.
+            Any | None: Delegated AST node if matched, or `None` on mismatch.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
+        parser = analyzer.parser
+        father = parser.node(
+            "ProcessingMatchSeqSymbol", "Procesando match de símbolo", set_target=True
+        )
+        father.note(f"Evaluando patrón {self.pattern!r}", "normal")
 
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"MatchSeqSymbol: evaluando patrón {self.pattern!r}",
-                "Normal",
-            )
-
-        checkpoint = parser.savepoint(node=target_node)
-
-        if current is None:
-            if not parser.not_empty():
-                self._record_failure(
-                    analyzer,
-                    f"patrón {self.pattern!r}",
-                    checkpoint.pos,
-                    None,
-                )
-                if not ignore_errors:
-                    if config.PARSER_ADD_ERROR:
-                        target_node.note(
-                            f"Error sintáctico: se esperaba patrón {self.pattern!r} pero se alcanzó EOF",
-                            "Error",
-                        )
-                    error.ParserError(
-                        "Símbolo no coincide",
+        try:
+            if parser.empty():
+                father.note("Salida inesperada. No se encontró ningún Token.", "error")
+                analyzer.report_error(
+                    errors.ParserError(
+                        "SymbolUnexpectedEOF",
                         errors.PARSER_EARLY_EOF,
-                        f"Se esperaba coincidencia con patrón '{self.pattern}' pero se alcanzó EOF.",
-                    ).raise_error()
-                return None
-            tok = parser.consume(node=target_node)
-        else:
-            tok = current
-
-        val_str = str(tok.value) if tok.value is not None else ""
-        match = self._regex.fullmatch(val_str)
-
-        if not match:
-            self._record_failure(
-                analyzer,
-                f"patrón {self.pattern!r}",
-                checkpoint.pos,
-                tok,
-            )
-            parser.restore(checkpoint, node=target_node)
-
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"Patrón {self.pattern!r} no coincidió con {val_str!r}",
-                    "Warn",
+                        f"Se esperaba un símbolo coincidente con {self.pattern!r}, pero se alcanzó EOF.",
+                        "Complete la expresión antes del final del archivo.",
+                    ),
+                    pos=parser.pos,
                 )
+                return None
 
-            if not ignore_errors:
-                if config.PARSER_ADD_ERROR:
-                    target_node.note(
-                        f"Error sintáctico: {val_str!r} no cumple el patrón {self.pattern!r}",
-                        "Error",
-                    )
-                error.ParserError(
-                    "Símbolo no coincide",
-                    errors.PARSER_UNEXPECTED_TOKEN,
-                    f"El valor {val_str!r} no coincide con el patrón esperado {self.pattern!r}.",
-                    f"En línea {tok.line}, columna {tok.col}.",
-                ).raise_error()
+            tok = parser.peek()
+            if tok is None:
+                return None
 
-            return None
+            val_str = str(tok.value) if tok.value is not None else ""
+            if not self._regex.fullmatch(val_str):
+                father.note(
+                    f"Patrón {self.pattern!r} no coincidió con {val_str!r}", "warn"
+                )
+                analyzer.report_error(
+                    errors.ParserError(
+                        "SymbolMismatch",
+                        errors.PARSER_UNEXPECTED_TOKEN,
+                        f"El valor {val_str!r} en línea {tok.line}, columna {tok.col} "
+                        f"no coincide con el patrón esperado {self.pattern!r}.",
+                        "Verifique el operador o símbolo utilizado.",
+                    ),
+                    pos=parser.pos,
+                )
+                return None
 
-        # Si current fue pasado explícitamente y el parser aún apuntaba a él, avanzar cursor físico
-        if current is not None and parser.not_empty() and parser.tokens[parser.pos] is current:
-            parser.advance()
+            if self.custom_token_name:
+                tok.token = CustomToken(self.custom_token_name, val_str)
 
-        if self.custom_token_name:
-            tok.token = CustomToken(self.custom_token_name)
-
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"MatchSeqSymbol exitoso: {val_str!r}",
-                "Success",
-            )
-
-        return tok
+            father.note(f"MatchSeqSymbol exitoso: {val_str!r}", "success")
+            parser.consume()
+            analyzer.discard_staged_failure(min_weight=parser.pos)
+            return analyzer.delegate_return_node(tok)
+        finally:
+            parser.down()
 
     def __repr__(self) -> str:
         return f"MatchSeqSymbol({self.pattern!r})"
 
 
-# Alias de conveniencia
 MatchSymbol = MatchSeqSymbol
-
 
 __all__ = [
     "MatchSeqSymbol",

@@ -1,36 +1,34 @@
 """
-Combinador Separator (`gram.core.combinators.separator`).
+Separator Combinator (`gram.core.combinators.separator`).
 =========================================================
-Proporciona el combinador `Separator` (y alias `Sep`) para procesar secuencias
-de elementos delimitados por separadores léxicos (por ejemplo listas separadas
-por comas, parámetros separados por punto y coma, etc.).
+Provides the `Separator` combinator (and `Sep` alias) for parsing delimited
+element sequences (such as comma-separated arguments or semicolon-separated
+statements) with configurable minimum/maximum bounds and trailing separator support.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.item import Item, ItemNode, Literal, LiteralNode
-from gram.core.combinators.match import MatchKeyword, MatchSeqSymbol, MatchToken
-from gram.core.combinators.optional import OptResult
+from gram.core.combinators.item import ItemNode, Literal, LiteralNode
+from gram.core.combinators.match import MatchToken
+from gram.core.combinators.signals import BreakFlowSignal, SkipFlowSignal
 from gram.core.lexer.tokens import MAP_SYMBOLS, Token, TokenType
-from gram.utilities import error
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.parser.core import Parser
 
 
-class SeparatorResult(list):
+class SeparatorResult(list[Any]):
     """
-ES:
-    Resultado de la evaluación del combinador Separator().
-    Hereda de list y aporta metadatos sobre separador final colgante (trailing).
+    Result container for `Separator` combinator evaluations.
 
-EN:
-    Result container for Separator combinator evaluation, subclassing list.
-"""
+    Subclasses `list` and stores metadata indicating whether a trailing
+    separator was consumed at the end of the sequence.
+    """
+
     is_match: bool = True
 
     def __init__(
@@ -40,17 +38,12 @@ EN:
         trailing_separator: bool = False,
     ) -> None:
         super().__init__(items if items is not None else [])
-        self.ended_token = ended_token
-        self.trailing_separator = trailing_separator
+        self.ended_token: TokenType | None = ended_token
+        self.trailing_separator: bool = trailing_separator
 
     def to_list(self) -> list[Any]:
-        """
-        Convierte recursivamente a lista nativa de Python.
-
-        Returns:
-            list[Any]: Lista pura recursivamente normalizada.
-        """
-        result = []
+        """Recursively convert nested `SeparatorResult`, `ItemNode`, and `LiteralNode` objects to plain Python lists."""
+        result: list[Any] = []
         for item in self:
             if isinstance(item, SeparatorResult):
                 result.append(item.to_list())
@@ -62,19 +55,22 @@ EN:
 
     @property
     def items(self) -> list[Any]:
-        """Retorna los elementos como una lista nativa."""
+        """Return a shallow copy of the matched elements as a standard list."""
         return list(self)
 
     def __bool__(self) -> bool:
-        """Verdadero si contiene elementos."""
+        """Return True if at least one element was matched."""
         return len(self) > 0
 
     def __repr__(self) -> str:
-        return f"SeparatorResult({super().__repr__()})"
+        return (
+            f"SeparatorResult({super().__repr__()}, "
+            f"trailing={self.trailing_separator})"
+        )
 
 
 def _normalize_value(val: Any) -> Combinator:
-    """Normaliza un valor arbitrario al combinador adecuado."""
+    """Coerce an arbitrary value specification into a valid `Combinator` instance."""
     if isinstance(val, Combinator):
         return val
     if isinstance(val, Token):
@@ -90,18 +86,24 @@ def _normalize_value(val: Any) -> Combinator:
         return Literal(val)
     if isinstance(val, type) and issubclass(val, Combinator):
         return val()
-    raise TypeError(f"Valor no permitido en Separator: {val!r}")
+
+    errors.GrammarError(
+        "UnsupportedSeparatorValue",
+        errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+        f"Valor no permitido en la configuración de Separator: {val!r} ({type(val).__name__}).",
+        "Use una instancia de Combinator, Token, cadena o literal numérico.",
+    ).raise_error()
+    raise TypeError(f"Unsupported value in Separator: {val!r}")
 
 
 class Separator(Combinator):
     """
-ES:
-    Combinador que procesa secuencias de elementos delimitados por un separador.
-    Soporta separadores finales opcionales (trailing separator) y límites min/max.
+    Delimited repetition combinator matching elements separated by a delimiter.
 
-    EN:
-        Delimited repetition combinator matching elements separated by a delimiter token.
+    Supports minimum and maximum occurrence constraints as well as optional
+    trailing separators.
     """
+
     header_class: bool = True
 
     def __init__(
@@ -113,152 +115,159 @@ ES:
         allow_trailing: bool = True,
     ) -> None:
         """
-        Inicializa el combinador de secuencias con separador.
+        Initialize the delimited repetition combinator.
 
         Args:
-            values: Combinador(es) esperados para los valores de la secuencia.
-            sep: Combinador, Token o símbolo usado como separador (por defecto Token.COMMA).
-            min: Cantidad mínima obligatoria de elementos.
-            max: Cantidad máxima permitida de elementos (o None para ilimitado).
-            allow_trailing: Permite un separador colgante al final de la secuencia.
+            values (Sequence[Any] | Combinator | Token | str): Allowed element combinator(s).
+            sep (Combinator | Token | str): Delimiter combinator or token (defaults to `Token.COMMA`).
+            min (int): Minimum required number of matched elements.
+            max (int | None): Maximum allowed number of matched elements (`None` for unbounded).
+            allow_trailing (bool): If True, permits a trailing delimiter after the final element.
         """
-        self.header_class: bool = True
+        super().__init__()
         if isinstance(values, (list, tuple)):
-            self.values = tuple(_normalize_value(v) for v in values)
+            self.values: tuple[Combinator, ...] = tuple(
+                _normalize_value(v) for v in values
+            )
         else:
             self.values = (_normalize_value(values),)
-        self.sep = _normalize_value(sep)
-        self.min = min
-        self.max = max
-        self.allow_trailing = allow_trailing
+        self.sep: Combinator = _normalize_value(sep)
+        self.min: int = min
+        self.max: int | None = max
+        self.allow_trailing: bool = allow_trailing
 
-    def _match_val(self, analyzer: Any, token: TokenType | None) -> Any:
-        """Intenta hacer coincidir el token con alguna de las opciones de valor."""
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
-        saved = parser.savepoint(node=target_node)
+    def _match_val(self, analyzer: ASTAnalyzer) -> Any:
+        """Attempt to match the current token position against any candidate in `self.values`."""
+        parser = analyzer.parser
+        saved = parser.savepoint("SEP-Value")
 
-        for val_comb in self.values:
-            parser.restore(saved, node=target_node)
+        for idx, val_comb in enumerate(self.values):
+            if idx > 0:
+                parser.restore(saved)
             try:
-                res = self._dispatch_sub(val_comb, analyzer, token, ignore_errors=True)
-            except error.ParserError:
+                with analyzer.safe_mode():
+                    res = analyzer.visitor(val_comb)
+            except errors.Error:
                 res = None
 
-            if res is None:
-                continue
-            if isinstance(res, OptResult) and not res.matched:
-                continue
-            return res
+            if res is not None:
+                analyzer.discard_staged_failure(min_weight=parser.pos)
+                return res
 
-        parser.restore(saved, node=target_node)
+        parser.restore(saved)
         return None
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> SeparatorResult | None:
+    def parse(self, analyzer: ASTAnalyzer) -> SeparatorResult | None:
         """
-        Ejecuta el análisis sintáctico de la secuencia delimitada por separadores.
+        Parse a sequence of elements separated by `self.sep`.
 
         Args:
-            analyzer: Analizador sintáctico o parser activo.
-            current: Token actual posicionado o None.
-            ignore_errors: Si True, suprime errores sintácticos.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            SeparatorResult con los elementos extraídos, o None si no cumple el mínimo.
+            SeparatorResult | None: `SeparatorResult` containing matched elements,
+            or `None` if fewer than `self.min` elements were matched.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
+        parser = analyzer.parser
+        father = parser.node(
+            "ProcessingSeparator", "Procesando separador", set_target=True
+        )
+        father.note("Iniciando evaluación de Separator", "normal")
 
-        if config.PARSER_ADD_INFO:
-            target_node.note("Iniciando evaluación de Separator", "Normal")
-
-        initial_checkpoint = parser.savepoint(node=target_node)
-        items = []
+        initial_checkpoint = parser.savepoint("SEP-Analysis")
+        items: list[Any] = []
         trailing_sep = False
 
-        first_val = self._match_val(analyzer, current)
-        if first_val is None:
-            parser.restore(initial_checkpoint, node=target_node)
-            if self.min > 0:
-                if not ignore_errors:
-                    failure_context = self._failure_context(analyzer)
-                    curr_tok = current if current else parser.peek()
+        try:
+            first_val = self._match_val(analyzer)
+            if first_val is None:
+                parser.restore(initial_checkpoint)
+                if self.min > 0:
+                    curr_tok = parser.peek() if not parser.empty() else None
                     tok_info = (
-                        ""
-                        if failure_context
-                        else f" en {curr_tok}" if curr_tok else ""
+                        f" en línea {curr_tok.line}, columna {curr_tok.col} ({curr_tok.token.name})"
+                        if curr_tok is not None
+                        else ""
                     )
-                    caution = (
-                        f"Separator requería al menos {self.min} elementos "
-                        f"pero no se encontró ninguno{tok_info}.",
+                    fallback = errors.GrammarError(
+                        "InsufficientSeparatorElements",
+                        errors.GRAMMAR_COMBINATOR_FAILED,
+                        f"Separator requería al menos {self.min} elemento(s), pero no se encontró ninguno{tok_info}.",
+                        "Proporcione al menos la cantidad mínima de elementos separados requerida.",
                     )
-                    if failure_context:
-                        caution += (failure_context,)
-                    error.ParserError(
-                        "Elementos insuficientes",
-                        errors.COMBINATOR_FAILED,
-                        *caution,
-                    ).raise_error()
+                    if analyzer.safe_flag:
+                        analyzer.stage_failure(fallback, weight=initial_checkpoint.pos)
+                    else:
+                        analyzer.flush_failure(fallback=fallback)
+                    return None
+                return SeparatorResult([], trailing_separator=False)
+
+            items.append(first_val)
+
+            while True:
+                if self.max is not None and len(items) >= self.max:
+                    break
+                if parser.empty():
+                    break
+
+                sep_checkpoint = parser.savepoint("SEP-Separator")
+                try:
+                    with analyzer.safe_mode():
+                        sep_res = analyzer.visitor(self.sep)
+                except (SkipFlowSignal, BreakFlowSignal):
+                    parser.restore(sep_checkpoint)
+                    break
+                except errors.Error:
+                    sep_res = None
+
+                if sep_res is None:
+                    parser.restore(sep_checkpoint)
+                    break
+
+                if parser.empty():
+                    if self.allow_trailing:
+                        trailing_sep = True
+                        break
+                    parser.restore(sep_checkpoint)
+                    break
+
+                val_checkpoint = parser.savepoint("SEP-NextValue")
+                val_res = self._match_val(analyzer)
+
+                if val_res is not None:
+                    items.append(val_res)
+                    trailing_sep = False
+                else:
+                    if self.allow_trailing:
+                        parser.restore(val_checkpoint)
+                        trailing_sep = True
+                        break
+                    parser.restore(sep_checkpoint)
+                    if analyzer.staged_weight > val_checkpoint.pos and not analyzer.safe_flag:
+                        analyzer.flush_failure()
+                    break
+
+            if len(items) < self.min:
+                parser.restore(initial_checkpoint)
+                fallback = errors.GrammarError(
+                    "InsufficientSeparatorElements",
+                    errors.GRAMMAR_COMBINATOR_FAILED,
+                    f"Se requerían al menos {self.min} elementos en Separator, pero se obtuvieron {len(items)}.",
+                    "Asegúrese de completar la lista de elementos separados.",
+                )
+                if analyzer.safe_flag:
+                    analyzer.stage_failure(fallback, weight=initial_checkpoint.pos)
+                else:
+                    analyzer.flush_failure(fallback=fallback)
                 return None
-            return SeparatorResult([], trailing_separator=False)
 
-        items.append(first_val)
-
-        while True:
-            if self.max is not None and len(items) >= self.max:
-                break
-            if not parser.not_empty():
-                break
-
-            sep_checkpoint = parser.savepoint(node=target_node)
-            try:
-                sep_res = self._dispatch_sub(self.sep, analyzer, None, ignore_errors=True)
-            except error.ParserError:
-                sep_res = None
-
-            if sep_res is None or (isinstance(sep_res, OptResult) and not sep_res.matched):
-                parser.restore(sep_checkpoint, node=target_node)
-                break
-
-            if not parser.not_empty():
-                if self.allow_trailing:
-                    trailing_sep = True
-                    break
-                else:
-                    parser.restore(sep_checkpoint, node=target_node)
-                    break
-
-            val_checkpoint = parser.savepoint(node=target_node)
-            val_res = self._match_val(analyzer, None)
-
-            if val_res is not None:
-                items.append(val_res)
-                trailing_sep = False
-            else:
-                if self.allow_trailing:
-                    parser.restore(val_checkpoint, node=target_node)
-                    trailing_sep = True
-                    break
-                else:
-                    parser.restore(sep_checkpoint, node=target_node)
-                    break
-
-        if len(items) < self.min:
-            parser.restore(initial_checkpoint, node=target_node)
-            if not ignore_errors:
-                error.ParserError(
-                    "Elementos insuficientes",
-                    errors.COMBINATOR_FAILED,
-                    f"Se requerían al menos {self.min} elementos en Separator (obtenidos: {len(items)}).",
-                ).raise_error()
-            return None
-
-        return SeparatorResult(items, trailing_separator=trailing_sep)
+            father.note(
+                f"Separator completado: {len(items)} elemento(s), trailing={trailing_sep}",
+                "success",
+            )
+            return SeparatorResult(items, trailing_separator=trailing_sep)
+        finally:
+            parser.down()
 
     def __repr__(self) -> str:
         return f"Separator(values={self.values!r}, sep={self.sep!r})"

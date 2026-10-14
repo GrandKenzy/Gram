@@ -1,201 +1,126 @@
 """
-EN:
-    Alternative Combinator (`gram.core.combinators.alternative`).
-    =============================================================
-    Defines the syntactic branching combinator (Alt / Alternative).
-    Evaluates candidate combinators in priority order and returns the result of the first
-    successful branch. If a branch fails, automatically backtracks the parser cursor
-    and attempts the subsequent alternative.
-
-ES:
-    Combinador de Alternativas (`gram.core.combinators.alternative`).
-    ================================================================
-    Define el combinador de bifurcación sintáctica (Alt / Alternative).
-    Evalúa los combinadores candidatos en orden y retorna el resultado de la primera
-    alternativa exitosa. Si una alternativa fracasa, retrocede automáticamente
-    el cursor del parser (backtracking) e intenta con la siguiente.
+Alternative Combinator (`gram.core.combinators.alternative`).
+=============================================================
+Defines the syntactic branching combinator (`Alt`). Evaluates candidate
+combinators in priority order inside a reentrant `safe_mode` context and
+surfaces the deepest atomic failure if all candidate branches are rejected.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.optional import OptResult
-from gram.core.combinators.signals import AbortFlowSignal, CutFlowSignal
-from gram.utilities import error
+from gram.core.combinators.signals import BacktrackSignal, CutFlowSignal
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.lexer.tokens import TokenType
-    from gram.core.parser.core import Parser
 
 
 class Alt(Combinator):
     """
-    EN:
-        Alternative combinator (logical OR branch).
-        Evaluates candidate combinators in sequential order until the first
-        match succeeds on the token stream. If a candidate fails, automatically
-        backtracks cursor state to savepoint and attempts the next candidate.
+    Alternative combinator (logical OR branch).
 
-    ES:
-        Combinador de alternativas (o / or).
-        Evalúa los combinadores candidatos en orden secuencial hasta encontrar
-        el primero que coincida con éxito con el flujo de tokens.
-        Si una alternativa no empareja, realiza backtracking automático restaurando
-        el estado del cursor y prueba la alternativa siguiente.
+    Evaluates candidate combinators sequentially until the first match succeeds.
+    If all candidates fail, promotes or stages the deepest candidate error
+    recorded across the attempted branches.
     """
+
     header_class: bool = True
 
     def __init__(self, *combinators: Combinator) -> None:
         """
-        EN: Initialize alternative combinator with candidate branches.
-        ES: Inicializa el combinador con una lista de alternativas posibles.
+        Initialize the alternative combinator with one or more candidate branches.
 
         Args:
-            *combinators: One or more candidate combinator branches.
-                          Uno o más combinadores candidatos.
-
-        Raises:
-            ParserError: If no candidate combinator is provided.
-                         Si no se proporciona ninguna alternativa.
+            *combinators (Combinator): Candidate combinator branches to evaluate in order.
         """
-        self.header_class: bool = True
+        super().__init__()
         if not combinators:
-            error.ParserError(
-                "Alternativas vacías",
-                errors.COMBINATOR_FAILED,
+            errors.GrammarError(
+                "EmptyAlternatives",
+                errors.GRAMMAR_COMBINATOR_FAILED,
                 "El combinador Alt() requiere al menos una alternativa.",
+                "Proporcione uno o más combinadores candidatos dentro de Alt(...).",
             ).raise_error()
 
         self.combinators: tuple[Combinator, ...] = tuple(combinators)
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> Any:
+    def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
-        EN: Try each candidate alternative in order until a match is found.
-        ES: Prueba cada alternativa candidata en orden hasta encontrar una coincidencia.
+        Evaluate candidate branches sequentially until one matches.
 
         Args:
-            analyzer: Active syntax analyzer or Parser instance.
-                      Instancia del analizador sintáctico o parser.
-            current: Current token available under cursor or None.
-                     Token actual disponible en la posición inicial o None.
-            ignore_errors: If True, suppress syntax error exceptions on branch failure.
-                           Si True, no levanta excepciones ante la falta de coincidencia.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            Result of the first matching branch, or None if none matched.
-            El resultado del primer combinador que haya coincidido, o None si ninguno lo hizo.
+            Any: Result of the first matching branch, or `None` if all branches fail.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
+        parser = analyzer.parser
+        father = parser.node(
+            "ProcessingAlt", "Procesando combinador de Alternativas", set_target=True
+        )
+        analyzer.debug(f"Procesando ALT con {len(self.combinators)} alternativas")
 
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"ALT iniciado con {len(self.combinators)} alternativas",
-                "Normal",
-            )
+        checkpoint = parser.savepoint("ALT-Analysis")
 
-        checkpoint = parser.savepoint(node=target_node)
-
-        for index, combinator in enumerate(self.combinators, start=1):
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"Probando alternativa {index}: {combinator!r}",
-                    "Normal",
+        try:
+            for index, combinator in enumerate(self.combinators, start=1):
+                father.note(
+                    f"Probando alternativa No. {index}: {combinator.type()}",
+                    "normal",
                 )
+                try:
+                    with analyzer.safe_mode():
+                        res = analyzer.visitor(combinator)
+                except BacktrackSignal:
+                    res = None
+                except CutFlowSignal:
+                    parser.restore(checkpoint)
+                    father.note(
+                        f"Corte (CutFlowSignal) activado en alternativa No. {index}; abortando backtracking.",
+                        "warn",
+                    )
+                    break
 
-            # Restaurar el estado del cursor antes de evaluar cada rama
-            parser.restore(checkpoint, node=target_node)
-
-            try:
-                res = self._dispatch_sub(
-                    combinator,
-                    analyzer,
-                    current,
-                    ignore_errors=True,
-                )
-            except CutFlowSignal:
-                if config.PARSER_ADD_INFO:
-                    target_node.note("Corte de flujo (CutFlowSignal) detectado en alternativa.", "Advice")
-                parser.restore(checkpoint, node=target_node)
-                if not ignore_errors:
-                    error.ParserError(
-                        "Corte de alternativas por señal CutFlowSignal",
-                        errors.COMBINATOR_FAILED,
-                    ).raise_error()
-                return None
-            except AbortFlowSignal:
-                parser.restore(checkpoint, node=target_node)
-                raise
-
-            if res is not None:
-                if isinstance(res, OptResult) and not res.matched:
+                if res is None:
+                    father.note(f"Alternativa No. {index} rechazada", "normal")
+                    parser.restore(checkpoint)
                     continue
 
-                if config.PARSER_ADD_INFO:
-                    target_node.note(
-                        f"Alternativa {index} aceptada",
-                        "Success",
-                    )
-
+                father.note(f"Alternativa No. {index} aceptada", "success")
+                analyzer.discard_staged_failure(min_weight=parser.pos)
                 return res
 
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"Alternativa {index} rechazada",
-                    "Advice",
-                )
-
-        # Restaurar estado inicial al fracasar todas las alternativas
-        parser.restore(checkpoint, node=target_node)
-
-        if not ignore_errors:
-            tried = [repr(c).splitlines()[0].strip() for c in self.combinators]
-            tried_str = ", ".join(tried)
-            failure_context = parser.control.failure_context()
-            tok_info = "" if failure_context else (
-                f" en {current or parser.peek()}"
-                if current or parser.peek()
+            father.note("Todas las alternativas fueron rechazadas", "error")
+            curr_tok = parser.peek() if not parser.empty() else None
+            tok_info = (
+                f" en línea {curr_tok.line}, columna {curr_tok.col} ({curr_tok.token.name})"
+                if curr_tok is not None
                 else ""
             )
-
-            if config.PARSER_ADD_ERROR:
-                target_node.note(
-                    f"Ninguna alternativa coincidió{tok_info}"
-                    + (f". {failure_context}" if failure_context else ""),
-                    "Error",
-                )
-
-            caution = (
-                f"Ninguna alternativa sintáctica coincidió{tok_info}. "
-                f"Candidatos: [{tried_str}].",
+            fallback = errors.GrammarError(
+                "NoAlternativeMatched",
+                errors.GRAMMAR_COMBINATOR_FAILED,
+                f"Ninguna de las {len(self.combinators)} alternativas coincidió{tok_info}.",
+                "Verifique que la expresión coincida con alguna de las reglas permitidas.",
             )
-            if failure_context:
-                caution += (failure_context,)
 
-            error.ParserError(
-                "Alternativa no encontrada",
-                errors.PARSER_UNEXPECTED_TOKEN,
-                *caution,
-            ).raise_error()
+            if analyzer.safe_flag:
+                analyzer.stage_failure(fallback, weight=checkpoint.pos)
+            else:
+                analyzer.flush_failure(fallback=fallback)
 
-        return None
+            return None
+        finally:
+            parser.down()
 
     def items(self) -> tuple[Combinator, ...]:
-        """
-        EN: Return candidate combinators contained in this alternative rule.
-        ES: Retorna las alternativas contenidas en la regla.
-        """
+        """Return the tuple of candidate combinators in this alternative."""
         return self.combinators
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Combinator]:
         return iter(self.combinators)
 
     def __len__(self) -> int:
@@ -206,8 +131,4 @@ class Alt(Combinator):
         return f"Alt({items})"
 
 
-# Alias canónico
-Alternative = Alt
-
-
-__all__ = ["Alt", "Alternative"]
+__all__ = ["Alt"]

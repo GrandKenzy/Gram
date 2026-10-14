@@ -1,167 +1,124 @@
 """
-EN:
-    One-or-More Repetition Combinator (`gram.core.combinators.some`).
-    ================================================================
-    Defines non-empty repetition (1..n or regex plus +).
-    Requires at least one mandatory match to succeed.
-    If zero matches occur, restores parser state and returns None or raises
-    a syntax error depending on ignore_errors.
-
-ES:
-    Combinador de Repetición Una o Más Veces (`gram.core.combinators.some`).
-    ========================================================================
-    Define el combinador de repetición no vacía (1..n o signo +).
-    Requiere al menos una coincidencia obligatoria para tener éxito.
-    Si no coincide al menos una vez, restaura la posición del parser y
-    retorna None o levanta un error sintáctico según ignore_errors.
+One-or-More Repetition Combinator (`gram.core.combinators.some`).
+=================================================================
+Defines the non-empty repetition combinator (`1..n` or Kleene plus `+`).
+Requires at least one mandatory match of the inner combinator to succeed;
+otherwise restores the initial checkpoint and promotes the deepest failure.
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.optional import OptResult
-from gram.core.combinators.signals import AbortFlowSignal, BreakFlowSignal, SkipFlowSignal
-from gram.utilities import error
+from gram.core.combinators.signals import BreakFlowSignal, SkipFlowSignal
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.lexer.tokens import TokenType
-    from gram.core.parser.core import Parser
 
 
 class Some(Combinator):
     """
-    EN:
-        One-or-more repetition combinator (1..n / Kleene plus).
-        Requires at least one mandatory occurrence of the inner combinator.
-        Accumulates subsequent matches as long as they match on the token stream.
+    One-or-more repetition combinator (`1..n` / Kleene plus).
 
-    ES:
-        Combinador de repetición una o más veces (1..n).
-        Exige al menos una coincidencia obligatoria del combinador interno.
-        Acumula subsecuentes coincidencias mientras existan en el flujo de tokens.
+    Requires at least one match of the inner combinator and accumulates
+    subsequent consecutive matches until the stream ends or matching fails.
     """
+
     header_class: bool = True
 
     def __init__(self, combinator: Combinator) -> None:
         """
-        EN: Initialize mandatory repetition combinator with child combinator.
-        ES: Inicializa el combinador de repetición obligatoria con el combinador hijo.
+        Initialize the one-or-more repetition combinator.
 
         Args:
-            combinator: Syntactic combinator to repeat.
-                        Combinador sintáctico a repetir.
+            combinator (Combinator): Child syntactic combinator to repeat.
         """
-        self.header_class: bool = True
+        super().__init__()
         self.combinator: Combinator = combinator
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> list[Any] | None:
+    def parse(self, analyzer: ASTAnalyzer) -> list[Any] | None:
         """
-        EN: Execute inner combinator requiring at least one match.
-        ES: Ejecuta el combinador exigiendo al menos 1 coincidencia.
+        Evaluate `self.combinator` requiring at least one successful match.
 
         Args:
-            analyzer: Active syntax analyzer or Parser instance.
-                      Instancia del analizador sintáctico o parser.
-            current: Current token available under cursor or None.
-                     Token actual disponible en la posición inicial o None.
-            ignore_errors: If True, suppress syntax exceptions on mismatch.
-                           Si True, no levanta excepciones ante fallos.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            List of match results (at least 1 item) or None on failure.
-            Lista con los resultados recolectados (mínimo 1 elemento) o None si no coincidió.
+            list[Any] | None: Non-empty list of matched results, or `None` on failure.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
+        parser = analyzer.parser
+        father = parser.node(
+            "ProcessingSome", "Procesando secuencia Some", set_target=True
+        )
+        father.note(f"SOME iniciado con {self.combinator!r}", "normal")
 
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"SOME iniciado con {self.combinator!r}",
-                "Normal",
-            )
-
-        initial_checkpoint = parser.savepoint(node=target_node)
+        initial_checkpoint = parser.savepoint("SOME-Analysis")
         results: list[Any] = []
-        active_token = current
 
-        while True:
-            if active_token is None and not parser.not_empty():
-                break
+        try:
+            while not parser.empty():
+                checkpoint = parser.savepoint("SOME-Iteration")
+                had_prior_staged = analyzer.staged_failure is not None
 
-            checkpoint = parser.savepoint(node=target_node)
+                try:
+                    with analyzer.safe_mode():
+                        res = analyzer.visitor(self.combinator)
+                except SkipFlowSignal:
+                    if parser.pos == checkpoint.pos:
+                        parser.restore(checkpoint)
+                        break
+                    continue
+                except BreakFlowSignal:
+                    parser.restore(checkpoint)
+                    break
 
-            try:
-                res = self._dispatch_sub(
-                    self.combinator,
-                    analyzer,
-                    active_token,
-                    ignore_errors=True,
-                )
-            except (BreakFlowSignal, SkipFlowSignal):
-                parser.restore(checkpoint, node=target_node)
-                break
-            except AbortFlowSignal:
-                parser.restore(initial_checkpoint, node=target_node)
-                raise
+                if res is None:
+                    parser.restore(checkpoint)
+                    if results:
+                        if analyzer.staged_weight > checkpoint.pos:
+                            if not analyzer.safe_flag:
+                                analyzer.flush_failure()
+                        elif not had_prior_staged and analyzer.staged_weight == checkpoint.pos:
+                            analyzer.discard_staged_failure()
+                    break
 
-            if res is None or (isinstance(res, OptResult) and not res.matched):
-                parser.restore(checkpoint, node=target_node)
-                break
-
-            # Salvaguarda contra bucles infinitos si el combinador no avanza el parser
-            if parser.pos == checkpoint.pos and active_token is None:
                 results.append(res)
-                break
+                analyzer.discard_staged_failure(min_weight=parser.pos)
+                if parser.pos == checkpoint.pos:
+                    break
 
-            results.append(res)
-            active_token = None
-
-        if not results:
-            parser.restore(initial_checkpoint, node=target_node)
-
-            if config.PARSER_ADD_INFO:
-                target_node.note(
+            if not results:
+                parser.restore(initial_checkpoint)
+                father.note(
                     f"SOME rechazado: se requería al menos 1 coincidencia para {self.combinator!r}",
-                    "Warn",
+                    "warn",
                 )
 
-            if not ignore_errors:
-                failure_context = self._failure_context(analyzer)
-                curr_tok = current or parser.peek()
+                curr_tok = parser.peek() if not parser.empty() else None
                 tok_info = (
-                    ""
-                    if failure_context
-                    else f" en {curr_tok}" if curr_tok else ""
+                    f" en línea {curr_tok.line}, columna {curr_tok.col} ({curr_tok.token.name})"
+                    if curr_tok is not None
+                    else ""
                 )
-                caution = (
-                    f"Se esperaba al menos una ocurrencia de "
-                    f"{self.combinator!r}{tok_info}.",
+                fallback = errors.GrammarError(
+                    "MinimumOccurrenceNotMet",
+                    errors.GRAMMAR_COMBINATOR_FAILED,
+                    f"Se esperaba al menos una ocurrencia de {self.combinator!r}{tok_info}.",
+                    "Verifique que la expresión cumpla con al menos una repetición válida.",
                 )
-                if failure_context:
-                    caution += (failure_context,)
-                error.ParserError(
-                    "Ocurrencia mínima no alcanzada",
-                    errors.COMBINATOR_FAILED,
-                    *caution,
-                ).raise_error()
 
-            return None
+                if analyzer.safe_flag:
+                    analyzer.stage_failure(fallback, weight=initial_checkpoint.pos)
+                else:
+                    analyzer.flush_failure(fallback=fallback)
 
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"SOME completado: {len(results)} coincidencias",
-                "Success",
-            )
+                return None
 
-        return results
+            father.note(f"SOME completado: {len(results)} coincidencias", "success")
+            return results
+        finally:
+            parser.down()
 
     def __repr__(self) -> str:
         return f"Some({self.combinator!r})"

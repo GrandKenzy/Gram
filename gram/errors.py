@@ -1,41 +1,65 @@
 """
-Catálogo Centralizado de Errores Formales del Framework Gram.
+Centralized Formal Error Catalog and Classes (`gram.errors`).
 =============================================================
-Define todos los objetos CodeError estructurados según el estándar formal OSGDC
-de 5 dimensiones:
-  [O] Origen (Origin): Procedencia del emisor (Native=1, Plugin=2, Unknown=0).
-  [S] Alcance (Scope): Subsistema donde ocurrió el fallo (Lexer=1, Parser=2, Grammar=3, Semantic=4, Compilation=5).
-  [G] Gravedad (Gravity): Impacto funcional (Minor=0, Implementation=1, Obsolete=2, Internal=3, Fatal=4).
-  [D] Documentación (Documentation): Nivel de documentación (Documented=0, Documented & Traceable=1, Not Documented=2).
-  [C] Condición (Condition): Usabilidad del resultado (Usable=0, Requires Repair=1, Should Repair=2).
+Defines Gram's domain-specific exception classes (`LexerError`, `ParserError`,
+`ASTError`, `GrammarError`, `SemanticError`, `CompilationError`, `PluginError`,
+`SystemError`), all `CODE_*` OSGDC dimension tokens, and all formal `CodeError`
+definitions prefixed by their corresponding error class.
 
-Regla de Arquitectura:
-----------------------
-Ningún módulo de lógica debe instanciar códigos de error arbitrarios ni utilizar
-números mágicos dispersos. Todos los componentes del framework Gram deben importar
-y consumir exclusivamente los errores de este catálogo oficial.
-
-Uso Típico:
------------
->>> from gram.utilities.error import Error
->>> from gram import errors
->>> err = Error("Carácter no admitido", errors.LEXER_UNEXPECTED_CHARACTER, "Revise la sintaxis.")
->>> err.raise_error(exit=False)
+OSGDC 5-Dimension Standard:
+  [O] Origin:        Native=1, Plugin=2, Unknown=0
+  [S] Scope:         Lexer=1, Parser=2, Grammar=3, Semantic=4, Compilation=5, Unknown=0
+  [G] Gravity:       Minor=0, Implementation=1, Obsolete=2, Internal=3, Fatal=4
+  [D] Documentation: Documented=0, Documented & Traceable=1, Not Documented=2
+  [C] Condition:     Usable=0, Requires Repair=1, Should Repair=2
 """
 from __future__ import annotations
 
 import sys
 
-from gram.utilities import error
+from gram.utilities.error import CodeError, Codes, Error, set_map_codes
 
-codes = error.codes.Codes
-coderr = error.codes.CodeError
+# ==============================================================================
+# GRAM DOMAIN ERROR CLASSES
+# ==============================================================================
+
+class LexerError(Error):
+    """Structured exception for errors occurring during lexical analysis."""
 
 
+class ParserError(Error):
+    """Structured exception for errors occurring during syntactic parsing."""
 
-# Inicialización estricta del mapa de grupos y límites para el estándar OSGDC de 5 dígitos:
+
+class ASTError(Error):
+    """Structured exception for errors occurring during AST construction or validation."""
+
+
+class GrammarError(Error):
+    """Structured exception for errors in grammar rules and combinators."""
+
+
+class SemanticError(Error):
+    """Structured exception for errors occurring during semantic analysis."""
+
+
+class CompilationError(Error):
+    """Structured exception for errors in DSL compilation and specifications."""
+
+
+class PluginError(Error):
+    """Structured exception for errors in plugin manifests and lifecycle."""
+
+
+class SystemError(Error):
+    """Structured exception for generic or unclassified system errors."""
+
+
+# ==============================================================================
+# OSGDC DIMENSION MAP INITIALIZATION
+# ==============================================================================
 # O: max 2, S: max 5, G: max 4, D: max 2, C: max 2
-error.codes.set_map_codes(
+set_map_codes(
     origin=[2],
     scope=[5],
     gravity=[4],
@@ -44,1368 +68,891 @@ error.codes.set_map_codes(
 )
 
 # ==============================================================================
-# SÍMBOLO COMODÍN / POR DEFECTO
+# WILDCARD / DEFAULT CODE
 # ==============================================================================
 
-UNKNOWN: error.codes.Codes = error.codes.Codes('unknown', 0, 'default')
-"""Símbolo comodín por defecto para rellenar posiciones omitidas."""
-
-
-# ==============================================================================
-# DIMENSIONES DEL ESTÁNDAR OSGDC (GRUPOS Y LÍMITES)
-# ==============================================================================
-
-# ------------------------------------------------------------------------------
-# 1. ORIGEN (O - Origin): Procedencia del componente emisor
-# ------------------------------------------------------------------------------
-UNKNOWN_ORIGIN: error.codes.Codes = codes('unknown', 0, 'origin')
-"""Origen indeterminado o no rastreable (O = 0)."""
-
-NATIVE_ERROR: error.codes.Codes = codes('native', 1, 'origin')
-"""Error originado en el núcleo o componentes nativos de Gram (O = 1)."""
-
-PLUGIN_ERROR: error.codes.Codes = codes('plugin', 2, 'origin')
-"""Error originado dentro de un plugin o extensión externa (O = 2)."""
-
-
-# ------------------------------------------------------------------------------
-# 2. ALCANCE (S - Scope): Subsistema o fase del pipeline de procesamiento
-# ------------------------------------------------------------------------------
-UNKNOWN_SCOPE: error.codes.Codes = codes('unknown', 0, 'scope')
-"""Alcance no especificado o genérico (S = 0)."""
-
-LEXER_ERROR: error.codes.Codes = codes('lexer', 1, 'scope')
-"""Fase léxica: escaneo de caracteres, palabras clave, números y strings (S = 1)."""
-
-PARSER_ERROR: error.codes.Codes = codes('parser', 2, 'scope')
-"""Fase de análisis sintáctico: tokens inesperados, fin prematuro (EOF) (S = 2)."""
-
-GRAMMAR_ERROR: error.codes.Codes = codes('grammar', 3, 'scope')
-"""Definición y evaluación de reglas, combinadores y nodos del AST (S = 3)."""
-
-SEMANTIC_ERROR: error.codes.Codes = codes('semantic', 4, 'scope')
-"""Fase de análisis semántico: compatibilidad de tipos, ámbito y símbolos (S = 4)."""
-
-COMPILATION_ERROR: error.codes.Codes = codes('compilation', 5, 'scope')
-"""Fase de compilación, inclusión de especificaciones y DSL GramLang (S = 5)."""
-
-
-# ------------------------------------------------------------------------------
-# 3. GRAVEDAD (G - Gravity): Impacto funcional en la ejecución
-# ------------------------------------------------------------------------------
-MINOR: error.codes.Codes = codes('minor', 0, 'gravity')
-"""Advertencia o fallo menor que no interrumpe el análisis ni la ejecución (G = 0)."""
-
-IMPLEMENTATION_ERROR: error.codes.Codes = codes('implementation error', 1, 'gravity')
-"""Característica, combinador o funcionalidad aún no implementada (G = 1)."""
-
-OBSOLETE_ERROR: error.codes.Codes = codes('obsolete error', 2, 'gravity')
-"""Sintaxis, función o componente deprecado u obsoleto (G = 2)."""
-
-INTERNAL: error.codes.Codes = codes('internal', 3, 'gravity')
-"""Inconsistencia del estado interno del framework o motor de análisis (G = 3)."""
-
-FATAL: error.codes.Codes = codes('fatal', 4, 'gravity')
-"""Error crítico que aborta inmediatamente el análisis de la rama actual (G = 4)."""
-
-
-# ------------------------------------------------------------------------------
-# 4. DOCUMENTACIÓN (D - Documentation): Nivel de documentación y trazabilidad
-# ------------------------------------------------------------------------------
-DOCUMENTED: error.codes.Codes = codes('documented', 0, 'documentation')
-"""Error formalmente catalogado con ficha descriptiva estándar (D = 0)."""
-
-DOCUMENTED_AND_TRACEABLE: error.codes.Codes = codes('documented and traceable', 1, 'documentation')
-"""Error formal con causas documentadas, traza completa y sugerencias de reparación (D = 1)."""
-
-NOT_DOCUMENTED: error.codes.Codes = codes('not documented', 2, 'documentation')
-"""Error ad-hoc sin documentación técnica oficial asignada (D = 2)."""
-
-
-# ------------------------------------------------------------------------------
-# 5. CONDICIÓN (C - Condition): Estado del artefacto resultante y reparabilidad
-# ------------------------------------------------------------------------------
-USABLE: error.codes.Codes = codes('usable', 0, 'condition')
-"""El artefacto o token generado es operable y el análisis puede continuar (C = 0)."""
-
-REQUIRES_REPAIR: error.codes.Codes = codes('requires repair', 1, 'condition')
-"""El código fuente analizado contiene un defecto que debe ser reparado por el usuario (C = 1)."""
-
-SHOULD_REPAIR: error.codes.Codes = codes('should repair', 2, 'condition')
-"""Se recomienda encarecidamente reparar el código para evitar inconsistencias futuras (C = 2)."""
+CODE_UNKNOWN: Codes = Codes('unknown', 0, 'default')
+"""Default wildcard code token for omitted OSGDC positions."""
 
 
 # ==============================================================================
-# 1. ANALIZADOR LÉXICO (Scope: LEXER_ERROR = 1)
+# OSGDC DIMENSION CODES (PREFIX: CODE_*)
 # ==============================================================================
 
-EMPTY_KEYWORDS: coderr = coderr(
+# ------------------------------------------------------------------------------
+# 1. ORIGIN (O): Emitting component origin
+# ------------------------------------------------------------------------------
+CODE_UNKNOWN_ORIGIN: Codes = Codes('unknown', 0, 'origin')
+"""Undetermined or untraceable origin (O = 0)."""
+
+CODE_NATIVE_ERROR: Codes = Codes('native', 1, 'origin')
+"""Error originating in Gram's native core components (O = 1)."""
+
+CODE_PLUGIN_ERROR: Codes = Codes('plugin', 2, 'origin')
+"""Error originating inside an external plugin or extension (O = 2)."""
+
+# ------------------------------------------------------------------------------
+# 2. SCOPE (S): Subsystem or processing pipeline stage
+# ------------------------------------------------------------------------------
+CODE_UNKNOWN_SCOPE: Codes = Codes('unknown', 0, 'scope')
+"""Unspecified or generic subsystem scope (S = 0)."""
+
+CODE_LEXER_ERROR: Codes = Codes('lexer', 1, 'scope')
+"""Lexical phase: character scanning, keywords, numbers, and strings (S = 1)."""
+
+CODE_PARSER_ERROR: Codes = Codes('parser', 2, 'scope')
+"""Syntactic parsing phase: unexpected tokens, premature EOF, cursor state (S = 2)."""
+
+CODE_GRAMMAR_ERROR: Codes = Codes('grammar', 3, 'scope')
+"""Grammar rule definitions, combinators, and AST construction (S = 3)."""
+
+CODE_SEMANTIC_ERROR: Codes = Codes('semantic', 4, 'scope')
+"""Semantic analysis phase: type compatibility, scoping, and symbols (S = 4)."""
+
+CODE_COMPILATION_ERROR: Codes = Codes('compilation', 5, 'scope')
+"""Compilation phase, module inclusions, and GramLang DSL (S = 5)."""
+
+# ------------------------------------------------------------------------------
+# 3. GRAVITY (G): Functional impact on execution
+# ------------------------------------------------------------------------------
+CODE_MINOR: Codes = Codes('minor', 0, 'gravity')
+"""Minor warning or non-blocking issue that does not halt analysis (G = 0)."""
+
+CODE_IMPLEMENTATION_ERROR: Codes = Codes('implementation error', 1, 'gravity')
+"""Feature, combinator, or capability not yet implemented (G = 1)."""
+
+CODE_OBSOLETE_ERROR: Codes = Codes('obsolete error', 2, 'gravity')
+"""Deprecated or obsolete syntax, function, or component (G = 2)."""
+
+CODE_INTERNAL: Codes = Codes('internal', 3, 'gravity')
+"""Internal state inconsistency within the framework engine (G = 3)."""
+
+CODE_FATAL: Codes = Codes('fatal', 4, 'gravity')
+"""Critical error that immediately aborts analysis of the active branch (G = 4)."""
+
+# ------------------------------------------------------------------------------
+# 4. DOCUMENTATION (D): Documentation and traceability level
+# ------------------------------------------------------------------------------
+CODE_DOCUMENTED: Codes = Codes('documented', 0, 'documentation')
+"""Formally cataloged error with a standard description entry (D = 0)."""
+
+CODE_DOCUMENTED_AND_TRACEABLE: Codes = Codes('documented and traceable', 1, 'documentation')
+"""Formally documented error with full trace and repair suggestions (D = 1)."""
+
+CODE_NOT_DOCUMENTED: Codes = Codes('not documented', 2, 'documentation')
+"""Ad-hoc error without official technical documentation assigned (D = 2)."""
+
+# ------------------------------------------------------------------------------
+# 5. CONDITION (C): Usability of the resulting artifact and repairability
+# ------------------------------------------------------------------------------
+CODE_USABLE: Codes = Codes('usable', 0, 'condition')
+"""Generated artifact or token is operable and analysis may continue (C = 0)."""
+
+CODE_REQUIRES_REPAIR: Codes = Codes('requires repair', 1, 'condition')
+"""Analyzed source contains a defect that must be repaired by the user (C = 1)."""
+
+CODE_SHOULD_REPAIR: Codes = Codes('should repair', 2, 'condition')
+"""Repair is strongly recommended to prevent future inconsistencies (C = 2)."""
+
+
+# ==============================================================================
+# 1. LEXER ERRORS (Class: LexerError -> Prefix: LEXER_*)
+# ==============================================================================
+
+LEXER_EMPTY_KEYWORDS: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Lexer.EmptyKeywords',
 )
-"""
-ES:
-    Señalado cuando el analizador léxico se inicializa sin ninguna palabra clave registrada.
-    Código OSGDC: S-11010 · Gram.Lexer.EmptyKeywords.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when the lexer is initialized without any registered keywords.
-    OSGDC Code: S-11010 · Gram.Lexer.EmptyKeywords.
-"""
+"""Raised when the lexer is initialized without any registered keywords (S-11010)."""
 
-KEYWORD_ALREADY_EXISTS: coderr = coderr(
+LEXER_KEYWORD_ALREADY_EXISTS: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Lexer.KeywordAlreadyExists',
 )
-"""
-ES:
-    Señalado al intentar registrar una palabra clave cuyo identificador ya existe en la tabla léxica.
-    Código OSGDC: S-11010 · Gram.Lexer.KeywordAlreadyExists.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when attempting to register a keyword that is already registered in the lexer table.
-    OSGDC Code: S-11010 · Gram.Lexer.KeywordAlreadyExists.
-"""
+"""Raised when attempting to register a keyword that already exists in the lexer table (S-11010)."""
 
-KEYWORD_NOT_FOUND: coderr = coderr(
+LEXER_KEYWORD_NOT_FOUND: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Lexer.KeywordNotFound',
 )
-"""
-ES:
-    Señalado cuando se solicita una palabra clave que no se encuentra en el catálogo del lexer.
-    Código OSGDC: S-11010 · Gram.Lexer.KeywordNotFound.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when a requested keyword is not found in the lexer catalog.
-    OSGDC Code: S-11010 · Gram.Lexer.KeywordNotFound.
-"""
+"""Raised when a requested keyword is not found in the lexer catalog (S-11010)."""
 
-GROUP_NOT_FOUND: coderr = coderr(
+LEXER_GROUP_NOT_FOUND: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Lexer.GroupNotFound',
 )
-"""
-ES:
-    Señalado cuando se hace referencia a un grupo léxico que no existe.
-    Código OSGDC: S-11010 · Gram.Lexer.GroupNotFound.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when referring to a lexical group that does not exist.
-    OSGDC Code: S-11010 · Gram.Lexer.GroupNotFound.
-"""
+"""Raised when referencing a lexical group that does not exist (S-11010)."""
 
-KEYWORD_INVALID_NAME: coderr = coderr(
+LEXER_KEYWORD_INVALID_NAME: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Lexer.InvalidKeywordName',
 )
-"""
-ES:
-    Señalado cuando un identificador de palabra clave no cumple con las reglas sintácticas requeridas.
-    Código OSGDC: S-11010 · Gram.Lexer.InvalidKeywordName.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when a keyword identifier contains invalid characters or does not meet naming rules.
-    OSGDC Code: S-11010 · Gram.Lexer.InvalidKeywordName.
-"""
+"""Raised when a keyword identifier violates lexical naming rules (S-11010)."""
 
-LEXER_UNEXPECTED_CHARACTER: coderr = coderr(
+LEXER_UNEXPECTED_CHARACTER: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Lexer.UnexpectedCharacter',
 )
-"""
-ES:
-    Señalado cuando el lexer encuentra un carácter ilegal no reconocido por ningún visitor.
-    Código OSGDC: S-11411 · Gram.Lexer.UnexpectedCharacter.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when the lexer encounters an unexpected character unsupported by any visitor.
-    OSGDC Code: S-11411 · Gram.Lexer.UnexpectedCharacter.
-"""
+"""Raised when the lexer encounters an unrecognized character (S-11411)."""
 
-LEXER_UNCLOSED_STRING: coderr = coderr(
+LEXER_UNCLOSED_STRING: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Lexer.UnclosedString',
 )
-"""
-ES:
-    Señalado cuando una cadena literal no se cierra antes del final de línea o de archivo.
-    Código OSGDC: S-11411 · Gram.Lexer.UnclosedString.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when a string literal is left unclosed before end-of-line or end-of-file.
-    OSGDC Code: S-11411 · Gram.Lexer.UnclosedString.
-"""
+"""Raised when a string literal is left unclosed before EOL or EOF (S-11411)."""
 
-LEXER_INDENTATION_MISMATCH: coderr = coderr(
+LEXER_INDENTATION_MISMATCH: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Lexer.IndentationMismatch',
 )
-"""
-ES:
-    Señalado cuando los niveles de indentación no coinciden con la pila de bloques léxicos.
-    Código OSGDC: S-11411 · Gram.Lexer.IndentationMismatch.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when indentation levels do not match the expected indentation stack.
-    OSGDC Code: S-11411 · Gram.Lexer.IndentationMismatch.
-"""
+"""Raised when indentation levels do not match the active block stack (S-11411)."""
 
-LEXER_INVALID_NUMBER: coderr = coderr(
+LEXER_INVALID_NUMBER: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Lexer.InvalidNumber',
 )
-"""
-ES:
-    Señalado cuando un literal numérico está mal formado (múltiples puntos, prefijo erróneo, etc.).
-    Código OSGDC: S-11411 · Gram.Lexer.InvalidNumber.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when a numeric literal has an invalid format.
-    OSGDC Code: S-11411 · Gram.Lexer.InvalidNumber.
-"""
+"""Raised when a numeric literal is malformed (S-11411)."""
 
-WORDGROUP_ALREADY_EXISTS: coderr = coderr(
+LEXER_WORDGROUP_ALREADY_EXISTS: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Lexer.WordGroupAlreadyExists',
 )
-"""
-ES:
-    Señalado cuando se intenta registrar un grupo de palabras cuyo nombre ya se encuentra en uso.
-    Código OSGDC: S-11010 · Gram.Lexer.WordGroupAlreadyExists.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when attempting to create a word group whose name is already taken.
-    OSGDC Code: S-11010 · Gram.Lexer.WordGroupAlreadyExists.
-"""
+"""Raised when creating a word group whose name is already registered (S-11010)."""
 
-WORDGROUP_NOT_FOUND: coderr = coderr(
+LEXER_WORDGROUP_NOT_FOUND: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Lexer.WordGroupNotFound',
 )
-"""
-ES:
-    Señalado cuando se intenta acceder o vincular a un grupo de palabras inexistente.
-    Código OSGDC: S-11010 · Gram.Lexer.WordGroupNotFound.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when referring to a word group that does not exist in the lexer.
-    OSGDC Code: S-11010 · Gram.Lexer.WordGroupNotFound.
-"""
+"""Raised when referencing a word group that does not exist (S-11010)."""
 
-WORDGROUP_KEYWORD_NOT_REGISTERED: coderr = coderr(
+LEXER_WORDGROUP_KEYWORD_NOT_REGISTERED: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Lexer.KeywordNotRegistered',
 )
-"""
-ES:
-    Señalado cuando se intenta añadir a un grupo una palabra clave que aún no ha sido registrada.
-    Código OSGDC: S-11010 · Gram.Lexer.KeywordNotRegistered.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when attempting to add an unregistered keyword to a word group.
-    OSGDC Code: S-11010 · Gram.Lexer.KeywordNotRegistered.
-"""
+"""Raised when adding an unregistered keyword to a word group (S-11010)."""
 
-
-# ==============================================================================
-# 2. MOTOR DEL PARSER (Scope: PARSER_ERROR = 2)
-# ==============================================================================
-
-PARSER_UNEXPECTED_TOKEN: coderr = coderr(
+LEXER_FILE_NOT_FOUND: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        PARSER_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_LEXER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
+    ),
+    'Gram.Lexer.FileNotFound',
+)
+"""Raised when the source file passed to the lexer cannot be found (S-11010)."""
+
+
+# ==============================================================================
+# 2. PARSER ENGINE ERRORS (Class: ParserError -> Prefix: PARSER_*)
+# ==============================================================================
+
+PARSER_UNEXPECTED_TOKEN: CodeError = CodeError(
+    (
+        CODE_NATIVE_ERROR,
+        CODE_PARSER_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Parser.UnexpectedToken',
 )
-"""
-ES:
-    Señalado cuando el parser recibe un token que no satisface ninguna regla gramatical esperada.
-    Código OSGDC: S-12411 · Gram.Parser.UnexpectedToken.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when the parser encounters a token that does not match any expected grammar rule.
-    OSGDC Code: S-12411 · Gram.Parser.UnexpectedToken.
-"""
+"""Raised when the parser encounters a token that does not match the expected rule (S-12411)."""
 
-PARSER_EARLY_EOF: coderr = coderr(
+PARSER_EARLY_EOF: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        PARSER_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_PARSER_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Parser.EarlyEOF',
 )
-"""
-ES:
-    Señalado cuando el flujo de tokens finaliza (EOF) prematuramente antes de completar una regla obligatoria.
-    Código OSGDC: S-12411 · Gram.Parser.EarlyEOF.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when token stream unexpectedly reaches EOF while evaluating a mandatory rule.
-    OSGDC Code: S-12411 · Gram.Parser.EarlyEOF.
-"""
+"""Raised when the token stream reaches EOF while evaluating a mandatory rule (S-12411)."""
 
-PARSER_NOT_STARTED: coderr = coderr(
+PARSER_NOT_STARTED: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        PARSER_ERROR,
-        INTERNAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_PARSER_ERROR,
+        CODE_INTERNAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Parser.NotStarted',
 )
-"""
-ES:
-    Señalado cuando se intentan consumir o consultar tokens en un parser no inicializado.
-    Código OSGDC: S-12311 · Gram.Parser.NotStarted.
-    Gravedad: Interno (INTERNAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when attempting to consume tokens on an unstarted or uninitialized parser.
-    OSGDC Code: S-12311 · Gram.Parser.NotStarted.
-"""
+"""Raised when attempting to consume tokens on an uninitialized parser (S-12311)."""
 
-
-# ==============================================================================
-# 3. REGLAS Y COMBINADORES (Scope: GRAMMAR_ERROR = 3)
-# ==============================================================================
-
-ANY_NOT_IMPLEMENTED: coderr = coderr(
+PARSER_SYNTAX_ERROR: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        IMPLEMENTATION_ERROR,
-        DOCUMENTED,
-        SHOULD_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_PARSER_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED,
+        CODE_USABLE,
+    ),
+    'Gram.Parser.SyntaxError',
+)
+"""Raised on general syntactic mismatches during parsing (S-12000)."""
+
+
+# ==============================================================================
+# 3. GRAMMAR & COMBINATOR ERRORS (Class: GrammarError -> Prefix: GRAMMAR_*)
+# ==============================================================================
+
+GRAMMAR_ANY_NOT_IMPLEMENTED: CodeError = CodeError(
+    (
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_IMPLEMENTATION_ERROR,
+        CODE_DOCUMENTED,
+        CODE_SHOULD_REPAIR,
     ),
     'Gram.Combinator.NotImplemented',
 )
-"""
-ES:
-    Señalado al invocar el combinador Any o características experimentales no disponibles aún.
-    Código OSGDC: S-13102 · Gram.Combinator.NotImplemented.
-    Gravedad: Implementación (IMPLEMENTATION_ERROR). Condición: Se sugiere reparar (SHOULD_REPAIR).
-EN:
-    Raised when using the Any combinator or features not yet implemented in the current version.
-    OSGDC Code: S-13102 · Gram.Combinator.NotImplemented.
-"""
+"""Raised when invoking an unimplemented combinator or experimental feature (S-13102)."""
 
-COMBINATOR_FAILED: coderr = coderr(
+GRAMMAR_COMBINATOR_FAILED: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Combinator.Failed',
 )
-"""
-ES:
-    Señalado ante un fallo recuperable o menor de coincidencia en la ejecución de un combinador.
-    Código OSGDC: S-13010 · Gram.Combinator.Failed.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised on a non-fatal recoverable failure during combinator matching.
-    OSGDC Code: S-13010 · Gram.Combinator.Failed.
-"""
+"""Raised on a non-fatal recoverable failure during combinator matching (S-13010)."""
 
-TOKENIZE_EMPTY_COMBINATORS: coderr = coderr(
+GRAMMAR_TOKENIZE_EMPTY_COMBINATORS: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Combinator.TokenizeEmpty',
 )
-"""
-ES:
-    Señalado cuando se instancia un combinador Tokenize sin proporcionar combinadores secundarios.
-    Código OSGDC: S-13411 · Gram.Combinator.TokenizeEmpty.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when a Tokenize combinator is instantiated without child combinators.
-    OSGDC Code: S-13411 · Gram.Combinator.TokenizeEmpty.
-"""
+"""Raised when a Tokenize combinator is instantiated without child combinators (S-13411)."""
 
-RULE_NOT_FOUND: coderr = coderr(
+GRAMMAR_RULE_NOT_FOUND: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Grammar.RuleNotFound',
 )
-"""
-ES:
-    Señalado cuando una referencia a regla (Ref) no puede ser resuelta en la gramática activa.
-    Código OSGDC: S-13411 · Gram.Grammar.RuleNotFound.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when a grammar rule reference cannot be resolved in the active grammar.
-    OSGDC Code: S-13411 · Gram.Grammar.RuleNotFound.
-"""
+"""Raised when a grammar rule reference (`Ref`) cannot be resolved (S-13411)."""
 
-DUPLICATE_RULE: coderr = coderr(
+GRAMMAR_DUPLICATE_RULE: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Grammar.DuplicateRule',
 )
-"""
-ES:
-    Señalado al intentar registrar una regla con un ID o nombre que ya se encuentra registrado.
-    Código OSGDC: S-13411 · Gram.Grammar.DuplicateRule.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when registering a grammar rule whose ID or name is already defined.
-    OSGDC Code: S-13411 · Gram.Grammar.DuplicateRule.
-"""
+"""Raised when registering a grammar rule with an ID or name that already exists (S-13411)."""
 
-RULE_PROTECTED_ID: coderr = coderr(
+GRAMMAR_RULE_PROTECTED_ID: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Grammar.ProtectedRuleId',
 )
-"""
-ES:
-    Señalado al intentar sobrescribir o modificar un ID de regla protegido reservado del núcleo (0-20).
-    Código OSGDC: S-13411 · Gram.Grammar.ProtectedRuleId.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when attempting to override a protected core rule ID (0-20).
-    OSGDC Code: S-13411 · Gram.Grammar.ProtectedRuleId.
-"""
+"""Raised when attempting to override a protected core rule ID (0-20) (S-13411)."""
 
-PROGRAM_RULE_NOT_FOUND: coderr = coderr(
+GRAMMAR_COMBINATOR_UNSUPPORTED: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
-    ),
-    'Gram.AST.ProgramRuleNotFound',
-)
-"""
-ES:
-    Señalado cuando la regla raíz PROGRAM no existe en la gramática al construir el AST.
-    Código OSGDC: S-13411 · Gram.AST.ProgramRuleNotFound.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when the root PROGRAM rule is missing from the grammar when building the AST.
-    OSGDC Code: S-13411 · Gram.AST.ProgramRuleNotFound.
-"""
-
-PROGRAM_INVALID_COMBINATOR: coderr = coderr(
-    (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
-    ),
-    'Gram.AST.ProgramInvalidCombinator',
-)
-"""
-ES:
-    Señalado cuando la regla PROGRAM utiliza un combinador incompatible con la construcción del AST.
-    Código OSGDC: S-13010 · Gram.AST.ProgramInvalidCombinator.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when the PROGRAM rule has an invalid combinator for AST generation.
-    OSGDC Code: S-13010 · Gram.AST.ProgramInvalidCombinator.
-"""
-
-DECLARATION_RULE_NOT_FOUND: coderr = coderr(
-    (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
-    ),
-    'Gram.AST.DeclarationRuleNotFound',
-)
-"""
-ES:
-    Señalado cuando la regla DECLARATION no se encuentra en el catálogo gramatical del AST.
-    Código OSGDC: S-13411 · Gram.AST.DeclarationRuleNotFound.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when the DECLARATION rule is not found in the AST grammar catalog.
-    OSGDC Code: S-13411 · Gram.AST.DeclarationRuleNotFound.
-"""
-
-DECLARATOR_INVALID_TYPE: coderr = coderr(
-    (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
-    ),
-    'Gram.AST.DeclaratorInvalidType',
-)
-"""
-ES:
-    Señalado cuando un declarador del AST recibe o evalúa un tipo no soportado.
-    Código OSGDC: S-13411 · Gram.AST.DeclaratorInvalidType.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when an AST declarator has an invalid or unsupported type.
-    OSGDC Code: S-13411 · Gram.AST.DeclaratorInvalidType.
-"""
-
-DECLARATOR_INVALID_ELEMENT: coderr = coderr(
-    (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
-    ),
-    'Gram.AST.DeclaratorInvalidElement',
-)
-"""
-ES:
-    Señalado cuando un declarador del AST contiene un elemento hijo incompatible o corrupto.
-    Código OSGDC: S-13411 · Gram.AST.DeclaratorInvalidElement.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when an AST declarator contains an invalid child element.
-    OSGDC Code: S-13411 · Gram.AST.DeclaratorInvalidElement.
-"""
-
-COMBINATOR_UNSUPPORTED: coderr = coderr(
-    (
-        NATIVE_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Combinator.Unsupported',
 )
-"""
-ES:
-    Señalado cuando se invoca una operación combinatoria no admitida por la gramática en ejecución.
-    Código OSGDC: S-13411 · Gram.Combinator.Unsupported.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when an unsupported combinator operation is invoked during execution.
-    OSGDC Code: S-13411 · Gram.Combinator.Unsupported.
-"""
+"""Raised when an unsupported combinator operation is invoked (S-13411)."""
 
 
 # ==============================================================================
-# 4. ANÁLISIS SEMÁNTICO (Scope: SEMANTIC_ERROR = 4)
+# 4. AST ERRORS (Class: ASTError -> Prefix: AST_*)
 # ==============================================================================
 
-SEMANTIC_TYPE_MISMATCH: coderr = coderr(
+AST_PROGRAM_RULE_NOT_FOUND: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        SEMANTIC_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
+    ),
+    'Gram.AST.ProgramRuleNotFound',
+)
+"""Raised when the root program entrypoint rule is missing when building the AST (S-13411)."""
+
+AST_PROGRAM_INVALID_COMBINATOR: CodeError = CodeError(
+    (
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
+    ),
+    'Gram.AST.ProgramInvalidCombinator',
+)
+"""Raised when the entrypoint rule uses an invalid combinator for AST generation (S-13010)."""
+
+AST_DECLARATION_RULE_NOT_FOUND: CodeError = CodeError(
+    (
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
+    ),
+    'Gram.AST.DeclarationRuleNotFound',
+)
+"""Raised when a required declaration rule is missing in the AST grammar catalog (S-13411)."""
+
+AST_DECLARATOR_INVALID_TYPE: CodeError = CodeError(
+    (
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
+    ),
+    'Gram.AST.DeclaratorInvalidType',
+)
+"""Raised when an AST declarator evaluates an unsupported type (S-13411)."""
+
+AST_DECLARATOR_INVALID_ELEMENT: CodeError = CodeError(
+    (
+        CODE_NATIVE_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
+    ),
+    'Gram.AST.DeclaratorInvalidElement',
+)
+"""Raised when an AST declarator contains an invalid child element (S-13411)."""
+
+
+# ==============================================================================
+# 5. SEMANTIC ERRORS (Class: SemanticError -> Prefix: SEMANTIC_*)
+# ==============================================================================
+
+SEMANTIC_TYPE_MISMATCH: CodeError = CodeError(
+    (
+        CODE_NATIVE_ERROR,
+        CODE_SEMANTIC_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Semantic.TypeMismatch',
 )
-"""
-ES:
-    Señalado cuando existe una discrepancia o incompatibilidad de tipos en expresiones o asignaciones.
-    Código OSGDC: S-14411 · Gram.Semantic.TypeMismatch.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when there is an incompatible type mismatch in expressions or assignments.
-    OSGDC Code: S-14411 · Gram.Semantic.TypeMismatch.
-"""
+"""Raised on incompatible type mismatches in expressions or assignments (S-14411)."""
 
-SEMANTIC_UNDEFINED_SYMBOL: coderr = coderr(
+SEMANTIC_UNDEFINED_SYMBOL: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        SEMANTIC_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_SEMANTIC_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Semantic.UndefinedSymbol',
 )
-"""
-ES:
-    Señalado al hacer referencia a un identificador, símbolo o regla que no ha sido declarado.
-    Código OSGDC: S-14411 · Gram.Semantic.UndefinedSymbol.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when referencing an undefined variable, rule, or symbol in the current scope.
-    OSGDC Code: S-14411 · Gram.Semantic.UndefinedSymbol.
-"""
+"""Raised when referencing an undeclared identifier, rule, or symbol (S-14411)."""
 
-SEMANTIC_DUPLICATE_SYMBOL: coderr = coderr(
+SEMANTIC_DUPLICATE_SYMBOL: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        SEMANTIC_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_SEMANTIC_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Semantic.DuplicateSymbol',
 )
-"""
-ES:
-    Señalado al intentar redeclarar un símbolo o identificador ya existente en el mismo ámbito léxico.
-    Código OSGDC: S-14411 · Gram.Semantic.DuplicateSymbol.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when redeclaring a symbol or identifier within the same lexical scope.
-    OSGDC Code: S-14411 · Gram.Semantic.DuplicateSymbol.
-"""
+"""Raised when redeclaring an existing symbol within the same lexical scope (S-14411)."""
 
-SEMANTIC_INVALID_OPERATION: coderr = coderr(
+SEMANTIC_INVALID_OPERATION: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        SEMANTIC_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_SEMANTIC_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Semantic.InvalidOperation',
 )
-"""
-ES:
-    Señalado al intentar ejecutar una operación incompatible entre tipos de datos no admitidos.
-    Código OSGDC: S-14411 · Gram.Semantic.InvalidOperation.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when attempting an operation not supported by operand types.
-    OSGDC Code: S-14411 · Gram.Semantic.InvalidOperation.
-"""
+"""Raised when attempting an unsupported operation between operand types (S-14411)."""
 
-SEMANTIC_SCOPE_VIOLATION: coderr = coderr(
+SEMANTIC_SCOPE_VIOLATION: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        SEMANTIC_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_SEMANTIC_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Semantic.ScopeViolation',
 )
-"""
-ES:
-    Señalado cuando se intenta acceder o capturar un símbolo fuera de su ámbito de visibilidad permitido.
-    Código OSGDC: S-14411 · Gram.Semantic.ScopeViolation.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when attempting to access a symbol outside its legal scope boundaries.
-    OSGDC Code: S-14411 · Gram.Semantic.ScopeViolation.
-"""
+"""Raised when accessing a symbol outside its legal visibility scope (S-14411)."""
 
-SEMANTIC_IMMUTABILITY_VIOLATION: coderr = coderr(
+SEMANTIC_IMMUTABILITY_VIOLATION: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        SEMANTIC_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_SEMANTIC_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Semantic.ImmutabilityViolation',
 )
-"""
-ES:
-    Señalado al intentar mutar, reasignar o modificar una constante o símbolo semánticamente inmutable.
-    Código OSGDC: S-14411 · Gram.Semantic.ImmutabilityViolation.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when attempting to reassign or mutate an immutable semantic symbol.
-    OSGDC Code: S-14411 · Gram.Semantic.ImmutabilityViolation.
-"""
+"""Raised when attempting to mutate or reassign an immutable semantic symbol (S-14411)."""
 
 
 # ==============================================================================
-# 5. DSL Y COMPILACIÓN (Scope: COMPILATION_ERROR = 5)
+# 6. COMPILATION & DSL ERRORS (Class: CompilationError -> Prefix: COMPILATION_*)
 # ==============================================================================
 
-DSL_SYNTAX_ERROR: coderr = coderr(
+COMPILATION_DSL_SYNTAX_ERROR: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        COMPILATION_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_COMPILATION_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.DSL.SyntaxError',
 )
-"""
-ES:
-    Señalado ante discrepancias sintácticas en la especificación del DSL GramLang.
-    Código OSGDC: S-15411 · Gram.DSL.SyntaxError.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised on syntax errors while parsing GramLang DSL specifications.
-    OSGDC Code: S-15411 · Gram.DSL.SyntaxError.
-"""
+"""Raised on syntax errors while parsing GramLang DSL specifications (S-15411)."""
 
-DSL_INCLUDE_NOT_FOUND: coderr = coderr(
+COMPILATION_DSL_INCLUDE_NOT_FOUND: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        COMPILATION_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_COMPILATION_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.DSL.IncludeNotFound',
 )
-"""
-ES:
-    Señalado cuando un archivo o módulo incluido mediante directiva `include` no puede ser localizado.
-    Código OSGDC: S-15411 · Gram.DSL.IncludeNotFound.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when an include file or module path specified in GramLang cannot be found.
-    OSGDC Code: S-15411 · Gram.DSL.IncludeNotFound.
-"""
+"""Raised when a file or module referenced by an `include` directive is not found (S-15411)."""
 
-GLANG_INCLUDE_PLUGIN_NOT_LOADED: coderr = coderr(
+COMPILATION_GLANG_INCLUDE_PLUGIN_NOT_LOADED: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        COMPILATION_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_COMPILATION_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.DSL.IncludePluginNotLoaded',
 )
-"""
-ES:
-    Señalado al intentar incluir reglas o símbolos de un plugin que no ha sido cargado en el entorno.
-    Código OSGDC: S-15411 · Gram.DSL.IncludePluginNotLoaded.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when attempting to include rules from a plugin not loaded in the active environment.
-    OSGDC Code: S-15411 · Gram.DSL.IncludePluginNotLoaded.
-"""
+"""Raised when including rules from a plugin that is not loaded (S-15411)."""
 
-GLANG_IMMUTABILITY_VIOLATION: coderr = coderr(
+COMPILATION_GLANG_IMMUTABILITY_VIOLATION: CodeError = CodeError(
     (
-        NATIVE_ERROR,
-        COMPILATION_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_NATIVE_ERROR,
+        CODE_COMPILATION_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.DSL.ImmutabilityViolation',
 )
-"""
-ES:
-    Señalado al intentar sobrescribir o alterar una definición de lenguaje inmutable durante la compilación.
-    Código OSGDC: S-15411 · Gram.DSL.ImmutabilityViolation.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when attempting to mutate an immutable DSL definition during compilation.
-    OSGDC Code: S-15411 · Gram.DSL.ImmutabilityViolation.
-"""
+"""Raised when attempting to mutate an immutable DSL definition during compilation (S-15411)."""
 
 
 # ==============================================================================
-# 6. PLUGINS Y MANIFIESTOS (Origin: PLUGIN_ERROR = 2, Scope: GRAMMAR_ERROR = 3)
+# 7. PLUGIN & MANIFEST ERRORS (Class: PluginError -> Prefix: PLUGIN_*)
 # ==============================================================================
 
-PLUGIN_MANIFEST_NOT_FOUND: coderr = coderr(
+PLUGIN_MANIFEST_NOT_FOUND: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.ManifestNotFound',
 )
-"""
-ES:
-    Señalado cuando el archivo manifest.json requerido no existe en la raíz del directorio del plugin.
-    Código OSGDC: S-23411 · Gram.Plugin.ManifestNotFound.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when manifest.json is missing in the plugin root folder.
-    OSGDC Code: S-23411 · Gram.Plugin.ManifestNotFound.
-"""
+"""Raised when `manifest.json` is missing from the plugin root directory (S-23411)."""
 
-PLUGIN_MANIFEST_INVALID: coderr = coderr(
+PLUGIN_MANIFEST_INVALID: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.ManifestInvalid',
 )
-"""
-ES:
-    Señalado cuando el manifiesto de un plugin contiene JSON corrupto o campos obligatorios faltantes.
-    Código OSGDC: S-23411 · Gram.Plugin.ManifestInvalid.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when a plugin manifest contains invalid JSON or lacks required fields.
-    OSGDC Code: S-23411 · Gram.Plugin.ManifestInvalid.
-"""
+"""Raised when a plugin manifest contains malformed JSON or missing required fields (S-23411)."""
 
-PLUGIN_FOLDER_MISMATCH: coderr = coderr(
+PLUGIN_FOLDER_MISMATCH: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.FolderMismatch',
 )
-"""
-ES:
-    Señalado cuando el nombre de la carpeta contenedora no coincide con el identificador `name` del manifiesto.
-    Código OSGDC: S-23411 · Gram.Plugin.FolderMismatch.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when plugin folder name does not match the manifest name field.
-    OSGDC Code: S-23411 · Gram.Plugin.FolderMismatch.
-"""
+"""Raised when the plugin folder name does not match the manifest `name` field (S-23411)."""
 
-PLUGIN_INCOMPATIBLE_GRAM_VERSION: coderr = coderr(
+PLUGIN_INCOMPATIBLE_GRAM_VERSION: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.IncompatibleGramVersion',
 )
-"""
-ES:
-    Señalado cuando la versión instalada de Gram no cumple la restricción `gram_version` del plugin.
-    Código OSGDC: S-23411 · Gram.Plugin.IncompatibleGramVersion.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when current Gram version does not meet plugin gram_version requirement.
-    OSGDC Code: S-23411 · Gram.Plugin.IncompatibleGramVersion.
-"""
+"""Raised when the installed Gram version does not satisfy the plugin's `gram_version` (S-23411)."""
 
-PLUGIN_VENV_DISALLOWED: coderr = coderr(
+PLUGIN_VENV_DISALLOWED: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.VenvDisallowed',
 )
-"""
-ES:
-    Señalado al intentar instalar dependencias de un plugin en un intérprete global sin un entorno virtual activo.
-    Código OSGDC: S-23411 · Gram.Plugin.VenvDisallowed.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when attempting to install plugin dependencies without an active virtual environment.
-    OSGDC Code: S-23411 · Gram.Plugin.VenvDisallowed.
-"""
+"""Raised when attempting to install plugin dependencies outside a virtual environment (S-23411)."""
 
-PLUGIN_DEPENDENCY_NOT_FOUND: coderr = coderr(
+PLUGIN_DEPENDENCY_NOT_FOUND: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.DependencyNotFound',
 )
-"""
-ES:
-    Señalado cuando una dependencia externa declarada por el plugin no está instalada en el entorno.
-    Código OSGDC: S-23411 · Gram.Plugin.DependencyNotFound.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when a required plugin dependency cannot be found in the active environment.
-    OSGDC Code: S-23411 · Gram.Plugin.DependencyNotFound.
-"""
+"""Raised when a required external plugin dependency is not installed (S-23411)."""
 
-PLUGIN_DEPENDENCY_VERSION_MISMATCH: coderr = coderr(
+PLUGIN_DEPENDENCY_VERSION_MISMATCH: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.DependencyVersionMismatch',
 )
-"""
-ES:
-    Señalado cuando la versión instalada de una dependencia no satisface los requisitos de versión del plugin.
-    Código OSGDC: S-23411 · Gram.Plugin.DependencyVersionMismatch.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when installed dependency version fails to satisfy plugin version constraints.
-    OSGDC Code: S-23411 · Gram.Plugin.DependencyVersionMismatch.
-"""
+"""Raised when an installed dependency version violates plugin constraints (S-23411)."""
 
-PLUGIN_CAPABILITY_MISSING: coderr = coderr(
+PLUGIN_CAPABILITY_MISSING: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.CapabilityMissing',
 )
-"""
-ES:
-    Señalado cuando un plugin intenta ejecutar una operación sin declarar la capacidad requerida en su manifiesto.
-    Código OSGDC: S-23411 · Gram.Plugin.CapabilityMissing.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when a plugin attempts an action without declaring the required capability.
-    OSGDC Code: S-23411 · Gram.Plugin.CapabilityMissing.
-"""
+"""Raised when a plugin performs an operation without declaring the required capability (S-23411)."""
 
-PLUGIN_MAIN_NOT_FOUND: coderr = coderr(
+PLUGIN_MAIN_NOT_FOUND: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.MainNotFound',
 )
-"""
-ES:
-    Señalado cuando el archivo de entrada principal (main.py) declarado en el manifiesto no existe.
-    Código OSGDC: S-23411 · Gram.Plugin.MainNotFound.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when main entrypoint file specified in plugin manifest cannot be found.
-    OSGDC Code: S-23411 · Gram.Plugin.MainNotFound.
-"""
+"""Raised when the main entrypoint file declared in the manifest does not exist (S-23411)."""
 
-PLUGIN_LOADED_ERROR: coderr = coderr(
+PLUGIN_LOADED_ERROR: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.LoadedError',
 )
-"""
-ES:
-    Señalado ante una excepción no controlada ocurrida durante la carga e importación del módulo del plugin.
-    Código OSGDC: S-23411 · Gram.Plugin.LoadedError.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when an unexpected error occurs while loading or importing the plugin module.
-    OSGDC Code: S-23411 · Gram.Plugin.LoadedError.
-"""
+"""Raised when an unhandled exception occurs while importing or loading a plugin (S-23411)."""
 
-PLUGIN_PROCESSED_ERROR: coderr = coderr(
+PLUGIN_PROCESSED_ERROR: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.ProcessedError',
 )
-"""
-ES:
-    Señalado ante una falla durante el ciclo de procesamiento o registro de reglas del plugin.
-    Código OSGDC: S-23411 · Gram.Plugin.ProcessedError.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when an error occurs during the rule processing cycle of a plugin.
-    OSGDC Code: S-23411 · Gram.Plugin.ProcessedError.
-"""
+"""Raised when an error occurs during a plugin's rule processing cycle (S-23411)."""
 
-PLUGIN_CONFIG_MUTATION_DENIED: coderr = coderr(
+PLUGIN_CONFIG_MUTATION_DENIED: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.ConfigMutationDenied',
 )
-"""
-ES:
-    Señalado cuando un plugin intenta modificar atributos de configuración protegidos de Gram.
-    Código OSGDC: S-23411 · Gram.Plugin.ConfigMutationDenied.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when a plugin attempts to mutate protected Gram framework configuration.
-    OSGDC Code: S-23411 · Gram.Plugin.ConfigMutationDenied.
-"""
+"""Raised when a plugin attempts to modify protected Gram configuration settings (S-23411)."""
 
-PLUGIN_CONFIG_REQUIREMENT_FAILED: coderr = coderr(
+PLUGIN_CONFIG_REQUIREMENT_FAILED: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.ConfigRequirementFailed',
 )
-"""
-ES:
-    Señalado cuando la configuración del entorno actual no cumple con las exigencias del plugin.
-    Código OSGDC: S-23411 · Gram.Plugin.ConfigRequirementFailed.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when global environment configuration fails to meet plugin required_config constraints.
-    OSGDC Code: S-23411 · Gram.Plugin.ConfigRequirementFailed.
-"""
+"""Raised when active configuration does not meet the plugin's `required_config` (S-23411)."""
 
-PLUGIN_DUPLICATE_FOUND: coderr = coderr(
+PLUGIN_DUPLICATE_FOUND: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_MINOR,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_USABLE,
     ),
     'Gram.Plugin.DuplicateFound',
 )
-"""
-ES:
-    Señalado cuando se detecta un plugin duplicado; la instancia repetida es descartada o ignorada.
-    Código OSGDC: S-23010 · Gram.Plugin.DuplicateFound.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Raised when a duplicate plugin is detected during discovery.
-    OSGDC Code: S-23010 · Gram.Plugin.DuplicateFound.
-"""
+"""Raised when a duplicate plugin is discovered and ignored (S-23010)."""
 
-PLUGIN_VERSION_MISMATCH_USE_INSTALL: coderr = coderr(
+PLUGIN_VERSION_MISMATCH_USE_INSTALL: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.VersionMismatchUseInstall',
 )
-"""
-ES:
-    Señalado ante incompatibilidad de versión que requiere una reinstalación explícita mediante CLI.
-    Código OSGDC: S-23411 · Gram.Plugin.VersionMismatchUseInstall.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised on plugin version mismatch requiring explicit re-installation through the CLI.
-    OSGDC Code: S-23411 · Gram.Plugin.VersionMismatchUseInstall.
-"""
+"""Raised on plugin version mismatch requiring re-installation via the CLI (S-23411)."""
 
-PLUGIN_PROTECTED_VIOLATION: coderr = coderr(
+PLUGIN_PROTECTED_VIOLATION: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.ProtectedViolation',
 )
-"""
-ES:
-    Señalado al intentar sobrescribir o alterar un plugin marcado como esencial o protegido del sistema.
-    Código OSGDC: S-23411 · Gram.Plugin.ProtectedViolation.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when attempting to override or modify a protected system plugin.
-    OSGDC Code: S-23411 · Gram.Plugin.ProtectedViolation.
-"""
+"""Raised when attempting to modify or override a protected system plugin (S-23411)."""
 
-PLUGIN_SYNTAX_ERROR: coderr = coderr(
+PLUGIN_SYNTAX_ERROR: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.SyntaxError',
 )
-"""
-ES:
-    Señalado cuando el código fuente de una regla o combinador del plugin contiene un error de sintaxis.
-    Código OSGDC: S-23411 · Gram.Plugin.SyntaxError.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when code inside a plugin contains syntax errors.
-    OSGDC Code: S-23411 · Gram.Plugin.SyntaxError.
-"""
+"""Raised when a plugin rule or combinator contains syntax errors (S-23411)."""
 
-PLUGIN_DUPLICATE_DEPENDENCY: coderr = coderr(
+PLUGIN_DUPLICATE_DEPENDENCY: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.DuplicateDependency',
 )
-"""
-ES:
-    Señalado cuando un plugin declara dependencias duplicadas o conflictivas en su manifiesto.
-    Código OSGDC: S-23411 · Gram.Plugin.DuplicateDependency.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when duplicate or conflicting dependencies are declared in plugin manifest.
-    OSGDC Code: S-23411 · Gram.Plugin.DuplicateDependency.
-"""
+"""Raised when a plugin declares duplicate or conflicting dependencies (S-23411)."""
 
-
-PLUGIN_REQUIREMENT_FILE_MISSING: coderr = coderr(
+PLUGIN_REQUIREMENT_FILE_MISSING: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.RequirementFileMissing',
 )
-"""
-ES:
-    Señalado cuando el archivo `requirements.txt` especificado en el manifiesto no existe.
-    Código OSGDC: S-23411 · Gram.Plugin.RequirementFileMissing.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when the requirements.txt file declared in the manifest is missing.
-    OSGDC Code: S-23411 · Gram.Plugin.RequirementFileMissing.
-"""
+"""Raised when the `requirements.txt` file declared in the manifest is missing (S-23411)."""
 
-PLUGIN_VALIDATION_FAILED: coderr = coderr(
+PLUGIN_VALIDATION_FAILED: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.ValidationFailed',
 )
-"""
-ES:
-    Señalado cuando la verificación de integridad estructural o de seguridad del plugin falla.
-    Código OSGDC: S-23411 · Gram.Plugin.ValidationFailed.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when plugin validation checks fail.
-    OSGDC Code: S-23411 · Gram.Plugin.ValidationFailed.
-"""
+"""Raised when structural or security validation of a plugin fails (S-23411)."""
 
-PLUGIN_NOT_FOUND: coderr = coderr(
+PLUGIN_NOT_FOUND: CodeError = CodeError(
     (
-        PLUGIN_ERROR,
-        GRAMMAR_ERROR,
-        FATAL,
-        DOCUMENTED_AND_TRACEABLE,
-        REQUIRES_REPAIR,
+        CODE_PLUGIN_ERROR,
+        CODE_GRAMMAR_ERROR,
+        CODE_FATAL,
+        CODE_DOCUMENTED_AND_TRACEABLE,
+        CODE_REQUIRES_REPAIR,
     ),
     'Gram.Plugin.NotFound',
 )
-"""
-ES:
-    Señalado cuando se solicita un plugin que no se encuentra instalado ni registrado en las rutas activas.
-    Código OSGDC: S-23411 · Gram.Plugin.NotFound.
-    Gravedad: Fatal (FATAL). Condición: Requiere Reparación (REQUIRES_REPAIR).
-EN:
-    Raised when a requested plugin cannot be found in search paths.
-    OSGDC Code: S-23411 · Gram.Plugin.NotFound.
-"""
+"""Raised when a requested plugin cannot be found in active search paths (S-23411)."""
 
 
 # ==============================================================================
-# 7. ERRORES DE SISTEMA / GENÉRICOS (Scope: UNKNOWN_SCOPE = 0)
+# 8. SYSTEM / GENERIC ERRORS (Class: SystemError -> Prefix: SYSTEM_*)
 # ==============================================================================
 
-UNKNOWN_ERROR: coderr = coderr(
+SYSTEM_UNKNOWN_ERROR: CodeError = CodeError(
     (
-        UNKNOWN_ORIGIN,
-        UNKNOWN_SCOPE,
-        MINOR,
-        NOT_DOCUMENTED,
-        USABLE,
+        CODE_UNKNOWN_ORIGIN,
+        CODE_UNKNOWN_SCOPE,
+        CODE_MINOR,
+        CODE_NOT_DOCUMENTED,
+        CODE_USABLE,
     ),
     'Gram.System.UnknownError',
 )
-"""
-ES:
-    Error genérico para fallos no clasificados o excepciones que carecen de especificación formal.
-    Código OSGDC: S-00020 · Gram.System.UnknownError.
-    Gravedad: Menor (MINOR). Condición: Operable (USABLE).
-EN:
-    Generic fallback error for unclassified failures lacking formal specification.
-    OSGDC Code: S-00020 · Gram.System.UnknownError.
-"""
+"""Generic fallback error for unclassified failures lacking formal specification (S-00020)."""
 
 
 # ==============================================================================
-# FUNCIONES DE CONSULTA Y CATÁLOGO
+# CATALOG QUERY FUNCTIONS
 # ==============================================================================
 
-def all_errors() -> list[coderr]:
+def all_errors() -> list[CodeError]:
     """
-    ES:
-        Retorna la lista de todos los objetos CodeError definidos en el catálogo oficial.
-        Garantiza unicidad de instancias en la lista resultante.
-
-    EN:
-        Returns a list of all CodeError instances defined in the official catalog.
-        Guarantees instance uniqueness in the resulting list.
-
-    Returns:
-        list[coderr]: Lista con todas las instancias de CodeError registradas.
+    Return a deduplicated list of all `CodeError` instances defined in the catalog.
     """
     current_module = sys.modules[__name__]
     seen_ids: set[int] = set()
-    result: list[coderr] = []
+    result: list[CodeError] = []
     for item in current_module.__dict__.values():
-        if isinstance(item, coderr):
-            if id(item) not in seen_ids:
-                seen_ids.add(id(item))
-                result.append(item)
+        if isinstance(item, CodeError) and id(item) not in seen_ids:
+            seen_ids.add(id(item))
+            result.append(item)
     return result
 
 
-def get_error_by_code(code: int | tuple[int | str, ...] | str | coderr) -> coderr | None:
+def get_error_by_code(
+    code: int | tuple[int | str, ...] | str | CodeError,
+) -> CodeError | None:
     """
-    ES:
-        Busca un error en el catálogo oficial según su código numérico, tupla OSGDC o cadena.
-
-        Formatos aceptados:
-            - Entero: 11010, 11411, 23411
-            - Tupla: (1, 1, 0, 1, 0) o ('1', '1', '0', '1', '0')
-            - Cadena: "11010", "S-11010", "S-11010 · Gram.Lexer.EmptyKeywords"
-            - Instancia: Otra instancia de CodeError
-
-    EN:
-        Looks up an error in the official catalog by its numeric code, OSGDC tuple, or string.
-
-        Supported formats:
-            - Integer: 11010, 11411, 23411
-            - Tuple: (1, 1, 0, 1, 0) or ('1', '1', '0', '1', '0')
-            - String: "11010", "S-11010", "S-11010 · Gram.Lexer.EmptyKeywords"
-            - Instance: Another CodeError instance
-
-    Args:
-        code: Identificador en cualquiera de los formatos soportados.
-
-    Returns:
-        coderr | None: Instancia de CodeError correspondiente, o None si no existe.
+    Look up an error in the official catalog by numeric code, OSGDC tuple,
+    formatted string, or `CodeError` instance.
     """
-    if isinstance(code, coderr):
+    if isinstance(code, CodeError):
         for err in all_errors():
             if err == code:
                 return err
@@ -1414,13 +961,13 @@ def get_error_by_code(code: int | tuple[int | str, ...] | str | coderr) -> coder
     target_digits: str | None = None
 
     if isinstance(code, int):
-        target_digits = f"{code:05d}"
+        target_digits = f'{code:05d}'
     elif isinstance(code, tuple):
-        target_digits = "".join(str(item) for item in code)
+        target_digits = ''.join(str(item) for item in code)
     elif isinstance(code, str):
-        clean: str = code.strip()
+        clean = code.strip()
         if '-' in clean:
-            after_dash: str = clean.split('-', 1)[1].strip()
+            after_dash = clean.split('-', 1)[1].strip()
             target_digits = after_dash.split()[0].split('·')[0].strip()
         else:
             target_digits = clean.split()[0].split('·')[0].strip()
@@ -1433,52 +980,30 @@ def get_error_by_code(code: int | tuple[int | str, ...] | str | coderr) -> coder
     return None
 
 
-def get_error_by_name(name: str) -> coderr | None:
+def get_error_by_name(name: str) -> CodeError | None:
     """
-    ES:
-        Busca un error en el catálogo por su nombre canónico cualificado.
-        Soporta búsqueda exacta y búsqueda insensible a mayúsculas/minúsculas.
-
-    EN:
-        Searches the catalog for an error by its canonical qualified name.
-        Supports exact match and case-insensitive fallback.
-
-    Args:
-        name: Nombre del error (ej. 'Gram.Lexer.EmptyKeywords' o 'EmptyKeywords').
-
-    Returns:
-        coderr | None: Instancia de CodeError correspondiente, o None si no existe.
+    Search the catalog for an error by its canonical qualified name
+    (exact match first, followed by case-insensitive suffix match).
     """
-    name_clean: str = name.strip()
-    name_lower: str = name_clean.lower()
+    name_clean = name.strip()
+    name_lower = name_clean.lower()
+    catalog = all_errors()
 
-    for err in all_errors():
+    for err in catalog:
         if err.name == name_clean:
             return err
 
-    for err in all_errors():
-        if err.name.lower() == name_lower or err.name.lower().endswith(f".{name_lower}"):
+    for err in catalog:
+        err_lower = err.name.lower()
+        if err_lower == name_lower or err_lower.endswith(f'.{name_lower}'):
             return err
 
     return None
 
 
-def get_errors_by_scope(scope: error.codes.Codes | str | int) -> list[coderr]:
-    """
-    ES:
-        Filtra y retorna todos los errores pertenecientes a un alcance (scope) específico.
-
-    EN:
-        Filters and returns all errors belonging to a specific scope.
-
-    Args:
-        scope: Código del scope (ej. LEXER_ERROR), nombre ('lexer') o valor numérico (1).
-
-    Returns:
-        list[coderr]: Lista de errores que pertenecen al ámbito solicitado.
-    """
-    target_val: str
-    if isinstance(scope, error.codes.Codes):
+def get_errors_by_scope(scope: Codes | str | int) -> list[CodeError]:
+    """Filter and return all catalog errors belonging to a specific OSGDC scope."""
+    if isinstance(scope, Codes):
         target_val = scope.value_str
     elif isinstance(scope, int):
         target_val = str(scope)
@@ -1495,29 +1020,16 @@ def get_errors_by_scope(scope: error.codes.Codes | str | int) -> list[coderr]:
     else:
         return []
 
-    result: list[coderr] = []
-    for err in all_errors():
-        if len(err.code_string) >= 2 and err.code_string[1] == target_val:
-            result.append(err)
-    return result
+    return [
+        err
+        for err in all_errors()
+        if len(err.code_string) >= 2 and err.code_string[1] == target_val
+    ]
 
 
-def get_errors_by_origin(origin: error.codes.Codes | str | int) -> list[coderr]:
-    """
-    ES:
-        Filtra y retorna todos los errores pertenecientes a un origen específico (Native o Plugin).
-
-    EN:
-        Filters and returns all errors belonging to a specific origin (Native or Plugin).
-
-    Args:
-        origin: Código de origen (ej. NATIVE_ERROR), nombre ('native') o valor numérico (1).
-
-    Returns:
-        list[coderr]: Lista de errores asociados a la procedencia solicitada.
-    """
-    target_val: str
-    if isinstance(origin, error.codes.Codes):
+def get_errors_by_origin(origin: Codes | str | int) -> list[CodeError]:
+    """Filter and return all catalog errors belonging to a specific OSGDC origin."""
+    if isinstance(origin, Codes):
         target_val = origin.value_str
     elif isinstance(origin, int):
         target_val = str(origin)
@@ -1531,123 +1043,119 @@ def get_errors_by_origin(origin: error.codes.Codes | str | int) -> list[coderr]:
     else:
         return []
 
-    result: list[coderr] = []
-    for err in all_errors():
-        if len(err.code_string) >= 1 and err.code_string[0] == target_val:
-            result.append(err)
-    return result
+    return [
+        err
+        for err in all_errors()
+        if len(err.code_string) >= 1 and err.code_string[0] == target_val
+    ]
 
 
 __all__ = [
-    # Códigos Base: Origen
-    'UNKNOWN_ORIGIN',
-    'NATIVE_ERROR',
-    'PLUGIN_ERROR',
-    # Códigos Base: Alcance (Scope)
-    'UNKNOWN_SCOPE',
-    'LEXER_ERROR',
-    'PARSER_ERROR',
-    'GRAMMAR_ERROR',
-    'SEMANTIC_ERROR',
-    'COMPILATION_ERROR',
-    # Códigos Base: Gravedad (Gravity)
-    'MINOR',
-    'IMPLEMENTATION_ERROR',
-    'OBSOLETE_ERROR',
-    'INTERNAL',
-    'FATAL',
-    # Códigos Base: Documentación
-    'DOCUMENTED',
-    'DOCUMENTED_AND_TRACEABLE',
-    'NOT_DOCUMENTED',
-    # Códigos Base: Condición
-    'USABLE',
-    'REQUIRES_REPAIR',
-    'SHOULD_REPAIR',
-    # Catálogo: Analizador Léxico (Scope: 1)
-    'EMPTY_KEYWORDS',
-    'KEYWORD_ALREADY_EXISTS',
-    'KEYWORD_NOT_FOUND',
-    'GROUP_NOT_FOUND',
-    'KEYWORD_INVALID_NAME',
-    'LEXER_UNEXPECTED_CHARACTER',
-    'LEXER_UNCLOSED_STRING',
+    'AST_DECLARATION_RULE_NOT_FOUND',
+    'AST_DECLARATOR_INVALID_ELEMENT',
+    'AST_DECLARATOR_INVALID_TYPE',
+    'AST_PROGRAM_INVALID_COMBINATOR',
+    # AST Catalog (AST_*)
+    'AST_PROGRAM_RULE_NOT_FOUND',
+    'CODE_COMPILATION_ERROR',
+    'CODE_DOCUMENTED',
+    'CODE_DOCUMENTED_AND_TRACEABLE',
+    'CODE_FATAL',
+    'CODE_GRAMMAR_ERROR',
+    'CODE_IMPLEMENTATION_ERROR',
+    'CODE_INTERNAL',
+    'CODE_LEXER_ERROR',
+    'CODE_MINOR',
+    'CODE_NATIVE_ERROR',
+    'CODE_NOT_DOCUMENTED',
+    'CODE_OBSOLETE_ERROR',
+    'CODE_PARSER_ERROR',
+    'CODE_PLUGIN_ERROR',
+    'CODE_REQUIRES_REPAIR',
+    'CODE_SEMANTIC_ERROR',
+    'CODE_SHOULD_REPAIR',
+    # OSGDC Dimension Codes (CODE_*)
+    'CODE_UNKNOWN',
+    'CODE_UNKNOWN_ORIGIN',
+    'CODE_UNKNOWN_SCOPE',
+    'CODE_USABLE',
+    'COMPILATION_DSL_INCLUDE_NOT_FOUND',
+    # Compilation & DSL Catalog (COMPILATION_*)
+    'COMPILATION_DSL_SYNTAX_ERROR',
+    'COMPILATION_GLANG_IMMUTABILITY_VIOLATION',
+    'COMPILATION_GLANG_INCLUDE_PLUGIN_NOT_LOADED',
+    # Grammar & Combinator Catalog (GRAMMAR_*)
+    'GRAMMAR_ANY_NOT_IMPLEMENTED',
+    'GRAMMAR_COMBINATOR_FAILED',
+    'GRAMMAR_COMBINATOR_UNSUPPORTED',
+    'GRAMMAR_DUPLICATE_RULE',
+    'GRAMMAR_RULE_NOT_FOUND',
+    'GRAMMAR_RULE_PROTECTED_ID',
+    'GRAMMAR_TOKENIZE_EMPTY_COMBINATORS',
+    # Lexer Catalog (LEXER_*)
+    'LEXER_EMPTY_KEYWORDS',
+    'LEXER_FILE_NOT_FOUND',
+    'LEXER_GROUP_NOT_FOUND',
     'LEXER_INDENTATION_MISMATCH',
     'LEXER_INVALID_NUMBER',
-    'WORDGROUP_ALREADY_EXISTS',
-    'WORDGROUP_NOT_FOUND',
-    'WORDGROUP_KEYWORD_NOT_REGISTERED',
-    # Catálogo: Motor del Parser (Scope: 2)
-    'PARSER_UNEXPECTED_TOKEN',
+    'LEXER_KEYWORD_ALREADY_EXISTS',
+    'LEXER_KEYWORD_INVALID_NAME',
+    'LEXER_KEYWORD_NOT_FOUND',
+    'LEXER_UNCLOSED_STRING',
+    'LEXER_UNEXPECTED_CHARACTER',
+    'LEXER_WORDGROUP_ALREADY_EXISTS',
+    'LEXER_WORDGROUP_KEYWORD_NOT_REGISTERED',
+    'LEXER_WORDGROUP_NOT_FOUND',
     'PARSER_EARLY_EOF',
     'PARSER_NOT_STARTED',
-    # Catálogo: Reglas, Combinadores y AST (Scope: 3)
-    'ANY_NOT_IMPLEMENTED',
-    'COMBINATOR_FAILED',
-    'TOKENIZE_EMPTY_COMBINATORS',
-    'RULE_NOT_FOUND',
-    'DUPLICATE_RULE',
-    'RULE_PROTECTED_ID',
-    'PROGRAM_RULE_NOT_FOUND',
-    'PROGRAM_INVALID_COMBINATOR',
-    'DECLARATION_RULE_NOT_FOUND',
-    'DECLARATOR_INVALID_TYPE',
-    'DECLARATOR_INVALID_ELEMENT',
-    'COMBINATOR_UNSUPPORTED',
-    # Catálogo: Análisis Semántico (Scope: 4)
-    'SEMANTIC_TYPE_MISMATCH',
-    'SEMANTIC_UNDEFINED_SYMBOL',
-    'SEMANTIC_DUPLICATE_SYMBOL',
-    'SEMANTIC_INVALID_OPERATION',
-    'SEMANTIC_SCOPE_VIOLATION',
-    'SEMANTIC_IMMUTABILITY_VIOLATION',
-    # Catálogo: DSL y Compilación (Scope: 5)
-    'DSL_SYNTAX_ERROR',
-    'DSL_INCLUDE_NOT_FOUND',
-    'GLANG_INCLUDE_PLUGIN_NOT_LOADED',
-    'GLANG_IMMUTABILITY_VIOLATION',
-    # Catálogo: Plugins y Manifiestos (Scope: 3, Origin: 2)
-    'PLUGIN_MANIFEST_NOT_FOUND',
-    'PLUGIN_MANIFEST_INVALID',
-    'PLUGIN_FOLDER_MISMATCH',
-    'PLUGIN_INCOMPATIBLE_GRAM_VERSION',
-    'PLUGIN_VENV_DISALLOWED',
-    'PLUGIN_DEPENDENCY_NOT_FOUND',
-    'PLUGIN_DEPENDENCY_VERSION_MISMATCH',
+    'PARSER_SYNTAX_ERROR',
+    # Parser Catalog (PARSER_*)
+    'PARSER_UNEXPECTED_TOKEN',
     'PLUGIN_CAPABILITY_MISSING',
-    'PLUGIN_MAIN_NOT_FOUND',
-    'PLUGIN_LOADED_ERROR',
-    'PLUGIN_PROCESSED_ERROR',
     'PLUGIN_CONFIG_MUTATION_DENIED',
     'PLUGIN_CONFIG_REQUIREMENT_FAILED',
-    'PLUGIN_DUPLICATE_FOUND',
-    'PLUGIN_VERSION_MISMATCH_USE_INSTALL',
-    'PLUGIN_PROTECTED_VIOLATION',
-    'PLUGIN_SYNTAX_ERROR',
+    'PLUGIN_DEPENDENCY_NOT_FOUND',
+    'PLUGIN_DEPENDENCY_VERSION_MISMATCH',
     'PLUGIN_DUPLICATE_DEPENDENCY',
-    'PLUGIN_REQUIREMENT_FILE_MISSING',
-    'PLUGIN_VALIDATION_FAILED',
+    'PLUGIN_DUPLICATE_FOUND',
+    'PLUGIN_FOLDER_MISMATCH',
+    'PLUGIN_INCOMPATIBLE_GRAM_VERSION',
+    'PLUGIN_LOADED_ERROR',
+    'PLUGIN_MAIN_NOT_FOUND',
+    'PLUGIN_MANIFEST_INVALID',
+    # Plugin Catalog (PLUGIN_*)
+    'PLUGIN_MANIFEST_NOT_FOUND',
     'PLUGIN_NOT_FOUND',
-    # Catálogo: Errores de Sistema
-    'UNKNOWN_ERROR',
-    # Funciones de Consulta y Utilidad
+    'PLUGIN_PROCESSED_ERROR',
+    'PLUGIN_PROTECTED_VIOLATION',
+    'PLUGIN_REQUIREMENT_FILE_MISSING',
+    'PLUGIN_SYNTAX_ERROR',
+    'PLUGIN_VALIDATION_FAILED',
+    'PLUGIN_VENV_DISALLOWED',
+    'PLUGIN_VERSION_MISMATCH_USE_INSTALL',
+    'SEMANTIC_DUPLICATE_SYMBOL',
+    'SEMANTIC_IMMUTABILITY_VIOLATION',
+    'SEMANTIC_INVALID_OPERATION',
+    'SEMANTIC_SCOPE_VIOLATION',
+    # Semantic Catalog (SEMANTIC_*)
+    'SEMANTIC_TYPE_MISMATCH',
+    'SEMANTIC_UNDEFINED_SYMBOL',
+    # System Catalog (SYSTEM_*)
+    'SYSTEM_UNKNOWN_ERROR',
+    'ASTError',
+    'CompilationError',
+    # Domain Exception Classes
+    'Error',
+    'GrammarError',
+    'LexerError',
+    'ParserError',
+    'PluginError',
+    'SemanticError',
+    'SystemError',
+    # Query Functions
     'all_errors',
     'get_error_by_code',
     'get_error_by_name',
-    'get_errors_by_scope',
     'get_errors_by_origin',
+    'get_errors_by_scope',
 ]
-
-
-# NEW ERRORS 1.1.0
-
-LEXER_FILE_NOT_FOUND: coderr = coderr(
-    (
-        NATIVE_ERROR,
-        LEXER_ERROR,
-        MINOR,
-        DOCUMENTED_AND_TRACEABLE,
-        USABLE
-    ),
-    'Gram.Lexer.FileNotFound'
-)

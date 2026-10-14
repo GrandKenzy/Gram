@@ -1,221 +1,155 @@
 """
-Combinador de Coincidencia por Grupos Léxicos (`gram.core.combinators.match.match_group`).
-========================================================================================
-Valida si el valor del token bajo el cursor pertenece a un grupo semántico de palabras
-clave registrado en `gram.core.lexer.words` (ej. '$TYPES', '$MODIFIERS'), admitiendo filtros
-adicionales de exclusión e inclusión estricta.
+Lexical WordGroup Matching Combinator (`gram.core.combinators.match.match_group`).
+==================================================================================
+Validates whether the token currently under the parser cursor belongs to a
+registered semantic `WordGroup` in `gram.core.lexer.words` (e.g., `'$TYPES'`,
+`'$MODIFIERS'`), supporting optional allow/deny value filters.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Literal
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
 from gram.core.lexer import words
-from gram.core.lexer.tokens import Token, TokenType
 from gram.core.lexer.words import WordGroup
-from gram.utilities import error
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.parser.core import Parser
 
 
 class MatchGroup(Combinator):
     """
-    ES:
-        Combinador que evalúa si el token actual forma parte de un conjunto semántico
-        o grupo de palabras clave (WordGroup), con soporte para listas 'exclude' y 'only'.
-
-    EN:
-        Combinator evaluating whether the current token belongs to a lexical WordGroup.
+    Combinator that evaluates whether the current token belongs to a lexical
+    `WordGroup`, with optional `'allow'` or `'deny'` filtering over specific values.
     """
 
     def __init__(
         self,
         group: str | WordGroup,
-        exclude: list[str | Token] | None = None,
-        only: list[str | Token] | None = None,
+        values: Iterable[str] | None = None,
+        behavior_values: Literal["allow", "deny", "none"] = "none",
     ) -> None:
         """
-        Inicializa el combinador de grupo.
+        Initialize the lexical group matcher.
 
         Args:
-            group: Nombre del grupo o instancia de WordGroup.
-            exclude: Lista opcional de tokens o identificadores excluidos.
-            only: Lista opcional restrictiva; solo tokens presentes aquí serán aceptados.
+            group (str | WordGroup): Target group name or `WordGroup` instance.
+            values (Iterable[str] | None): Optional collection of token values to
+                filter according to `behavior_values`.
+            behavior_values (Literal['allow', 'deny', 'none']): Filter mode:
+                - `'none'`: Accept any member of `group`.
+                - `'allow'`: Only accept group members present in `values`.
+                - `'deny'`: Reject group members present in `values`.
         """
+        super().__init__()
         self.group: str = group.name if isinstance(group, WordGroup) else str(group)
-        self.exclude: list[str] = []
-        if exclude:
-            for item in exclude:
-                self.exclude.append(item if isinstance(item, str) else item.name)
+        self.values: frozenset[str] = (
+            frozenset(values) if values is not None else frozenset()
+        )
+        self.behavior_values: Literal["allow", "deny", "none"] = behavior_values
 
-        self.only: list[str] | None = None
-        if only is not None:
-            self.only = []
-            for item in only:
-                self.only.append(item if isinstance(item, str) else item.name)
-
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> TokenType | None:
+    def parse(self, analyzer: ASTAnalyzer) -> Any | None:
         """
-        Evalúa la pertenencia del token actual al grupo léxico.
+        Evaluate whether the current token belongs to `self.group` and satisfies
+        the configured `behavior_values` filter.
 
         Args:
-            analyzer: Instancia activa del analizador sintáctico o parser.
-            current: Token posicionado bajo el cursor, o None para consumir del parser.
-            ignore_errors: Si True, no genera excepciones ante discrepancias.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            TokenType | None: El token actual si pertenece al grupo; None en caso contrario.
-
-        Raises:
-            ParserError: Si el token no pertenece al grupo e ignore_errors es False.
+            Any | None: Delegated AST node if matched, or `None` on mismatch.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
+        parser = analyzer.parser
+        parser.node("ProcessingMatchGroup", "Procesando Match Grupal", set_target=True)
+        parser.debug(f"MatchGroup: buscando pertenencia al grupo {self.group!r}")
 
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"MatchGroup: buscando pertenencia al grupo {self.group!r}",
-                "Normal",
-            )
-
-        checkpoint = parser.savepoint(node=target_node)
-
-        if current is None:
-            if not parser.not_empty():
-                self._record_failure(
-                    analyzer,
-                    f"miembro del grupo {self.group!r}",
-                    checkpoint.pos,
-                    None,
-                )
-                if not ignore_errors:
-                    if config.PARSER_ADD_ERROR:
-                        target_node.note(
-                            f"Error sintáctico: se esperaba miembro del grupo {self.group!r} pero se alcanzó EOF",
-                            "Error",
-                        )
-                    error.ParserError(
-                        "Token no pertenece al grupo",
+        try:
+            if parser.empty():
+                parser.error("Salida inesperada. No se encontró ningún Token.")
+                analyzer.report_error(
+                    errors.ParserError(
+                        "EmptyTokenStream",
                         errors.PARSER_EARLY_EOF,
-                        f"Se esperaba token perteneciente al grupo '{self.group}' pero se alcanzó EOF.",
-                    ).raise_error()
+                        f"Salida inesperada (EOF) al buscar un elemento del grupo {self.group!r}.",
+                        "Verifique que la expresión no esté incompleta.",
+                    ),
+                    pos=parser.pos,
+                )
                 return None
-            tok = parser.consume(node=target_node)
-        else:
-            tok = current
 
-        token_value = str(tok.value) if tok.value is not None else ""
-        current_token = tok.token
-        token_name = current_token.name
+            current = parser.peek()
+            if current is None:
+                return None
 
-        # 1. Verificar lista de exclusiones
-        if token_value in self.exclude or token_name in self.exclude:
-            self._record_failure(
-                analyzer,
-                f"miembro no excluido del grupo {self.group!r}",
-                checkpoint.pos,
-                tok,
-            )
-            parser.restore(checkpoint, node=target_node)
+            location = f"Line: {current.line}, Col: {current.col}"
 
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"Token {token_value!r} descartado por lista de exclusión",
-                    "Advice",
-                )
-            if not ignore_errors:
-                error.ParserError(
-                    "Token excluido",
-                    errors.PARSER_UNEXPECTED_TOKEN,
-                    f"El token {token_value!r} se encuentra en la lista de exclusiones del grupo {self.group!r}.",
-                    f"Encontrado en línea {tok.line}, columna {tok.col}.",
-                ).raise_error()
-            return None
-
-        # 2. Verificar lista restrictiva (only)
-        if self.only is not None and (token_value not in self.only and token_name not in self.only):
-            self._record_failure(
-                analyzer,
-                f"token permitido por el grupo {self.group!r}",
-                checkpoint.pos,
-                tok,
-            )
-            parser.restore(checkpoint, node=target_node)
-
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"Token {token_value!r} descartado por no pertenecer a la lista 'only'",
-                    "Advice",
-                )
-            if not ignore_errors:
-                error.ParserError(
-                    "Token no permitido",
-                    errors.PARSER_UNEXPECTED_TOKEN,
-                    f"El token {token_value!r} no pertenece a la lista permitida del grupo {self.group!r}.",
-                    f"Encontrado en línea {tok.line}, columna {tok.col}.",
-                ).raise_error()
-            return None
-
-        # 3. Comprobar pertenencia en el grupo léxico
-        in_group = words.exists_in_group(token_value, self.group) or words.exists_in_group(token_name, self.group)
-
-        if not in_group:
-            self._record_failure(
-                analyzer,
-                f"miembro del grupo {self.group!r}",
-                checkpoint.pos,
-                tok,
-            )
-            parser.restore(checkpoint, node=target_node)
-
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"El valor {token_name} ({token_value!r}) no pertenece al grupo {self.group!r}",
-                    "Warn",
-                )
-
-            if not ignore_errors:
-                if config.PARSER_ADD_ERROR:
-                    target_node.note(
-                        f"Error sintáctico: {token_value!r} no pertenece al grupo {self.group!r}",
-                        "Error",
+            if not words.exists_in_group(current.value, self.group):
+                if not words.group_exists(self.group):
+                    parser.error(f"El grupo {self.group} no existe.")
+                    analyzer.report_error(
+                        errors.LexerError(
+                            "WordGroupNotFound",
+                            errors.LEXER_WORDGROUP_NOT_FOUND,
+                            f"El grupo léxico {self.group!r} no existe en el registro.",
+                            location,
+                        ),
+                        pos=parser.pos,
                     )
-                error.ParserError(
-                    "Token no pertenece al grupo",
-                    errors.PARSER_UNEXPECTED_TOKEN,
-                    f"El token {token_value!r} no pertenece al grupo de palabras '{self.group}'.",
-                    f"Encontrado en línea {tok.line}, columna {tok.col}.",
-                ).raise_error()
+                else:
+                    parser.error(
+                        f"La keyword {current.value} no existe en el grupo {self.group}."
+                    )
+                    analyzer.report_error(
+                        errors.ParserError(
+                            "GroupMismatch",
+                            errors.PARSER_UNEXPECTED_TOKEN,
+                            f"El valor {current.value!r} no pertenece al grupo {self.group!r}.",
+                            location,
+                        ),
+                        pos=parser.pos,
+                    )
+                return None
 
-            return None
+            if self.behavior_values == "allow" and current.value not in self.values:
+                parser.error(
+                    f"El valor {current.value!r} no está en la lista permitida de MatchGroup({self.group!r})."
+                )
+                analyzer.report_error(
+                    errors.ParserError(
+                        "GroupValueNotAllowed",
+                        errors.PARSER_UNEXPECTED_TOKEN,
+                        f"El valor {current.value!r} pertenece a {self.group!r}, pero no está entre los valores permitidos.",
+                        location,
+                    ),
+                    pos=parser.pos,
+                )
+                return None
 
-        # Si current fue pasado explícitamente y el parser aún apuntaba a él, avanzar cursor físico
-        if current is not None and parser.not_empty() and parser.tokens[parser.pos] is current:
-            parser.advance()
+            if self.behavior_values == "deny" and current.value in self.values:
+                parser.error(
+                    f"El valor {current.value!r} está explícitamente excluido en MatchGroup({self.group!r})."
+                )
+                analyzer.report_error(
+                    errors.ParserError(
+                        "GroupValueDenied",
+                        errors.PARSER_UNEXPECTED_TOKEN,
+                        f"El valor {current.value!r} está excluido para esta regla del grupo {self.group!r}.",
+                        location,
+                    ),
+                    pos=parser.pos,
+                )
+                return None
 
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"MatchGroup exitoso: {token_value!r} pertenece al grupo {self.group!r}",
-                "Success",
-            )
-
-        return tok
+            parser.consume()
+            analyzer.discard_staged_failure(min_weight=parser.pos)
+            return analyzer.delegate_return_node(current)
+        finally:
+            parser.down()
 
     def __repr__(self) -> str:
-        parts = [repr(self.group)]
-        if self.exclude:
-            parts.append(f"exclude={self.exclude!r}")
-        if self.only:
-            parts.append(f"only={self.only!r}")
-        return f"MatchGroup({', '.join(parts)})"
+        return f"MatchGroup({self.group!r})"
 
 
 __all__ = ["MatchGroup"]

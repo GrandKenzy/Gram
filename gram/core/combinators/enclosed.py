@@ -1,382 +1,217 @@
 """
-EN:
-    Enclosed and Bracketed Combinator (`gram.core.combinators.enclosed`).
-    =====================================================================
-    Wraps an inner content combinator between opening and closing delimiter tokens
-    and automatically activates the parser's *bracket-aware* mode during content analysis.
-
-    In bracket-aware mode, NEWLINE, INDENT, and DEDENT tokens are automatically
-    skipped during token consumption, enabling multi-line expressions inside parentheses,
-    brackets, and braces.
-
-ES:
-    Combinador Enclosed / Bracketed (`gram.core.combinators.enclosed`).
-    ===================================================================
-    Envuelve un combinador de contenido entre un par de tokens delimitadores
-    (apertura y cierre) y activa automáticamente el modo *bracket-aware* del
-    parser durante el análisis del contenido interior.
-
-    En modo bracket-aware los tokens NEWLINE, INDENT y DEDENT se omiten
-    automáticamente al consumir, lo que permite formateo libre dentro de
-    paréntesis, corchetes y llaves.
+Enclosed and Bracketed Combinator (`gram.core.combinators.enclosed`).
+=====================================================================
+Wraps an inner content combinator between any arbitrary opening and closing
+`Token` delimiters and optionally activates the parser's bracket-aware mode
+during content analysis so `NEWLINE`, `INDENT`, and `DEDENT` tokens are skipped.
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.lexer.tokens import Token, TokenType
-from gram.utilities import error
+from gram.core.lexer.tokens import Token
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.parser.core import Parser
-
-# Mapeos de strings de delimitador a Token canónico
-_OPEN_MAP: dict[str, Token] = {
-    "(": Token.LPAREN,
-    "[": Token.LBRACKET,
-    "{": Token.LBRACE,
-}
-_CLOSE_MAP: dict[str, Token] = {
-    ")": Token.RPAREN,
-    "]": Token.RBRACKET,
-    "}": Token.RBRACE,
-}
 
 
-def _resolve_delimiter(delim: Token | str, mapping: dict[str, Token]) -> Token:
-    """
-    EN: Convert a delimiter (Token or str) into its corresponding canonical Token enum.
-    ES: Convierte un delimitador (Token o str) al Token canónico correspondiente.
-    """
-    if isinstance(delim, Token):
-        return delim
-    resolved = mapping.get(delim)
-    if resolved is None:
-        raise ValueError(
-            f"Delimitador desconocido: {delim!r}. Valores permitidos: {list(mapping)}"
-        )
-    return resolved
+def _validate_token(delim: Token, role: str) -> Token:
+    """Validate that a delimiter is a strict `Token` enum member."""
+    if not isinstance(delim, Token):
+        errors.GrammarError(
+            "InvalidDelimiterType",
+            errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+            f"El delimitador de {role} en Enclosed debe ser una instancia de Token, "
+            f"pero se recibió '{type(delim).__name__}' ({delim!r}).",
+            "Pase miembros del enum Token directamente (ej. Token.LPAREN, Token.RPAREN).",
+        ).raise_error()
+    return delim
 
 
 class Enclosed(Combinator):
     """
-    EN:
-        Combinator evaluating inner content enclosed within opening and closing bracket delimiters.
-        Activates *bracket-aware* mode during inner content parsing to automatically suppress
-        newlines and indentations in collections, argument lists, and tuples.
-
-    ES:
-        Combinador que evalúa un contenido delimitado por tokens de apertura y cierre.
-        Activa el modo *bracket-aware* durante el análisis del contenido para suprimir
-        automáticamente saltos de línea e indentaciones en colecciones y listas de argumentos.
+    Combinator that evaluates inner content enclosed between arbitrary opening
+    and closing `Token` delimiters while optionally enabling bracket-aware
+    whitespace skipping.
     """
+
     header_class: bool = True
 
     def __init__(
         self,
-        open: Token | str,
+        open: Token,
         content: Combinator,
-        close: Token | str,
+        close: Token,
         skip_whitespace: bool = True,
         allow_empty: bool = True,
     ) -> None:
         """
-        EN: Initialize Enclosed combinator with opening delimiter, content, and closing delimiter.
-        ES: Inicializa el combinador Enclosed con delimitador de apertura, contenido y cierre.
+        Initialize the `Enclosed` combinator with arbitrary `Token` delimiters.
 
         Args:
-            open: Opening token or string delimiter ('(', '[', '{' or Token enum).
-                  Token o string de apertura ('(', '[', '{' o Token enum).
-            content: Child combinator evaluated within the enclosing pair.
-                     Combinador que se evalúa dentro del par delimitador.
-            close: Matching closing token or string delimiter (')', ']', '}').
-                   Token o string de cierre correspondiente (')', ']', '}').
-            skip_whitespace: If True, activates bracket-aware mode suppressing NEWLINE/INDENT/DEDENT.
-                             Si True, activa el modo bracket-aware suprimiendo saltos e indentación.
-            allow_empty: If True, accepts matching delimiters with no content.
-                         Si True, acepta delimitadores consecutivos sin contenido.
+            open (Token): Opening delimiter token (e.g., `Token.LPAREN`, `Token.WALRUS`).
+            content (Combinator): Inner combinator evaluated between the delimiters.
+            close (Token): Closing delimiter token (e.g., `Token.RPAREN`, `Token.HLINE`).
+            skip_whitespace (bool): If True, enables bracket-aware mode to skip
+                `NEWLINE`, `INDENT`, and `DEDENT` tokens inside the delimiters.
+            allow_empty (bool): If True, allows empty delimiter pairs with no inner content.
         """
-        self.header_class: bool = True
-        self.open_token: Token = _resolve_delimiter(open, _OPEN_MAP)
-        self.close_token: Token = _resolve_delimiter(close, _CLOSE_MAP)
+        super().__init__()
+        self.open_token: Token = _validate_token(open, "apertura")
+        self.close_token: Token = _validate_token(close, "cierre")
         self.content: Combinator = content
         self.skip_whitespace: bool = skip_whitespace
         self.allow_empty: bool = allow_empty
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> Any:
+    def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
-        EN: Evaluate content enclosed between delimiter tokens.
-        ES: Evalúa el contenido encerrado entre los tokens delimitadores.
+        Evaluate the opening token, inner content combinator, and closing token.
 
         Args:
-            analyzer: Active syntax analyzer or Parser instance.
-                      Analizador sintáctico o parser activo.
-            current: Current token positioned (expected opening) or None.
-                     Token actual posicionado (apertura esperada) o None.
-            ignore_errors: If True, suppress exceptions on mismatch.
-                           Si True, suprime excepciones ante discrepancias.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            Result of inner content combinator, or None on failure.
-            Resultado del combinador de contenido, o None si no coincidió.
+            Any: Result of `self.content` (`[]` if empty and allowed), or `None` on failure.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
-        checkpoint = parser.savepoint(node=target_node)
+        parser = analyzer.parser
+        father = parser.node(
+            "ProcessingEnclosed", "Procesando delimitadores", set_target=True
+        )
+        checkpoint = parser.savepoint("ENCLOSED-Analysis")
 
-        # 1. Validar token de apertura
-        if current is None:
-            if not parser.not_empty():
-                self._record_failure(
-                    analyzer,
-                    f"delimitador de apertura {self.open_token.name}",
-                    checkpoint.pos,
-                    None,
-                )
-                if not ignore_errors:
-                    error.ParserError(
-                        "Enclosed: EOF inesperado antes de apertura",
+        try:
+            # 1. Validate opening delimiter token
+            if parser.empty():
+                analyzer.report_error(
+                    errors.ParserError(
+                        "UnexpectedEOFBeforeOpenDelimiter",
                         errors.PARSER_EARLY_EOF,
-                        f"Se esperaba '{self.open_token.name}' pero se alcanzó el fin del archivo.",
-                    ).raise_error()
-                return None
-            open_tok = parser.consume(node=target_node)
-        else:
-            open_tok = current
-            if parser.not_empty() and parser.tokens[parser.pos] is current:
-                parser.advance()
-
-        if open_tok.token != self.open_token:
-            self._record_failure(
-                analyzer,
-                f"delimitador de apertura {self.open_token.name}",
-                checkpoint.pos,
-                open_tok,
-            )
-            parser.restore(checkpoint, node=target_node)
-            return None
-
-        if config.PARSER_ADD_INFO:
-            target_node.note(f"Enclosed: apertura '{self.open_token.name}' aceptada", "Normal")
-
-        # 2. Análisis del contenido interior
-        if self.skip_whitespace:
-            res = None
-            empty_matched = False
-            with parser.bracket_context():
-                parser.control._skip_whitespace()
-
-                if parser.not_empty() and parser.current().token == self.close_token:
-                    if self.allow_empty:
-                        empty_matched = True
-                    else:
-                        self._record_failure(
-                            analyzer,
-                            "contenido no vacío",
-                            parser.pos,
-                            parser.peek(),
-                        )
-                        parser.restore(checkpoint, node=target_node)
-                        if not ignore_errors:
-                            failure_context = self._failure_context(analyzer)
-                            caution = (
-                                f"El contenido dentro de "
-                                f"'{self.open_token.name}...{self.close_token.name}' "
-                                "no puede estar vacío.",
-                            )
-                            if failure_context:
-                                caution += (failure_context,)
-                            error.ParserError(
-                                "Enclosed: contenido vacío",
-                                errors.COMBINATOR_FAILED,
-                                *caution,
-                            ).raise_error()
-                        return None
-                else:
-                    try:
-                        res = self._dispatch_sub(
-                            self.content,
-                            analyzer,
-                            None,
-                            ignore_errors=ignore_errors,
-                        )
-                    except error.ParserError:
-                        parser.restore(checkpoint, node=target_node)
-                        raise
-
-                    if res is None:
-                        parser.restore(checkpoint, node=target_node)
-                        if not ignore_errors:
-                            failure_context = self._failure_context(analyzer)
-                            caution = (
-                                f"El contenido dentro de "
-                                f"'{self.open_token.name}...{self.close_token.name}' "
-                                "no coincidió.",
-                            )
-                            if failure_context:
-                                caution += (failure_context,)
-                            error.ParserError(
-                                "Enclosed: contenido no coincidió",
-                                errors.COMBINATOR_FAILED,
-                                *caution,
-                            ).raise_error()
-                        return None
-
-                    parser.control._skip_whitespace()
-
-            if not parser.not_empty():
-                self._record_failure(
-                    analyzer,
-                    f"delimitador de cierre {self.close_token.name}",
-                    parser.pos,
-                    None,
+                        f"Se esperaba el delimitador de apertura '{self.open_token.name}', pero se alcanzó EOF.",
+                        "Asegúrese de abrir el bloque o expresión delimitada.",
+                    ),
+                    pos=parser.pos,
                 )
-                parser.restore(checkpoint, node=target_node)
-                if not ignore_errors:
-                    error.ParserError(
-                        "Enclosed: EOF antes del delimitador de cierre",
-                        errors.PARSER_EARLY_EOF,
-                        f"Se esperaba '{self.close_token.name}' pero se alcanzó EOF.",
-                    ).raise_error()
                 return None
 
-            close_pos = parser.pos
-            close_tok = parser.consume(node=target_node)
-            if close_tok.token != self.close_token:
-                self._record_failure(
-                    analyzer,
-                    f"delimitador de cierre {self.close_token.name}",
-                    close_pos,
-                    close_tok,
-                )
-                parser.restore(checkpoint, node=target_node)
-                if not ignore_errors:
-                    error.ParserError(
-                        f"Enclosed: se esperaba '{self.close_token.name}'",
-                        errors.PARSER_UNEXPECTED_TOKEN,
-                        f"Token recibido: '{close_tok.token.name}' ({close_tok.value!r}) en línea {close_tok.line}.",
-                    ).raise_error()
-                return None
-
-            if config.PARSER_ADD_INFO:
-                target_node.note(f"Enclosed: cierre '{self.close_token.name}' aceptado", "Success")
-
-            if empty_matched:
-                if config.PARSER_ADD_INFO:
-                    target_node.note("Enclosed: contenido vacío", "Normal")
-                return []
-
-            return res
-        else:
-            if parser.not_empty() and parser.current().token == self.close_token:
-                if self.allow_empty:
-                    parser.consume(node=target_node)
-                    return []
-
-                self._record_failure(
-                    analyzer,
-                    "contenido no vacío",
-                    parser.pos,
-                    parser.peek(),
-                )
-                parser.restore(checkpoint, node=target_node)
-                if not ignore_errors:
-                    failure_context = self._failure_context(analyzer)
-                    caution = (
-                        f"El contenido dentro de "
-                        f"'{self.open_token.name}...{self.close_token.name}' "
-                        "no puede estar vacío.",
+            open_tok = parser.peek()
+            if open_tok is None or open_tok.token != self.open_token:
+                if open_tok is not None:
+                    analyzer.report_error(
+                        errors.ParserError(
+                            "OpeningDelimiterMismatch",
+                            errors.PARSER_UNEXPECTED_TOKEN,
+                            f"Se esperaba el delimitador de apertura '{self.open_token.name}', pero se recibió "
+                            f"'{open_tok.token.name}' ({open_tok.value!r}) en línea {open_tok.line}, columna {open_tok.col}.",
+                            f"Inicie el bloque con '{self.open_token.name}'.",
+                        ),
+                        pos=parser.pos,
                     )
-                    if failure_context:
-                        caution += (failure_context,)
-                    error.ParserError(
-                        "Enclosed: contenido vacío",
-                        errors.COMBINATOR_FAILED,
-                        *caution,
-                    ).raise_error()
+                parser.restore(checkpoint)
                 return None
+
+            parser.consume()
+            father.note(f"Enclosed: apertura '{self.open_token.name}' aceptada", "normal")
+
+            # 2. Evaluate inner content under bracket-aware mode
+            if self.skip_whitespace:
+                parser.enter_delimiter()
+                parser.skip_whitespace()
 
             try:
-                res = self._dispatch_sub(
-                    self.content,
-                    analyzer,
-                    None,
-                    ignore_errors=ignore_errors,
-                )
-            except error.ParserError:
-                parser.restore(checkpoint, node=target_node)
-                raise
+                current = parser.peek() if not parser.empty() else None
+                if current is not None and current.token == self.close_token:
+                    if not self.allow_empty:
+                        failed_pos = parser.pos
+                        parser.restore(checkpoint)
+                        analyzer.report_error(
+                            errors.GrammarError(
+                                "EmptyEnclosedContent",
+                                errors.GRAMMAR_COMBINATOR_FAILED,
+                                f"El contenido dentro de '{self.open_token.name}...{self.close_token.name}' "
+                                f"no puede estar vacío (línea {current.line}, columna {current.col}).",
+                                "Proporcione una expresión válida dentro de los delimitadores.",
+                            ),
+                            pos=failed_pos,
+                        )
+                        return None
+                    result: Any = []
+                else:
+                    with analyzer.safe_mode():
+                        result = analyzer.visitor(self.content)
 
-            if res is None:
-                parser.restore(checkpoint, node=target_node)
-                if not ignore_errors:
-                    failure_context = self._failure_context(analyzer)
-                    caution = (
-                        f"El contenido de Enclosed "
-                        f"'{self.open_token.name}...{self.close_token.name}' no coincidió.",
+                    if result is None:
+                        failed_pos = parser.pos
+                        parser.restore(checkpoint)
+                        fallback = errors.GrammarError(
+                            "EnclosedContentMismatch",
+                            errors.GRAMMAR_COMBINATOR_FAILED,
+                            f"El contenido dentro de '{self.open_token.name}...{self.close_token.name}' no coincidió.",
+                            "Revise la sintaxis de los elementos internos entre los delimitadores.",
+                        )
+                        if analyzer.safe_flag:
+                            analyzer.report_error(fallback, pos=failed_pos)
+                        else:
+                            analyzer.flush_failure(fallback=fallback)
+                        return None
+
+                if self.skip_whitespace:
+                    parser.skip_whitespace()
+
+                # 3. Validate closing delimiter token
+                if parser.empty():
+                    failed_pos = parser.pos
+                    parser.restore(checkpoint)
+                    analyzer.report_error(
+                        errors.ParserError(
+                            "UnclosedDelimiterEOF",
+                            errors.PARSER_EARLY_EOF,
+                            f"Se esperaba el delimitador de cierre '{self.close_token.name}', pero se alcanzó EOF.",
+                            f"Cierre el bloque abierto con '{self.close_token.name}'.",
+                        ),
+                        pos=failed_pos,
                     )
-                    if failure_context:
-                        caution += (failure_context,)
-                    error.ParserError(
-                        "Enclosed: contenido no coincidió",
-                        errors.COMBINATOR_FAILED,
-                        *caution,
-                    ).raise_error()
-                return None
+                    return None
 
-            if not parser.not_empty():
-                self._record_failure(
-                    analyzer,
-                    f"delimitador de cierre {self.close_token.name}",
-                    parser.pos,
-                    None,
+                close_tok = parser.peek()
+                if close_tok is None or close_tok.token != self.close_token:
+                    failed_pos = parser.pos
+                    parser.restore(checkpoint)
+                    if close_tok is not None:
+                        analyzer.report_error(
+                            errors.ParserError(
+                                "ClosingDelimiterMismatch",
+                                errors.PARSER_UNEXPECTED_TOKEN,
+                                f"Se esperaba el delimitador de cierre '{self.close_token.name}', pero se recibió "
+                                f"'{close_tok.token.name}' ({close_tok.value!r}) en línea {close_tok.line}, columna {close_tok.col}.",
+                                f"Asegúrese de cerrar correctamente con '{self.close_token.name}'.",
+                            ),
+                            pos=failed_pos,
+                        )
+                    return None
+
+                parser.consume()
+                analyzer.discard_staged_failure(min_weight=parser.pos)
+                father.note(
+                    f"Enclosed: cierre '{self.close_token.name}' aceptado", "success"
                 )
-                parser.restore(checkpoint, node=target_node)
-                if not ignore_errors:
-                    error.ParserError(
-                        "Enclosed: EOF antes de cierre",
-                        errors.PARSER_EARLY_EOF,
-                    ).raise_error()
-                return None
-
-            close_pos = parser.pos
-            close_tok = parser.consume(node=target_node)
-            if close_tok.token != self.close_token:
-                self._record_failure(
-                    analyzer,
-                    f"delimitador de cierre {self.close_token.name}",
-                    close_pos,
-                    close_tok,
-                )
-                parser.restore(checkpoint, node=target_node)
-                if not ignore_errors:
-                    error.ParserError(
-                        f"Enclosed: se esperaba '{self.close_token.name}'",
-                        errors.PARSER_UNEXPECTED_TOKEN,
-                    ).raise_error()
-                return None
-
-            return res
+                return result
+            finally:
+                if self.skip_whitespace:
+                    parser.exit_delimiter()
+        finally:
+            parser.down()
 
     def __repr__(self) -> str:
         return (
-            f"Enclosed({self.open_token.name!r}, "
+            f"Enclosed(Token.{self.open_token.name}, "
             f"{self.content!r}, "
-            f"{self.close_token.name!r})"
+            f"Token.{self.close_token.name})"
         )
 
 
-# Alias idiomático
 Bracketed = Enclosed
-
 
 __all__ = [
     "Bracketed",

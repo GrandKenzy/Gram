@@ -27,11 +27,17 @@ class StackInfo:
         generate_log_file: bool = False,
         ):
         
+
+        name = ''
+        if Format.FileTar.file:
+            name = Path(Format.FileTar.file).name
+            
         if not file_name.endswith('.log'):
             file_name = file_name + '.log'
         
         self.file_name: str = file_name
         self.expose_nodes: bool = expose_nodes
+        self.folder_name = name
 
         from gram.utilities.info import Node
         self.main: Node = Node(node_name, description, 0)
@@ -43,7 +49,13 @@ class StackInfo:
             atexit.register(self.write)
         
     def register(self):
-        self.log = Log.register(self.file_name)
+        if self.folder_name:
+            file, i = Format.FileTar.get()
+            fn = f'{file}-{i}'
+        else:
+            fn = self.folder_name
+        
+        self.log = Log.register(self.file_name, fn)
         
     def note(self, note: str, type: Format.LogType = 'normal'):
         return self.main.note(note, type)
@@ -81,20 +93,33 @@ class StackInfo:
         return ''
 
     def write(self) -> None:
-        """Persiste el contenido del stack en el archivo de log si está configurado."""
-        Log.write(self.stringify(ansi=False), self.file_name)
-
+            """Persiste el contenido del stack en el archivo de log si está configurado."""
+            if self.log:
+                Log.write_to_path(self.stringify(ansi=False), self.log)
+            else:
+                Log.write(self.stringify(ansi=False), self.file_name)
     @classmethod
     def show_all(cls) -> None:
         """Vuelca y muestra todos los stacks registrados en el ciclo de ejecución."""
+        if Format.FileTar.file:
+            print('Escribiendo datos para', Format.FileTar.file)
+        
         for stack in cls._stacks:
             stack.write()
-            stack.console()
+
+    def clean(self):
+        self.main.stack.clear()
 
     @classmethod
     def clear_all(cls) -> None:
         """Limpia los stacks registrados (útil para pruebas unitarias)."""
+        
         cls._stacks.clear()
 
+    @classmethod
+    def clear_and_clean_all(cls):
+        for stack in cls._stacks:
+            stack.clean()
+        cls._stacks.clear()
 
 __all__ = ['StackInfo']

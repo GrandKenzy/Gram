@@ -1,116 +1,79 @@
 """
-Visitante Léxico para Palabras e Identificadores (`gram.core.lexer.visitors.words`).
-==================================================================================
-Reconoce identificadores, literales booleanos (true, false), literales nulos (null)
-y palabras clave registradas en gram.core.lexer.words.
+Word, Keyword, and Identifier Lexical Visitor (`gram.core.lexer.visitors.words`).
+=================================================================================
+Recognizes boolean literals (`true`, `false`), null literals (`null`),
+registered language keywords (`Token.KEYWORD`), and user-defined identifiers
+(`Token.IDENT`).
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from gram.utilities.info import Node
-
-from gram import config
 from gram.core.lexer import words
 from gram.core.lexer.tokens import Token, TokenType
 
+if TYPE_CHECKING:
+    from gram.core.lexer.control import LexerState
+
 BOOLS: dict[str, bool] = {
-    'true': True,
-    'false': False,
+    "true": True,
+    "false": False,
 }
 
-NULLS: set[str] = {
-    'null',
-}
+NULLS: frozenset[str] = frozenset({"null"})
 
 
 def process(
-    lexer: Any,
+    lexer: LexerState,
     char: str,
-    node: Node | Any,
+    node: Any = None,
 ) -> TokenType:
     """
-    Procesa identificadores, booleanos, nulls y palabras reservadas (keywords).
-
-    Args:
-        lexer: Instancia activa del analizador léxico.
-        char: Primer carácter de la palabra.
-        node: Nodo de telemetría asignado a esta operación.
-
-    Returns:
-        TokenType generado (BOOL, NULL, KEYWORD o IDENT).
+    Scan an alphanumeric/underscore word and classify it as `Token.BOOL`,
+    `Token.NULL`, `Token.KEYWORD`, or `Token.IDENT`.
     """
     start = lexer.col
     start_line = lexer.line
+    line_str = lexer.currline
+    line_len = len(line_str)
 
-    node.name = 'VISITOR-WORD'
-
-    if config.LEXER_ADD_INFO:
-        node.note(
-            f'Inicio de palabra en línea {start_line}, columna {start}',
-            'normal',
-        )
-
+    lexer.debug(f"Inicio de palabra en línea {start_line + 1}, columna {start}")
     lexer.advance()
 
-    while lexer.col < len(lexer.currline):
+    while lexer.col < line_len:
         current = lexer.peek()
-        if not (current.isalnum() or current == '_'):
+        if current.isalnum() or current == "_":
+            lexer.advance()
+        else:
             break
-        lexer.advance()
 
-    value = lexer.currline[start:lexer.col]
+    value = line_str[start : lexer.col]
     lower = value.lower()
 
-    # 1. Literales booleanos
+    # 1. Boolean literals
     if lower in BOOLS:
         parsed_bool = BOOLS[lower]
-        if config.LEXER_ADD_INFO:
-            node.note(f'Booleano reconocido: {value!r} -> {parsed_bool}', 'success')
+        lexer.success(f"Booleano reconocido: {value!r} -> {parsed_bool}")
+        return TokenType(Token.BOOL, parsed_bool, start_line, start)
 
-        return TokenType(
-            Token.BOOL,
-            parsed_bool,
-            start_line,
-            start,
-        )
-
-    # 2. Literal nulo
+    # 2. Null literal
     if lower in NULLS:
-        if config.LEXER_ADD_INFO:
-            node.note(f'Literal nulo reconocido: {value!r}', 'success')
+        lexer.success(f"Literal nulo reconocido: {value!r}")
+        return TokenType(Token.NULL, None, start_line, start)
 
-        return TokenType(
-            Token.NULL,
-            None,
-            start_line,
-            start,
-        )
-
-    # 3. Palabras clave registradas en words.py
+    # 3. Registered language keywords
     keyword = words.get_keyword(value)
     if keyword is not None:
-        if config.LEXER_ADD_INFO:
-            node.note(f'Palabra clave reconocida: {keyword.name!r}', 'success')
+        lexer.success(f"Palabra clave reconocida: {keyword.name!r}")
+        return TokenType(Token.KEYWORD, keyword.name, start_line, start)
 
-        return TokenType(
-            Token.KEYWORD,
-            keyword.name,
-            start_line,
-            start,
-        )
-
-    # 4. Identificador genérico
-    if config.LEXER_ADD_INFO:
-        node.note(f'Identificador reconocido: {value!r}', 'advice')
-
-    return TokenType(
-        Token.IDENT,
-        value,
-        start_line,
-        start,
-    )
+    # 4. Generic identifier
+    lexer.advice(f"Identificador reconocido: {value!r}")
+    return TokenType(Token.IDENT, value, start_line, start)
 
 
-__all__ = ['process', 'BOOLS', 'NULLS']
+__all__ = [
+    "BOOLS",
+    "NULLS",
+    "process",
+]

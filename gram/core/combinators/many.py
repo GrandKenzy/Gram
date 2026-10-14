@@ -1,137 +1,101 @@
 """
-EN:
-    Zero-or-More Repetition Combinator (`gram.core.combinators.many`).
-    ==================================================================
-    Defines the arbitrary repetition combinator (0..n or Kleene star *).
-    Accepts any number of consecutive matches of the inner combinator,
-    accumulating results into a list. If zero matches occur, returns an empty
-    list `[]` with syntactic success.
-
-ES:
-    Combinador de Repetición Cero o Más Veces (`gram.core.combinators.many`).
-    ========================================================================
-    Define el combinador de repetición arbitraria (0..n o estrella de Kleene *).
-    Acepta cualquier cantidad de repeticiones consecutivas del combinador interno,
-    acumulando los resultados en una lista. Si no coincide ninguna vez, retorna
-    una lista vacía `[]` con éxito sintáctico.
+Zero-or-More Repetition Combinator (`gram.core.combinators.many`).
+==================================================================
+Defines the Kleene star repetition combinator (`0..n`). Repeatedly evaluates
+its inner child combinator while matches succeed and tokens advance, surfacing
+partial deep syntax errors if an iteration fails mid-branch.
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from gram import config
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.optional import OptResult
-from gram.core.combinators.signals import AbortFlowSignal, BreakFlowSignal, SkipFlowSignal
+from gram.core.combinators.signals import BreakFlowSignal, SkipFlowSignal
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.lexer.tokens import TokenType
-    from gram.core.parser.core import Parser
 
 
 class Many(Combinator):
     """
-    EN:
-        Zero-or-more repetition combinator (Kleene star 0..n).
-        Accepts any number of consecutive occurrences of the inner combinator.
-        Returns a list of all accumulated match results. If zero occurrences match,
-        returns an empty list `[]` with success.
+    Zero-or-more repetition combinator (`0..n` / Kleene star).
 
-    ES:
-        Combinador de repetición cero o más veces (0..n).
-        Acepta cualquier número de ocurrencias consecutivas del combinador interno.
-        Retorna una lista con todos los resultados acumulados. Si no hay ocurrencias,
-        retorna una lista vacía `[]` con éxito.
+    Accepts any number of consecutive occurrences of the inner combinator
+    and returns a list of all matched results. If an iteration fails after
+    partially consuming tokens (`staged_weight > checkpoint.pos`) and is not
+    protected by an outer speculative context, flushes the deep error.
     """
+
     header_class: bool = True
 
     def __init__(self, combinator: Combinator) -> None:
         """
-        EN: Initialize repetition combinator with target child combinator.
-        ES: Inicializa el combinador de repetición con el combinador hijo a repetir.
+        Initialize the zero-or-more repetition combinator.
 
         Args:
-            combinator: Syntactic child combinator to repeat.
-                        Combinador sintáctico a repetir.
+            combinator (Combinator): Child syntactic combinator to repeat.
         """
-        self.header_class: bool = True
+        super().__init__()
         self.combinator: Combinator = combinator
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> list[Any]:
+    def parse(self, analyzer: ASTAnalyzer) -> list[Any]:
         """
-        EN: Execute inner combinator repeatedly while it continues to match.
-        ES: Ejecuta el combinador repetidamente mientras continúe coincidiendo.
+        Repeatedly evaluate `self.combinator` until the stream is exhausted
+        or a speculative iteration fails.
 
         Args:
-            analyzer: Active syntax analyzer or Parser instance.
-                      Instancia del analizador sintáctico o parser.
-            current: Current token available under cursor or None.
-                     Token actual disponible en la posición inicial o None.
-            ignore_errors: If True, suppress syntax exceptions on mismatch.
-                           Si True, no levanta excepciones ante fallos.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            List of accumulated match results (may be empty `[]`).
-            Lista con los resultados recolectados (puede ser vacía `[]`).
+            list[Any]: Accumulated match results (`[]` if zero matches occurred).
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
-
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"MANY iniciado con {self.combinator!r}",
-                "Normal",
-            )
-
+        parser = analyzer.parser
+        father = parser.node(
+            "ProcessingMany", "Procesando secuencia Many", set_target=True
+        )
+        father.note(f"Many inicializado con {self.combinator!r}", "normal")
         results: list[Any] = []
-        active_token = current
 
-        while True:
-            # Si ya no hay token activo ni tokens en el parser, salir
-            if active_token is None and not parser.not_empty():
-                break
+        try:
+            while not parser.empty():
+                checkpoint = parser.savepoint("MANY-Iteration")
+                had_prior_staged = analyzer.staged_failure is not None
 
-            checkpoint = parser.savepoint(node=target_node)
+                try:
+                    with analyzer.safe_mode():
+                        res = analyzer.visitor(self.combinator)
+                except SkipFlowSignal:
+                    if parser.pos == checkpoint.pos:
+                        parser.restore(checkpoint)
+                        break
+                    continue
+                except BreakFlowSignal:
+                    parser.restore(checkpoint)
+                    break
 
-            try:
-                res = self._dispatch_sub(
-                    self.combinator,
-                    analyzer,
-                    active_token,
-                    ignore_errors=True,
-                )
-            except (BreakFlowSignal, SkipFlowSignal):
-                parser.restore(checkpoint, node=target_node)
-                break
-            except AbortFlowSignal:
-                parser.restore(checkpoint, node=target_node)
-                raise
+                if res is not None:
+                    results.append(res)
+                    analyzer.discard_staged_failure(min_weight=parser.pos)
+                    if parser.pos == checkpoint.pos:
+                        break
+                else:
+                    parser.restore(checkpoint)
+                    # If the iteration advanced into a branch before failing,
+                    # surface the deep error unless an outer safe_mode is active.
+                    if analyzer.staged_weight > checkpoint.pos:
+                        if not analyzer.safe_flag:
+                            analyzer.flush_failure()
+                    elif not had_prior_staged and analyzer.staged_weight == checkpoint.pos:
+                        analyzer.discard_staged_failure()
+                    break
 
-            if res is None or (isinstance(res, OptResult) and not res.matched):
-                parser.restore(checkpoint, node=target_node)
-                break
-
-            # Salvaguarda contra bucles infinitos si el combinador no avanza el parser
-            if parser.pos == checkpoint.pos and active_token is None:
-                results.append(res)
-                break
-
-            results.append(res)
-            active_token = None
-
-        if config.PARSER_ADD_INFO:
-            target_node.note(
+            father.note(
                 f"MANY finalizado: {len(results)} coincidencias acumuladas",
-                "Success",
+                "success",
             )
-
-        return results
+            return results
+        finally:
+            parser.down()
 
     def __repr__(self) -> str:
         return f"Many({self.combinator!r})"

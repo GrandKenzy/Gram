@@ -1,159 +1,157 @@
 """
-Combinador de Coincidencia de Tokens (`gram.core.combinators.match.match_token`).
-=================================================================================
-Valida que el token bajo el cursor del analizador coincida con un tipo de token
-específico (Token enum, CustomToken o nombre textual).
+Token Matching Combinator (`gram.core.combinators.match.match_token`).
+======================================================================
+Validates that the token currently under the parser cursor matches a specific
+token type (`Token` enum, `CustomToken`, or string token identifier).
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.lexer.tokens import CustomToken, Token, TokenType
-from gram.utilities import error
+from gram.core.lexer.tokens import CustomToken, Token
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.parser.core import Parser
 
 
 class MatchToken(Combinator):
     """
-    ES:
-        Combinador atómico que valida que el token actual coincida con
-        el tipo de token configurado (Token enum, CustomToken o string identificador).
-        Si coincide, avanza el cursor del parser y retorna el TokenType;
-        si discrepa, revierte el cursor y retorna None (o levanta ParserError).
+    Atomic combinator that validates whether the current token matches the
+    configured token type (`Token`, `CustomToken`, or string identifier).
 
-    EN:
-        Atomic combinator validating that current token matches expected type.
+    Rejects `Token.KEYWORD` tokens (which must be matched via `MatchKeyword`
+    or `MatchGroup`). On match, consumes the token and returns the node
+    produced by `analyzer.delegate_return_node(current)`.
     """
 
     def __init__(self, token: Token | CustomToken | str) -> None:
         """
-        Inicializa el combinador de token esperado.
+        Initialize the token matcher with an expected token or string name.
 
         Args:
-            token: Instancia de Token, CustomToken o identificador textual del token.
+            token (Token | CustomToken | str): Target `Token`, `CustomToken`, or
+                canonical token name string.
         """
+        super().__init__()
         if isinstance(token, str):
             resolved = Token.from_string(token)
-            self.token: Token | CustomToken | str = resolved if resolved is not None else token
+            if not resolved:
+                errors.GrammarError(
+                    "InvalidTokenReference",
+                    errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                    f"No se pudo resolver el identificador de token '{token}' a un Token válido.",
+                    "Verifique que el nombre corresponda a un miembro válido del enum Token.",
+                ).raise_error()
+            self.token: Token | CustomToken = resolved  # type: ignore[assignment]
         else:
             self.token = token
 
+    def _delegate_error(
+        self,
+        name: str,
+        code: errors.CodeError,
+        *cautions: str,
+        analyzer: ASTAnalyzer,
+    ) -> None:
+        """
+        Delegate a `ParserError` to `analyzer.report_error` weighted by the
+        current physical cursor position.
+        """
+        analyzer.report_error(
+            errors.ParserError(name, code, *cautions),
+            pos=analyzer.parser.pos,
+        )
+
     @property
     def token_name(self) -> str:
-        """Devuelve el nombre representativo del token esperado."""
-        if isinstance(self.token, Token):
+        """Return the canonical string name of the expected token."""
+        if isinstance(self.token, (Token, CustomToken)) and hasattr(self.token, "name"):
             return self.token.name
         return str(self.token)
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> TokenType | None:
+    def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
-        Evalúa si el token actual coincide con el token esperado.
+        Validate and consume the current token from the active parser stream.
 
         Args:
-            analyzer: Instancia activa del analizador sintáctico o parser.
-            current: Token léxico posicionado bajo el cursor, o None para consumir del parser.
-            ignore_errors: Si True, no genera excepción ante falta de coincidencia.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            TokenType | None: El token reconocido si coincide; None en caso contrario.
-
-        Raises:
-            ParserError: Si el token no coincide e ignore_errors es False.
+            Any: AST node produced by `analyzer.delegate_return_node(current)`,
+            or `None` if matching fails.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
-
-        if config.PARSER_ADD_INFO:
-            target_node.note(f"MatchToken: buscando <{self.token_name}>", "Normal")
-
-        checkpoint = parser.savepoint(node=target_node)
-
-        if current is None:
-            if not parser.not_empty():
-                self._record_failure(
-                    analyzer,
-                    self.token_name,
-                    checkpoint.pos,
-                    None,
-                )
-                if not ignore_errors:
-                    if config.PARSER_ADD_ERROR:
-                        target_node.note(
-                            f"Error sintáctico: se esperaba <{self.token_name}> pero se alcanzó EOF",
-                            "Error",
-                        )
-                    error.ParserError(
-                        "Token inesperado",
-                        errors.PARSER_EARLY_EOF,
-                        f"Se esperaba token '{self.token_name}' pero se alcanzó el final del archivo.",
-                    ).raise_error()
-                return None
-            tok = parser.consume(node=target_node)
-        else:
-            tok = current
-
-        current_token = tok.token
-        current_name = current_token.name
-
-        matched = False
-        if isinstance(self.token, Token):
-            matched = (current_token == self.token) or (current_name == self.token.name)
-        elif isinstance(self.token, CustomToken):
-            matched = (current_token == self.token) or (current_name == self.token.name)
-        else:
-            matched = (current_name == self.token) or (str(tok.value) == self.token)
-
-        if not matched:
-            self._record_failure(
-                analyzer,
-                self.token_name,
-                checkpoint.pos,
-                tok,
-            )
-            parser.restore(checkpoint, node=target_node)
-
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"Token no coincidente: se esperaba {self.token_name}, se recibió {current_name}",
-                    "Warn",
-                )
-
-            if not ignore_errors:
-                if config.PARSER_ADD_ERROR:
-                    target_node.note(
-                        f"Error sintáctico: se esperaba {self.token_name}, se encontró {current_name}",
-                        "Error",
-                    )
-                error.ParserError(
-                    "Token inesperado",
-                    errors.PARSER_UNEXPECTED_TOKEN,
-                    f"Se esperaba token '{self.token_name}' pero se encontró '{current_name}' con valor {tok.value!r}.",
-                    f"Encontrado en línea {tok.line}, columna {tok.col}.",
-                ).raise_error()
-
+        if not self.token:
             return None
 
-        # Si current fue pasado explícitamente y el parser aún apuntaba a él, avanzar cursor físico
-        if current is not None and parser.not_empty() and parser.tokens[parser.pos] is current:
-            parser.advance()
+        parser = analyzer.parser
+        parser.node(
+            "ProcessingMatchToken", "Procesando matcheo de Tokens", set_target=True
+        )
+        parser.debug(f"Matcheando <{self.token_name}>")
 
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"Token reconocido: {self.token_name} ({tok.value!r})",
-                "Success",
-            )
+        try:
+            if parser.empty():
+                parser.error("Salida inesperada. No se encontró ningún Token.")
+                self._delegate_error(
+                    "EmptyTokenStream",
+                    errors.PARSER_EARLY_EOF,
+                    f"Salida inesperada al buscar <{self.token_name}>. El flujo de tokens está vacío o en EOF.",
+                    analyzer=analyzer,
+                )
+                return None
 
-        return tok
+            current = parser.peek()
+            if current is None:
+                return None
+
+            location = f"Line: {current.line}, Col: {current.col}"
+
+            if parser.is_eof() and self.token != Token.EOF:
+                parser.error(f"Se alcanzó EOF antes de lo esperado. {location}")
+                self._delegate_error(
+                    "EOFReached",
+                    errors.PARSER_EARLY_EOF,
+                    f"Se alcanzó el final del archivo (EOF) antes de lo esperado al buscar <{self.token_name}>.",
+                    location,
+                    analyzer=analyzer,
+                )
+                return None
+
+            if current.token == Token.KEYWORD:
+                parser.error(
+                    f"Se encontró un Token de tipo Keyword no consumible para MatchToken: {current}, {location}"
+                )
+                self._delegate_error(
+                    "UnexpectedKeywordToken",
+                    errors.PARSER_UNEXPECTED_TOKEN,
+                    f"Se esperaba el token <{self.token_name}>, pero se encontró una palabra reservada (Keyword): '{current.value}'.",
+                    "Use MatchKeyword o MatchGroup para palabras reservadas en lugar de MatchToken.",
+                    location,
+                    analyzer=analyzer,
+                )
+                return None
+
+            if current.token.name != self.token_name:
+                parser.error(
+                    f"El token actual ({current.token.name}) no coincide con el esperado ({self.token_name}). {location}"
+                )
+                self._delegate_error(
+                    "TokenMismatch",
+                    errors.PARSER_UNEXPECTED_TOKEN,
+                    f"Discrepancia de tokens: se esperaba <{self.token_name}>, pero se obtuvo <{current.token.name}> ('{current.value}').",
+                    location,
+                    analyzer=analyzer,
+                )
+                return None
+
+            parser.success(f"Se consumió el Token {current.token.name}. {location}")
+            parser.consume()
+            analyzer.discard_staged_failure(min_weight=parser.pos)
+            return analyzer.delegate_return_node(current)
+        finally:
+            parser.down()
 
     def __repr__(self) -> str:
         return f"MatchToken({self.token_name})"

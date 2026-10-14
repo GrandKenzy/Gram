@@ -1,32 +1,34 @@
 """
 Abstract Syntax Tree Subpackage (`gram.core.ast`).
 ==================================================
-EN:
-    Provides core components for construction, semantic inspection, hierarchical
-    traversal, and formatted serialization of the Gram Abstract Syntax Tree (AST).
-
-ES:
-    Proporciona los componentes para la construcción, inspección semántica,
-    recorrido jerárquico y serialización formateada del Árbol de Sintaxis Abstracta (AST) de Gram.
+Provides core components for construction, validation, and representation
+of the Gram Abstract Syntax Tree (AST), including `ASTAnalyzer`, `ASTState`,
+and terminal/composite `ASTNode` classes.
 """
 from __future__ import annotations
 
 from gram.core.ast.analyzer import ASTAnalyzer
+from gram.core.ast.control import ASTState
 from gram.core.ast.nodes import (
+    ASTKeyword,
     ASTNode,
-    ASTProgram,
-    ExprResult,
+    ASTRef,
+    ASTTokenNode,
     Identifier,
-    RefNode,
-    generate_file_tree,
+    LiteralNumber,
+    LiteralString,
+    LiteralSymbol,
 )
 
 __all__ = [
-    "ASTAnalyzer",
-    "ASTNode",
-    "ASTProgram",
-    "ExprResult",
-    "Identifier",
-    "RefNode",
-    "generate_file_tree",
+    'ASTAnalyzer',
+    'ASTKeyword',
+    'ASTNode',
+    'ASTRef',
+    'ASTState',
+    'ASTTokenNode',
+    'Identifier',
+    'LiteralNumber',
+    'LiteralString',
+    'LiteralSymbol',
 ]

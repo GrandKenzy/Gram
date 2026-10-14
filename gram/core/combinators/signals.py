@@ -1,9 +1,9 @@
 """
-Señales de Control de Flujo Sintáctico (`gram.core.combinators.signals`).
-========================================================================
-Define las excepciones especializadas de control de flujo utilizadas por los
-combinadores para coordinar backtracking, saltos exitosos tempranos, cortes de poda
-(cut/commit), rupturas de bucles de repetición y abortos críticos en el análisis.
+Syntactic Flow Control Signals (`gram.core.combinators.signals`).
+=================================================================
+Defines specialized control-flow exceptions used by combinators to coordinate
+backtracking, early sequence completion, branch commitment (cut), loop
+termination, and fatal parsing aborts.
 """
 from __future__ import annotations
 
@@ -12,15 +12,13 @@ from typing import Any
 
 class ControlFlowSignal(Exception):
     """
-    ES:
-        Señal base para el control de flujo interno de combinadores.
-        No representa un error sintáctico, sino una directiva de control de ejecución.
-
-    EN:
-        Base signal for internal combinator flow control.
+    Base signal for internal combinator flow control.
+    Represents an execution directive rather than a syntactic error.
     """
 
-    def __init__(self, message: str = "Control flow signal", payload: Any = None) -> None:
+    def __init__(
+        self, message: str = "Control flow signal", payload: Any = None
+    ) -> None:
         super().__init__(message)
         self.message: str = message
         self.payload: Any = payload
@@ -28,79 +26,69 @@ class ControlFlowSignal(Exception):
 
 class SkipFlowSignal(ControlFlowSignal):
     """
-    ES:
-        Señal emitida para solicitar la finalización temprana y exitosa
-        de una secuencia o bloque de análisis sin marcar un fallo en el cursor.
-
-    EN:
-        Signal requesting early successful completion of a sequence.
+    Signal requesting early, successful completion of a sequence or parsing
+    block without marking a cursor failure.
     """
 
-    def __init__(self, message: str = "Skip flow requested", payload: Any = None) -> None:
+    def __init__(
+        self, message: str = "Skip flow requested", payload: Any = None
+    ) -> None:
         super().__init__(message, payload)
 
 
 class BreakFlowSignal(ControlFlowSignal):
     """
-    ES:
-        Señal emitida para ordenar la finalización inmediata de un bucle
-        de repetición (Many, Some, Separator) sin revertir los elementos acumulados.
-
-    EN:
-        Signal to break repetition loops without rolling back accumulated elements.
+    Signal ordering immediate termination of a repetition loop (`Many`, `Some`,
+    `Sep`) without rolling back already accumulated elements.
     """
 
-    def __init__(self, message: str = "Break repetition loop requested", payload: Any = None) -> None:
+    def __init__(
+        self, message: str = "Break repetition loop requested", payload: Any = None
+    ) -> None:
         super().__init__(message, payload)
 
 
 class CutFlowSignal(ControlFlowSignal):
     """
-    ES:
-        Señal de corte (Commit / Cut) que compromete la alternativa actual
-        e inhibe el backtracking posterior en combinadores de selección (Alt).
-
-    EN:
-        Cut / Commit signal committing current branch and preventing further backtracking.
+    Cut/Commit signal that commits the active branch and inhibits subsequent
+    backtracking in selection combinators (`Alt`).
     """
 
-    def __init__(self, message: str = "Commit branch / Cut backtracking", payload: Any = None) -> None:
+    def __init__(
+        self, message: str = "Commit branch / Cut backtracking", payload: Any = None
+    ) -> None:
         super().__init__(message, payload)
 
 
 class BacktrackSignal(ControlFlowSignal):
     """
-    ES:
-        Señal emitida para forzar explícitamente el retroceso y descarte
-        de la rama actual en favor de la siguiente alternativa disponible.
-
-    EN:
-        Signal to explicitly trigger backtracking to next alternative.
+    Signal explicitly forcing a rollback of the active branch in favor of the
+    next available candidate alternative.
     """
 
-    def __init__(self, message: str = "Backtrack requested", payload: Any = None) -> None:
+    def __init__(
+        self, message: str = "Backtrack requested", payload: Any = None
+    ) -> None:
         super().__init__(message, payload)
 
 
 class AbortFlowSignal(ControlFlowSignal):
     """
-    ES:
-        Señal de interrupción fatal e inmediata de todo el proceso de análisis
-        sintáctico ante condiciones críticas o límites irrecuperables.
-
-    EN:
-        Signal for fatal, immediate abortion of the entire parsing process.
+    Signal for immediate, fatal termination of the entire syntactic analysis
+    process upon unrecoverable conditions.
     """
 
-    def __init__(self, message: str = "Abort parsing process", payload: Any = None) -> None:
+    def __init__(
+        self, message: str = "Abort parsing process", payload: Any = None
+    ) -> None:
         super().__init__(message, payload)
 
 
 __all__ = [
-    "ControlFlowSignal",
-    "SkipFlowSignal",
-    "BreakFlowSignal",
-    "CutFlowSignal",
-    "BacktrackSignal",
     "AbortFlowSignal",
+    "BacktrackSignal",
+    "BreakFlowSignal",
+    "ControlFlowSignal",
+    "CutFlowSignal",
+    "SkipFlowSignal",
 ]

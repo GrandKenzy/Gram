@@ -1,57 +1,61 @@
 """
-Gestión Unificada de Palabras Clave y Grupos Léxicos (`gram.core.lexer.words`).
-=============================================================================
-Consolida la administración de palabras clave (Keywords) y grupos lógicos de
-palabras (WordGroups), proporcionando registro dinámico, metadatos visuales,
-detección de colisiones, discriminación de identificadores y aislamiento de estado.
+Unified Keyword and WordGroup Management (`gram.core.lexer.words`).
+===================================================================
+Manages language keywords (`Keyword`) and semantic keyword groups (`WordGroup`),
+providing dynamic registration, visual metadata, collision detection, and $O(1)$
+membership lookups.
 """
 from __future__ import annotations
 
-import sys
-from typing import Any
+from collections.abc import Iterable
 
 from gram import config, errors
-from gram.utilities import error, Format
+from gram.utilities import Format
+
+MAP_KEYWORDS: dict[str, Keyword] = {}
 
 
-def _log_lexer_note(message: str, note_type: Format.LogType = 'normal') -> None:
-    """Emite una nota de telemetría al stack léxico si está disponible."""
-    from gram.core.lexer import Lexer
-    Lexer.get_stack().note(message, note_type)
+def _log_lexer_note(message: str, note_type: Format.LogType = "normal") -> None:
+    """Emit a diagnostic note to the active lexer stack if `LEXER_ADD_INFO` is enabled."""
+    if not config.LEXER_ADD_INFO:
+        return
+    from gram.core.lexer.control import LexerState
+
+    LexerState.get_stack().note(message, note_type)
 
 
 # ==============================================================================
-# 1. CLASE KEYWORD Y CATÁLOGO GLOBAL
+# 1. KEYWORD CLASS
 # ==============================================================================
 
 class Keyword:
     """
-    ES:
-        Representa una palabra clave registrada en el lenguaje con metadatos asociados.
+    Represents a registered language keyword and its associated IDE/lexer metadata.
 
-        Atributos:
-            name (str): Identificador textual exacto de la palabra clave (ej. 'def', 'if').
-            hex_color (str): Color hexadecimal sugerido para resaltado de sintaxis.
-            group (str | None): Nombre del grupo lógico al que pertenece.
-            description (str): Documentación contextual de la palabra clave.
-
-    EN:
-        Represents a registered keyword in the language with associated metadata.
+    Attributes:
+        name (str): Exact lexeme string of the keyword (e.g., `'def'`, `'if'`).
+        hex_color (str): Suggested hex color for syntax highlighting.
+        group (str | None): Name of the logical `WordGroup` to which it belongs.
+        description (str): Short description of the keyword.
+        documentation (str): Extended documentation for hover/completion.
     """
+
+    __slots__ = ("name", "hex_color", "group", "description", "documentation")
 
     def __init__(
         self,
         name: str,
-        hex_color: str = '#FFFFFF',
+        hex_color: str = "#FFFFFF",
         group: str | WordGroup | None = None,
-        description: str = '',
-        documentation: str = ''
+        description: str = "",
+        documentation: str = "",
     ) -> None:
         if not name or not name.strip():
-            error.LexerError(
-                'KeywordInvalidName',
-                errors.KEYWORD_INVALID_NAME,
-                'El nombre de la palabra clave no puede estar vacío. Proporcione un identificador no vacío y sin espacios en blanco.',
+            errors.LexerError(
+                "KeywordInvalidName",
+                errors.LEXER_KEYWORD_INVALID_NAME,
+                "El nombre de la palabra clave no puede estar vacío.",
+                "Proporcione un identificador válido sin espacios en blanco.",
             ).raise_error()
 
         self.name: str = name.strip()
@@ -60,17 +64,25 @@ class Keyword:
         self.group: str | None = group_name
         self.description: str = description
         self.documentation: str = documentation
+        MAP_KEYWORDS[self.name] = self
 
-        if self.group is not None and not group_exists(self.group):
-            if config.LEXER_ADD_INFO:
-                _log_lexer_note(
-                    f'El grupo {self.group!r} no existe aún al registrar la palabra clave {self.name!r}.',
-                    'warn',
-                )
+        if self.group is None:
+            return
+
+        if not group_exists(self.group):
+            _log_lexer_note(
+                f"El grupo {self.group!r} no existe aún al registrar la palabra clave "
+                f"{self.name!r}. Créelo usando words.add_group.",
+                "warn",
+            )
+        else:
+            grp = group if isinstance(group, WordGroup) else get_group(self.group)
+            if grp is not None:
+                grp.add_keyword(self)
 
     @classmethod
     def count(cls) -> int:
-        """Devuelve el total de palabras clave registradas en el catálogo."""
+        """Return the total number of registered keywords in `MAP_KEYWORDS`."""
         return len(MAP_KEYWORDS)
 
     def __repr__(self) -> str:
@@ -90,237 +102,106 @@ class Keyword:
         return hash(self.name)
 
 
-# Tablas globales en memoria
-MAP_KEYWORDS: dict[str, Keyword] = {}
-
-
-def add_keyword(
-    name: str,
-    hex_color: str = '#FFFFFF',
-    group: str | WordGroup | None = None,
-    description: str = '',
-    documentation: str = '',
-    *,
-    allow_override: bool = False,
-) -> Keyword:
-    """
-    Registra una palabra clave en el catálogo global del lexer.
-
-    Args:
-        name: Nombre de la palabra clave.
-        hex_color: Color hexadecimal para resaltado.
-        group: Grupo lógico al que se asocia (nombre o instancia WordGroup).
-        description: Documentación de la palabra clave.
-        allow_override: Si es True, permite sobrescribir una keyword existente.
-
-    Returns:
-        La instancia Keyword registrada.
-    """
-    if not name or not name.strip():
-        error.LexerError(
-            'KeywordInvalidName',
-            errors.KEYWORD_INVALID_NAME,
-            'El nombre de la palabra clave no puede estar vacío.',
-        ).raise_error()
-
-    name = name.strip()
-
-    if name in MAP_KEYWORDS and not allow_override:
-        error.LexerError(
-            'KeywordAlreadyExists',
-            errors.KEYWORD_ALREADY_EXISTS,
-            f"La palabra clave {name!r} ya está registrada.",
-            "Use allow_override=True para reemplazarla o elija un nombre diferente.",
-        ).raise_error()
-
-    group_name = group.name if isinstance(group, WordGroup) else group
-
-    kw = Keyword(
-        name=name,
-        hex_color=hex_color,
-        group=group_name,
-        description=description,
-        documentation=documentation
-    )
-    MAP_KEYWORDS[name] = kw
-
-    # Si se especificó un grupo, sincronizar con el gestor de grupos
-    if group_name is not None:
-        grp = get_group(group_name)
-        if grp is None:
-            grp = add_group(group_name, allow_override=True)
-        grp.add_keyword(kw)
-
-    return kw
-
-
-def get_keyword(name: str, *, strict: bool = False) -> Keyword | None:
-    """
-    Obtiene una palabra clave por su nombre exacto.
-
-    Args:
-        name: Nombre a buscar.
-        strict: Si True, lanza LexerError si la palabra clave no existe.
-    """
-    kw = MAP_KEYWORDS.get(name)
-    if kw is None and strict:
-        error.LexerError(
-            'KeywordNotFound',
-            errors.KEYWORD_NOT_FOUND,
-            f"La palabra clave {name!r} no está registrada.",
-            "Verifique que la palabra clave haya sido registrada antes de consultarla con strict=True.",
-        ).raise_error()
-    return kw
-
-
-def keyword_exists(name: str) -> bool:
-    """Indica si una palabra clave está presente en el catálogo."""
-    return name in MAP_KEYWORDS
-
-
-def remove_keyword(name: str, *, strict: bool = False) -> Keyword | None:
-    """
-    Elimina una palabra clave del catálogo y de todos sus grupos asociados.
-    """
-    kw = MAP_KEYWORDS.pop(name, None)
-    if kw is None:
-        if strict:
-            error.LexerError(
-                'KeywordNotFound',
-                errors.KEYWORD_NOT_FOUND,
-                f"La palabra clave {name!r} no está registrada.",
-            ).raise_error()
-        return None
-
-    # Remover también de los grupos que la contengan
-    for grp in groups.all().values():
-        grp.remove_keyword(name)
-
-    return kw
-
-
-def all_keywords() -> list[Keyword]:
-    """Retorna una lista con todas las instancias de Keyword registradas."""
-    return list(MAP_KEYWORDS.values())
-
-
-def all_keyword_names() -> list[str]:
-    """Retorna una lista con todos los nombres de palabras clave registradas."""
-    return list(MAP_KEYWORDS.keys())
-
-
-def is_empty() -> bool:
-    """Indica si el catálogo de palabras clave está vacío."""
-    return len(MAP_KEYWORDS) == 0
-
-
-def count_keywords() -> int:
-    """Retorna el número de palabras clave registradas."""
-    return len(MAP_KEYWORDS)
-
-
 # ==============================================================================
-# 2. CLASE WORDGROUP Y GESTOR DE GRUPOS
+# 2. WORDGROUP CLASS & MANAGER
 # ==============================================================================
 
 class WordGroup:
     """
-    ES:
-        Representa un conjunto temático o semántico de palabras clave (ej. '$TYPES', '$CONTROL').
-        Solo admite asociar Keywords previamente registradas en el catálogo.
-
-    EN:
-        Represents a logical or semantic group of keywords (e.g. '$TYPES', '$CONTROL').
+    Represents a logical or semantic group of registered `Keyword` instances
+    (e.g., `'$TYPES'`, `'$CONTROL'`).
     """
+
+    __slots__ = ("name", "color_group", "description", "_keywords", "_lower_names")
 
     def __init__(
         self,
         name: str,
-        values: list[str | Keyword] | None = None,
-        color_group: str = '#FFA500',
-        description: str = '',
+        color_group: str = "#FFA500",
+        description: str = "",
     ) -> None:
         self.name: str = name
         self.color_group: str = color_group
         self.description: str = description
         self._keywords: dict[str, Keyword] = {}
-
-        if values:
-            for val in values:
-                self.add_keyword(val)
+        self._lower_names: set[str] = set()
 
     @property
     def values(self) -> list[str]:
-        """Lista de nombres de palabras clave en este grupo."""
+        """Return a list of all keyword names in this group."""
         return list(self._keywords.keys())
 
     @property
     def keywords_list(self) -> list[Keyword]:
-        """Lista de objetos Keyword contenidos en este grupo."""
+        """Return a list of all `Keyword` instances in this group."""
         return list(self._keywords.values())
 
     def contains(self, keyword_name: str) -> bool:
-        """Determina si una palabra clave forma parte del grupo (insensible a mayúsculas)."""
-        return keyword_name.lower() in {k.lower() for k in self._keywords}
+        """Return True if `keyword_name` belongs to this group (case-insensitive, $O(1)$)."""
+        return keyword_name.lower() in self._lower_names
 
-    def add_keyword(self, item: str | Keyword):
-        """
-        Añade una palabra clave al grupo. Debe existir previamente en el catálogo de keywords.
-        """
+    def add_keyword(self, item: str | Keyword) -> Keyword | None:
+        """Add a registered `Keyword` (or keyword name) to this group."""
         if isinstance(item, Keyword):
             name = item.name
             kw: Keyword | None = item
             if name not in MAP_KEYWORDS:
                 MAP_KEYWORDS[name] = item
         else:
-            name = item
+            name = str(item)
             kw = get_keyword(name)
 
         if kw is None:
-            if config.LEXER_ADD_ERROR:
-                _log_lexer_note(
-                    f'Intento de agregar palabra no registrada "{name}" al grupo "{self.name}"',
-                    'error',
-                )
-            error.LexerError(
-                f'WordgroupNotRegistered: {name!r}',
-                errors.WORDGROUP_KEYWORD_NOT_REGISTERED,
-                f'La palabra clave "{name}" debe registrarse previamente en el lexer antes de asociarla al grupo "{self.name}".',
+            _log_lexer_note(
+                f'Intento de agregar palabra no registrada "{name}" al grupo "{self.name}"',
+                "error",
+            )
+            errors.LexerError(
+                f"WordGroupKeywordNotRegistered: {name!r}",
+                errors.LEXER_WORDGROUP_KEYWORD_NOT_REGISTERED,
+                f'La palabra clave "{name}" debe registrarse previamente en el lexer '
+                f'antes de asociarla al grupo "{self.name}".',
             ).raise_error()
+            return None
 
-        elif kw.group is None:
+        if kw.group is None or kw.group == self.name:
             kw.group = self.name
-
             self._keywords[name] = kw
+            self._lower_names.add(name.lower())
             return kw
+        return None
 
     def remove_keyword(self, name: str) -> Keyword | None:
-        """Elimina una palabra clave del grupo."""
+        """Remove a keyword by name from this group."""
         kw = self._keywords.pop(name, None)
-        if kw is not None and kw.group == self.name:
-            kw.group = None
+        if kw is not None:
+            self._lower_names.discard(name.lower())
+            if kw.group == self.name:
+                kw.group = None
         return kw
 
     def count(self) -> int:
-        """Cantidad de palabras clave en el grupo."""
+        """Return the number of keywords in this group."""
         return len(self._keywords)
 
     def clear(self) -> None:
-        """Vacía el grupo."""
+        """Remove all keywords from this group."""
         self._keywords.clear()
+        self._lower_names.clear()
 
     def __repr__(self) -> str:
-        return f"WordGroup({self.name!r}, keywords={self.values}, color={self.color_group!r})"
+        return (
+            f"WordGroup({self.name!r}, keywords={self.values}, "
+            f"color={self.color_group!r})"
+        )
 
     def __contains__(self, item: str | Keyword) -> bool:
-        name = item.name if isinstance(item, Keyword) else item
+        name = item.name if isinstance(item, Keyword) else str(item)
         return self.contains(name)
 
 
 class WordGroupManager:
-    """
-    Administrador centralizado de grupos léxicos.
-    """
+    """Centralized registry and lifecycle manager for lexical `WordGroup` instances."""
 
     def __init__(self) -> None:
         self._groups: dict[str, WordGroup] = {}
@@ -328,89 +209,184 @@ class WordGroupManager:
     def create(
         self,
         name: str | WordGroup,
-        values: list[str | Keyword] | None = None,
-        color_group: str = '#FFA500',
-        description: str = '',
+        values: Iterable[str | Keyword] | None = None,
+        color_group: str = "#FFA500",
+        description: str = "",
         *,
         allow_override: bool = False,
     ) -> WordGroup:
-        """Crea y registra un nuevo grupo léxico."""
+        """Create and register a new lexical `WordGroup`."""
         group_name = name.name if isinstance(name, WordGroup) else str(name)
         if group_name in self._groups and not allow_override:
-            if config.LEXER_ADD_ERROR:
-                _log_lexer_note(f'El grupo {group_name!r} ya está registrado', 'error')
-            error.LexerError(
-                'GroupAlreadyExists',
-                errors.WORDGROUP_ALREADY_EXISTS,
-                f'El grupo de palabras clave "{group_name}" ya fue creado. Use allow_override=True para sobrescribirlo.',
+            _log_lexer_note(f"El grupo {group_name!r} ya está registrado", "error")
+            errors.LexerError(
+                "GroupAlreadyExists",
+                errors.LEXER_WORDGROUP_ALREADY_EXISTS,
+                f'El grupo de palabras clave "{group_name}" ya fue creado. '
+                "Use allow_override=True para sobrescribirlo.",
             ).raise_error()
 
-        group = WordGroup(
-            name=group_name,
-            values=values,
-            color_group=color_group,
-            description=description,
+        group = (
+            name
+            if isinstance(name, WordGroup)
+            else WordGroup(
+                name=group_name,
+                color_group=color_group,
+                description=description,
+            )
         )
         self._groups[group_name] = group
 
-        if config.LEXER_ADD_INFO:
-            _log_lexer_note(f'Grupo de palabras creado: {group_name!r}', 'success')
+        if values is not None:
+            for val in values:
+                group.add_keyword(val)
 
+        _log_lexer_note(f"Grupo de palabras creado: {group_name!r}", "success")
         return group
 
     def get(self, name: str | WordGroup, *, strict: bool = False) -> WordGroup | None:
-        """Obtiene un grupo por su nombre o instancia."""
-        group_name = name.name if isinstance(name, WordGroup) else name
+        """Retrieve a registered `WordGroup` by name or instance."""
+        group_name = name.name if isinstance(name, WordGroup) else str(name)
         group = self._groups.get(group_name)
         if group is None and strict:
-            if config.LEXER_ADD_ERROR:
-                _log_lexer_note(f'Grupo no encontrado: {group_name!r}', 'error')
-            error.LexerError(
-                'GroupNotFound',
-                errors.WORDGROUP_NOT_FOUND,
+            _log_lexer_note(f"Grupo no encontrado: {group_name!r}", "error")
+            errors.LexerError(
+                "GroupNotFound",
+                errors.LEXER_WORDGROUP_NOT_FOUND,
                 f'El grupo de palabras clave "{group_name}" no está registrado.',
             ).raise_error()
         return group
 
     def exists(self, name: str | WordGroup) -> bool:
-        """Indica si el grupo existe."""
-        group_name = name.name if isinstance(name, WordGroup) else name
+        """Return True if the specified group is registered."""
+        group_name = name.name if isinstance(name, WordGroup) else str(name)
         return group_name in self._groups
 
     def remove(self, name: str | WordGroup) -> WordGroup | None:
-        """Elimina un grupo."""
-        group_name = name.name if isinstance(name, WordGroup) else name
+        """Remove and return a registered `WordGroup`."""
+        group_name = name.name if isinstance(name, WordGroup) else str(name)
         return self._groups.pop(group_name, None)
 
     def all(self) -> dict[str, WordGroup]:
-        """Devuelve una copia del diccionario de grupos registrados."""
+        """Return a shallow copy of all registered groups."""
         return dict(self._groups)
 
     def all_names(self) -> list[str]:
-        """Devuelve los nombres de todos los grupos registrados."""
+        """Return a list of all registered group names."""
         return list(self._groups.keys())
 
     def clear(self) -> None:
-        """Limpia todos los grupos registrados."""
+        """Clear all registered groups."""
         self._groups.clear()
 
 
-# Instancia singleton del gestor de grupos
+# ==============================================================================
+# 3. GLOBAL CATALOG FUNCTIONS
+# ==============================================================================
+
 groups: WordGroupManager = WordGroupManager()
-"""
-Instancia singleton del gestor de grupos WordGroupManager
-"""
+
+
+def add_keyword(
+    name: str,
+    hex_color: str = "#FFFFFF",
+    group: str | WordGroup | None = None,
+    description: str = "",
+    documentation: str = "",
+    *,
+    allow_override: bool = False,
+) -> Keyword:
+    """Register a keyword in the global lexer catalog."""
+    if not name or not name.strip():
+        errors.LexerError(
+            "KeywordInvalidName",
+            errors.LEXER_KEYWORD_INVALID_NAME,
+            "El nombre de la palabra clave no puede estar vacío.",
+        ).raise_error()
+
+    clean_name = name.strip()
+    if clean_name in MAP_KEYWORDS and not allow_override:
+        errors.LexerError(
+            "KeywordAlreadyExists",
+            errors.LEXER_KEYWORD_ALREADY_EXISTS,
+            f"La palabra clave {clean_name!r} ya está registrada.",
+            "Use allow_override=True para reemplazarla o elija un nombre diferente.",
+        ).raise_error()
+
+    return Keyword(
+        name=clean_name,
+        hex_color=hex_color,
+        group=group,
+        description=description,
+        documentation=documentation,
+    )
+
+
+def get_keyword(name: str, *, strict: bool = False) -> Keyword | None:
+    """Retrieve a registered `Keyword` by exact name."""
+    kw = MAP_KEYWORDS.get(name)
+    if kw is None and strict:
+        errors.LexerError(
+            "KeywordNotFound",
+            errors.LEXER_KEYWORD_NOT_FOUND,
+            f"La palabra clave {name!r} no está registrada.",
+            "Verifique que la palabra clave haya sido registrada antes de consultarla con strict=True.",
+        ).raise_error()
+    return kw
+
+
+def keyword_exists(name: str) -> bool:
+    """Return True if `name` is registered in `MAP_KEYWORDS`."""
+    return name in MAP_KEYWORDS
+
+
+def remove_keyword(name: str, *, strict: bool = False) -> Keyword | None:
+    """Remove a keyword from the global catalog and any associated `WordGroup`."""
+    kw = MAP_KEYWORDS.pop(name, None)
+    if kw is None:
+        if strict:
+            errors.LexerError(
+                "KeywordNotFound",
+                errors.LEXER_KEYWORD_NOT_FOUND,
+                f"La palabra clave {name!r} no está registrada.",
+            ).raise_error()
+        return None
+
+    for grp in groups.all().values():
+        grp.remove_keyword(name)
+
+    return kw
+
+
+def all_keywords() -> list[Keyword]:
+    """Return a list of all registered `Keyword` instances."""
+    return list(MAP_KEYWORDS.values())
+
+
+def all_keyword_names() -> list[str]:
+    """Return a list of all registered keyword names."""
+    return list(MAP_KEYWORDS.keys())
+
+
+def is_empty() -> bool:
+    """Return True if no keywords are registered in `MAP_KEYWORDS`."""
+    return len(MAP_KEYWORDS) == 0
+
+
+def count_keywords() -> int:
+    """Return the number of registered keywords."""
+    return len(MAP_KEYWORDS)
 
 
 def add_group(
     name: str | WordGroup,
-    values: list[str | Keyword] | None = None,
-    color_group: str = '#FFA500',
-    description: str = '',
+    values: Iterable[str | Keyword] | None = None,
+    color_group: str = "#FFA500",
+    description: str = "",
     *,
     allow_override: bool = False,
 ) -> WordGroup:
-    """Crea y registra un nuevo grupo de palabras clave."""
+    """Create and register a new `WordGroup`."""
     return groups.create(
         name=name,
         values=values,
@@ -421,19 +397,18 @@ def add_group(
 
 
 def get_group(name: str | WordGroup, *, strict: bool = False) -> WordGroup | None:
-    """Obtiene un grupo por nombre."""
+    """Retrieve a `WordGroup` by name or instance."""
     return groups.get(name, strict=strict)
 
 
 def group_exists(name: str | WordGroup) -> bool:
-    """Indica si un grupo está registrado."""
+    """Return True if the specified group exists."""
     return groups.exists(name)
 
 
 def remove_group(name: str | WordGroup) -> WordGroup | None:
-    """Elimina un grupo registrado."""
-    group_name = name.name if isinstance(name, WordGroup) else name
-    grp = groups.remove(group_name)
+    """Remove a registered `WordGroup` and clear its group reference on member keywords."""
+    grp = groups.remove(name)
     if grp is not None:
         for kw in grp.keywords_list:
             if kw.group == grp.name:
@@ -442,17 +417,17 @@ def remove_group(name: str | WordGroup) -> WordGroup | None:
 
 
 def all_groups() -> dict[str, WordGroup]:
-    """Retorna todos los grupos registrados."""
+    """Return all registered `WordGroup` instances."""
     return groups.all()
 
 
 def all_group_names() -> list[str]:
-    """Retorna los nombres de todos los grupos registrados."""
+    """Return all registered group names."""
     return groups.all_names()
 
 
 def exists_in_group(keyword_name: str | Keyword, group_name: str | WordGroup) -> bool:
-    """Comprueba si una palabra clave pertenece a un grupo específico."""
+    """Return True if `keyword_name` belongs to `group_name`."""
     grp = get_group(group_name)
     if grp is None:
         return False
@@ -461,37 +436,30 @@ def exists_in_group(keyword_name: str | Keyword, group_name: str | WordGroup) ->
 
 
 def clear_all() -> None:
-    """
-    Restablece y vacía completamente el catálogo de palabras clave y el registro de grupos.
-    Indispensable para aislamiento en pruebas unitarias.
-    """
+    """Reset and clear all registered keywords and word groups."""
     MAP_KEYWORDS.clear()
     groups.clear()
 
 
 __all__ = [
-    # Clases
-    'Keyword',
-    'WordGroup',
-    'WordGroupManager',
-    'groups',
-    # Operaciones de Keywords
-    'add_keyword',
-    'get_keyword',
-    'keyword_exists',
-    'remove_keyword',
-    'all_keywords',
-    'all_keyword_names',
-    'is_empty',
-    'count_keywords',
-    # Operaciones de Grupos
-    'add_group',
-    'get_group',
-    'group_exists',
-    'remove_group',
-    'all_groups',
-    'all_group_names',
-    'exists_in_group',
-    # Utilidad Global
-    'clear_all',
+    "Keyword",
+    "WordGroup",
+    "WordGroupManager",
+    "add_group",
+    "add_keyword",
+    "all_group_names",
+    "all_groups",
+    "all_keyword_names",
+    "all_keywords",
+    "clear_all",
+    "count_keywords",
+    "exists_in_group",
+    "get_group",
+    "get_keyword",
+    "group_exists",
+    "groups",
+    "is_empty",
+    "keyword_exists",
+    "remove_group",
+    "remove_keyword",
 ]

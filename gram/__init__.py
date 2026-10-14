@@ -14,91 +14,8 @@ Exporta los componentes esenciales del framework para acceso directo:
 from __future__ import annotations
 
 # Submódulos del sistema
-from gram import cachesystem, cli, config, core, environment, errors, native, plugins, utilities, vsix
-
-# Subpaquetes principales de core
+from gram import config, errors, utilities
 from gram.core import ast, combinators, lexer, parser
-
-# Motor Léxico
-from gram.core.lexer import (
-    CustomToken,
-    Keyword,
-    Lexer,
-    Token,
-    TokenType,
-    words,
-)
-
-# Motor de Parsing
-from gram.core.parser import (
-    Checkpoint,
-    ParseControl,
-    Parser,
-)
-
-# Árbol de Sintaxis Abstracta (AST) y Telemetría
-from gram.core.ast import (
-    ASTAnalyzer,
-    ASTNode,
-    ASTProgram,
-    ExprResult,
-    Identifier,
-    generate_file_tree,
-)
-from gram.core.watcher import Watcher
-
-# Combinadores Sintácticos y Reglas
-from gram.core.combinators import (
-    BLOCK,
-    DECLARATION,
-    DOCSTRING,
-    ENDLINE,
-    HEXADECIMAL,
-    INDENT_BLOCK,
-    PASS,
-    PROGRAM,
-    AbortFlowSignal,
-    Alt,
-    Alternative,
-    AnyGrammar,
-    AutoCode,
-    BacktrackSignal,
-    Bracketed,
-    BreakFlowSignal,
-    Combinator,
-    ControlFlowSignal,
-    CutFlowSignal,
-    Enclosed,
-    Item,
-    Literal,
-    Many,
-    MatchGroup,
-    MatchKeyword,
-    MatchSeqSymbol,
-    MatchSymbol,
-    MatchToken,
-    Opt,
-    Optional,
-    Query,
-    Ref,
-    Reference,
-    RuleItem,
-    RuleMeta,
-    RuleType,
-    Sep,
-    Separator,
-    Seq,
-    Sequence,
-    SetCode,
-    SkipFlowSignal,
-    Some,
-    Tokenize,
-    create_rule,
-    query,
-)
-
-
-# Orquestación de Alto Nivel
 from gram.core.process import (
     process,
 )
@@ -116,91 +33,13 @@ __all__ = [
     # Metadatos
     "__version__",
     "__version_info__",
-    "version",
-    # Módulos y submódulos
-    "cachesystem",
-    "cli",
-    "config",
-    "core",
-    "environment",
-    "errors",
-    "glang",
-    "native",
-    "plugins",
-    "utilities",
-    "vsix",
     "ast",
     "combinators",
+    "config",
+    "errors",
     "lexer",
     "parser",
-    # Léxico
-    "Lexer",
-    "Token",
-    "TokenType",
-    "CustomToken",
-    "words",
-    "Keyword",
-    # Parsing
-    "Parser",
-    "Checkpoint",
-    "ParseControl",
-    # AST
-    "ASTAnalyzer",
-    "ASTNode",
-    "ASTProgram",
-    "ExprResult",
-    "Identifier",
-    "generate_file_tree",
-    "Watcher",
-    # Combinadores y Reglas
-    "AutoCode",
-    "RuleItem",
-    "RuleMeta",
-    "RuleType",
-    "SetCode",
-    "Combinator",
-    "Seq",
-    "Sequence",
-    "Alt",
-    "Alternative",
-    "Many",
-    "Some",
-    "Opt",
-    "Optional",
-    "Sep",
-    "Separator",
-    "Enclosed",
-    "Bracketed",
-    "Item",
-    "Literal",
-    "MatchToken",
-    "MatchKeyword",
-    "MatchSymbol",
-    "MatchGroup",
-    "MatchSeqSymbol",
-    "Ref",
-    "Reference",
-    "Tokenize",
-    "Query",
-    "query",
-    "AnyGrammar",
-    # Gramáticas por defecto
-    "PROGRAM",
-    "DECLARATION",
-    "BLOCK",
-    "INDENT_BLOCK",
-    "PASS",
-    "ENDLINE",
-    "HEXADECIMAL",
-    "DOCSTRING",
-    "create_rule",
-    # Señales de flujo
-    "ControlFlowSignal",
-    "BacktrackSignal",
-    "CutFlowSignal",
-    "SkipFlowSignal",
-    "BreakFlowSignal",
-    "AbortFlowSignal",
-    # Orquestación de Alto Nivel
     "process",
+    "utilities",
+    "version"
 ]

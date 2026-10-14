@@ -1,36 +1,32 @@
 """
-Combinador Tokenize (`gram.core.combinators.tokenize`).
-======================================================
-Proporciona el combinador `Tokenize` para agrupar secuencias sintácticas
-y fusionar los tokens coincidentes en un único `TokenType` con `CustomToken`,
-permitiendo sintetizar literales compuestos (como prefijos, sufijos o identificadores extendidos).
+Tokenize Combinator (`gram.core.combinators.tokenize`).
+=======================================================
+Provides the `Tokenize` combinator to evaluate an ordered sequence of child
+combinators and fuse all matched tokens into a single `TokenType` backed by
+a `CustomToken` instance.
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.optional import OptResult
 from gram.core.combinators.sequence import Seq
 from gram.core.lexer.tokens import CustomToken, TokenType
-from gram.utilities import error
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.parser.core import Parser
 
 
 class Tokenize(Combinator):
     """
-    ES:
-        Combinador que ejecuta una secuencia y consolida todos los tokens
-        coincidentes en un único TokenType de tipo CustomToken.
-        Evita que sub-reglas léxicas compuestas se conviertan en ramas hijas separadas en el AST.
+    Combinator that evaluates a child sequence and consolidates all matched
+    tokens into a single `TokenType` with a synthesized `CustomToken`.
 
-    EN:
-        Combinator fusing tokens matched by an inner sequence into a single CustomToken TokenType.
+    Prevents composite lexical sub-rules (such as prefixed literals or
+    multi-symbol operators) from expanding into separate child branches in the AST.
     """
+
     header_class: bool = True
 
     def __init__(
@@ -41,133 +37,119 @@ class Tokenize(Combinator):
         join_char: str = "",
     ) -> None:
         """
-        Inicializa el sintetizador de token combinado.
+        Initialize the composite token synthesizer.
 
         Args:
-            *combinators: Combinadores cuya secuencia producirá los componentes léxicos.
-            token_name: Nombre del token personalizado sintetizado.
-            name: Sobrescritura opcional de token_name.
-            join_char: Carácter de unión entre los valores textuales de los tokens (por defecto "").
-
-        Raises:
-            ParserError: Si no se proporciona al menos un combinador.
+            *combinators (Combinator): Sequence of combinators producing lexical tokens.
+            token_name (str): Default name for the synthesized `CustomToken`.
+            name (str | None): Optional override for `token_name`.
+            join_char (str): Delimiter string used to join matched token lexemes.
         """
-        self.header_class: bool = True
+        super().__init__()
         if not combinators:
-            error.ParserError(
-                "Tokenize requiere al menos un combinador.",
-                errors.TOKENIZE_EMPTY_COMBINATORS,
+            errors.GrammarError(
+                "EmptyTokenizeCombinators",
+                errors.GRAMMAR_TOKENIZE_EMPTY_COMBINATORS,
+                "El combinador Tokenize requiere al menos un combinador hijo.",
+                "Proporcione uno o más combinadores dentro de Tokenize(...).",
             ).raise_error()
 
-        self.combinators: tuple[Combinator, ...] = combinators
+        self.combinators: tuple[Combinator, ...] = tuple(combinators)
         self.token_name: str = name if name is not None else token_name
         self.join_char: str = join_char
         self._seq: Seq = Seq(*combinators)
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> TokenType | None:
+    def parse(self, analyzer: ASTAnalyzer) -> TokenType | None:
         """
-        Ejecuta la secuencia y fusiona los tokens resultantes en un único TokenType.
+        Evaluate the internal sequence and merge all resulting tokens into
+        a single `TokenType`.
 
         Args:
-            analyzer: Analizador sintáctico o parser activo.
-            current: Token actual posicionado o None.
-            ignore_errors: Si True, suprime errores sintácticos.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            TokenType whose token is a CustomToken, or None if the sequence failed.
-            TokenType cuyo tipo es CustomToken, o None si falló la secuencia.
+            TokenType | None: Synthesized `TokenType` with a `CustomToken` type,
+            or `None` if the underlying sequence fails to match.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
-
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"Tokenize iniciado con {len(self.combinators)} combinadores para {self.token_name}",
-                "normal",
-            )
-
-        checkpoint = parser.savepoint(node=target_node)
-
-        try:
-            result = self._seq.parse(
-                analyzer,
-                current,
-                ignore_errors=ignore_errors,
-            )
-        except error.ParserError:
-            parser.restore(checkpoint, node=target_node)
-            raise
-
-        if result is None:
-            parser.restore(checkpoint, node=target_node)
-            return None
-
-        tokens: list[TokenType] = []
-        try:
-            self._collect_tokens(result, tokens)
-        except TypeError:
-            parser.restore(checkpoint, node=target_node)
-            raise
-
-        if not tokens:
-            parser.restore(checkpoint, node=target_node)
-            return None
-
-        parts: list[str] = []
-        for t in tokens:
-            if t.value is not None:
-                parts.append(str(t.value))
-            else:
-                parts.append(str(t.token.name))
-
-        combined_value = self.join_char.join(parts)
-        first_tok = tokens[0]
-
-        custom_type = CustomToken(name=self.token_name, value=combined_value)
-        tok_line = max(0, first_tok.line - 1) if first_tok.line > 0 else 0
-        tok_col = first_tok.col
-
-        token_result = TokenType(
-            token=custom_type,
-            value=combined_value,
-            line=tok_line,
-            col=tok_col,
+        parser = analyzer.parser
+        father = parser.node(
+            "ProcessingTokenize", "Procesando tokenize", set_target=True
+        )
+        father.note(
+            f"Tokenize iniciado con {len(self.combinators)} combinadores para {self.token_name}",
+            "normal",
         )
 
-        if config.PARSER_ADD_INFO:
-            target_node.note(
+        checkpoint = parser.savepoint("TOKENIZE-Analysis")
+
+        try:
+            try:
+                result = analyzer.visitor(self._seq)
+            except errors.Error:
+                parser.restore(checkpoint)
+                raise
+
+            if result is None:
+                parser.restore(checkpoint)
+                return None
+
+            tokens: list[TokenType] = []
+            try:
+                self._collect_tokens(result, tokens)
+            except TypeError as exc:
+                parser.restore(checkpoint)
+                analyzer.report_error(
+                    errors.GrammarError(
+                        "InvalidTokenizeElement",
+                        errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                        str(exc),
+                        "Asegúrese de que todos los combinadores dentro de Tokenize devuelvan tokens.",
+                    )
+                )
+                return None
+
+            if not tokens:
+                parser.restore(checkpoint)
+                return None
+
+            parts: list[str] = [
+                str(t.value) if t.value is not None else str(t.token.name)
+                for t in tokens
+            ]
+            combined_value = self.join_char.join(parts)
+            first_tok = tokens[0]
+
+            custom_type = CustomToken(name=self.token_name, value=combined_value)
+            token_result = TokenType(
+                token=custom_type,
+                value=combined_value,
+                line=first_tok.line,
+                col=first_tok.col,
+            )
+
+            father.note(
                 f"Tokenize ({self.token_name}) exitoso -> valor={combined_value!r}",
                 "success",
             )
-
-        return token_result
+            return token_result
+        finally:
+            parser.down()
 
     def _collect_tokens(self, item: Any, out: list[TokenType]) -> None:
-        """Collect tokens from the explicit result types supported by Tokenize."""
+        """Recursively extract `TokenType` instances from nested sequence results."""
         if item is None:
             return
         if isinstance(item, TokenType):
             out.append(item)
-        elif isinstance(item, OptResult):
-            if item.matched:
-                self._collect_tokens(item.value, out)
         elif isinstance(item, (list, tuple)):
             for sub in item:
                 self._collect_tokens(sub, out)
+        elif hasattr(item, "token") and isinstance(item.token, TokenType):
+            out.append(item.token)
         else:
-            from gram.core.ast.nodes import ASTNode
-
-            if isinstance(item, ASTNode):
-                out.extend(item.collect_tokens())
-                return
             raise TypeError(
                 f"Tokenize solo puede fusionar resultados de tokens; "
-                f"recibió {type(item).__name__}."
+                f"se recibió '{type(item).__name__}'."
             )
 
     def __repr__(self) -> str:

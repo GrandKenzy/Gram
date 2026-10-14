@@ -1,193 +1,130 @@
 """
-EN:
-    Sequence Combinator (`gram.core.combinators.sequence`).
-    =======================================================
-    Concatenates multiple syntactic combinators in strict ordered succession.
-    All combinators must match for the sequence to succeed; if any element fails,
-    parser position is restored atomically to savepoint and results are discarded.
-
-ES:
-    Combinador de Secuencia (`gram.core.combinators.sequence`).
-    ===========================================================
-    Concatena múltiples combinadores sintácticos en orden estricto.
-    Todos los combinadores deben coincidir para que la secuencia sea exitosa;
-    si alguno falla, se restaura atómicamente la posición del parser y se descartan los resultados.
+Sequence Combinator (`gram.core.combinators.sequence`).
+=======================================================
+Concatenates multiple syntactic combinators in strict sequential order.
+All child combinators must match for the sequence to succeed; if any element
+fails, the parser state is atomically restored to the initial savepoint while
+preserving the deepest atomic failure position.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.optional import OptResult
 from gram.core.combinators.signals import BreakFlowSignal, SkipFlowSignal
-from gram.utilities import error
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.lexer.tokens import TokenType
-    from gram.core.parser.core import Parser
 
 
 class Seq(Combinator):
     """
-    EN:
-        Strict ordered sequence combinator.
-        Executes a sequence of combinators in strict order against the token stream.
-        All elements must match. If any element fails, the parser state is restored
-        atomically to the savepoint prior to sequence initiation.
+    Strict ordered sequence combinator.
 
-    ES:
-        Combinador de secuencia ordenada.
-        Ejecuta una lista de combinadores en orden estricto contra el flujo de tokens.
-        Todos deben coincidir. Si cualquiera falla, la secuencia retrocede
-        atómicamente el parser al estado previo al inicio de la secuencia.
+    Evaluates a tuple of child combinators in sequential order against the
+    token stream. If any child combinator fails to match, the parser cursor
+    and diagnostic target stack are atomically restored to the initial savepoint.
     """
+
     header_class: bool = True
 
     def __init__(self, *combinators: Combinator) -> None:
         """
-        EN: Initialize sequence with child combinators.
-        ES: Inicializa la secuencia con los combinadores hijos dados.
+        Initialize the sequence combinator with one or more child combinators.
 
         Args:
-            *combinators: One or more combinators to execute in sequential succession.
-                          Uno o más combinadores a ejecutar secuencialmente.
-
-        Raises:
-            ParserError: If no child combinator is provided.
-                         Si no se proporciona ningún combinador.
+            *combinators (Combinator): Combinators to evaluate in strict order.
         """
-        self.header_class: bool = True
+        super().__init__()
         if not combinators:
-            error.ParserError(
-                "Secuencia vacía",
-                errors.COMBINATOR_FAILED,
+            errors.GrammarError(
+                "EmptySequence",
+                errors.GRAMMAR_COMBINATOR_FAILED,
                 "La secuencia Seq() requiere al menos un combinador.",
+                "Proporcione uno o más combinadores dentro de Seq(...).",
             ).raise_error()
 
         self.combinators: tuple[Combinator, ...] = tuple(combinators)
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> list[Any] | None:
+    def parse(self, analyzer: ASTAnalyzer) -> list[Any] | None:
         """
-        EN: Parse token stream by executing each combinator in strict succession.
-        ES: Analiza el flujo de tokens ejecutando cada combinador en orden estricto.
+        Parse the token stream by evaluating each child combinator in succession.
 
         Args:
-            analyzer: Active syntax analyzer or Parser instance.
-                      Instancia del analizador sintáctico o parser.
-            current: Current token available under cursor or None.
-                     Token actual disponible en la posición inicial o None.
-            ignore_errors: If True, suppress syntax error exceptions on match failure.
-                           Si True, no levanta excepciones ante fallos de coincidencia.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            List of element match results on success, or None on failure.
-            Lista con los resultados de cada combinador si tuvo éxito, o None si falló.
+            list[Any] | None: List of results from each child combinator on success,
+            or `None` if any element in the sequence fails to match.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
-
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"SEQ iniciado con {len(self.combinators)} combinadores",
-                "Normal",
-            )
-
-        checkpoint = parser.savepoint(node=target_node)
+        parser = analyzer.parser
+        father = parser.node(
+            "ProcessingSequence",
+            "Procesando secuencia de combinadores",
+            set_target=True,
+        )
+        father.note(
+            f"Procesando SEQ con {len(self.combinators)} combinadores", "normal"
+        )
+        checkpoint = parser.savepoint("SEQ-Analysis")
         results: list[Any] = []
-
-        watcher = analyzer.watcher
-        if watcher:
-            watcher.enter_sequence(self, len(self.combinators))
 
         try:
             for index, combinator in enumerate(self.combinators, start=1):
-                if watcher:
-                    watcher.step_sequence(index)
-
-                # El primer combinador puede recibir current; los siguientes consumen del parser
-                active_token = current if index == 1 else None
-
+                father.note(
+                    f"Procesando combinador No. {index}: {combinator.type()}",
+                    "normal",
+                )
                 try:
-                    res = self._dispatch_sub(
-                        combinator,
-                        analyzer,
-                        active_token,
-                        ignore_errors=ignore_errors,
-                    )
+                    response = analyzer.visitor(combinator)
                 except (SkipFlowSignal, BreakFlowSignal):
-                    if config.PARSER_ADD_INFO:
-                        target_node.note(
-                            f"Señal de interrupción en paso {index} de secuencia; finalizando temprano.",
-                            "Advice",
-                        )
-                    return results
+                    father.note(
+                        f"Señal de corte temprano recibida en el elemento {index} de SEQ.",
+                        "advice",
+                    )
+                    break
 
-                if res is None:
-                    parser.restore(checkpoint, node=target_node)
+                if response is None:
+                    failed_pos = parser.pos
+                    curr_tok = parser.peek() if not parser.empty() else None
+                    tok_info = (
+                        f" en línea {curr_tok.line}, columna {curr_tok.col} ({curr_tok.token.name})"
+                        if curr_tok is not None
+                        else ""
+                    )
+                    father.note(
+                        f"Abortado: el elemento {index} ({combinator!r}) no coincidió",
+                        "advice",
+                    )
+                    parser.restore(checkpoint)
 
-                    if config.PARSER_ADD_INFO:
-                        target_node.note(
-                            f"SEQ abortado: el elemento {index} ({combinator!r}) no coincidió",
-                            "Warn",
-                        )
-
-                    if not ignore_errors:
-                        failure_context = self._failure_context(analyzer)
-                        curr_tok = parser.peek()
-                        tok_info = (
-                            ""
-                            if failure_context
-                            else f" en {curr_tok}" if curr_tok else ""
-                        )
-                        caution = (
-                            f"Fallo en elemento {index} de secuencia "
-                            f"Seq({combinator!r}){tok_info}.",
-                        )
-                        if failure_context:
-                            caution += (failure_context,)
-                        error.ParserError(
-                            "Fallo en secuencia",
-                            errors.COMBINATOR_FAILED,
-                            *caution,
-                        ).raise_error()
-
+                    fallback = errors.GrammarError(
+                        "SequenceElementMismatch",
+                        errors.GRAMMAR_COMBINATOR_FAILED,
+                        f"Secuencia sintáctica incompleta{tok_info}.",
+                        f"El elemento No. {index} ({combinator!r}) no coincidió con la secuencia esperada.",
+                    )
+                    if analyzer.safe_flag:
+                        analyzer.report_error(fallback, pos=failed_pos)
+                    else:
+                        analyzer.flush_failure(fallback=fallback)
                     return None
 
-                if isinstance(res, OptResult):
-                    results.append(res.value if res.matched else None)
-                else:
-                    results.append(res)
+                results.append(response)
+                analyzer.discard_staged_failure(min_weight=parser.pos)
 
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"SEQ completado correctamente ({len(self.combinators)} elementos)",
-                    "Success",
-                )
-
+            father.note("Secuencia completada correctamente.", "success")
             return results
-
-        except error.ParserError:
-            parser.restore(checkpoint, node=target_node)
-            raise
         finally:
-            if watcher:
-                watcher.exit_sequence()
+            parser.down()
 
     def items(self) -> tuple[Combinator, ...]:
-        """
-        EN: Return child combinators that comprise this sequence.
-        ES: Retorna los combinadores que integran la secuencia.
-        """
+        """Return the tuple of child combinators comprising this sequence."""
         return self.combinators
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Combinator]:
         return iter(self.combinators)
 
     def __len__(self) -> int:
@@ -198,8 +135,6 @@ class Seq(Combinator):
         return f"Seq({items})"
 
 
-# Alias canónico
 Sequence = Seq
-
 
 __all__ = ["Seq", "Sequence"]

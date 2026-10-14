@@ -1,591 +1,63 @@
 """
-Gram Syntactic Parser (`gram.core.parser.core`).
-================================================
-EN:
-    Implements a decoupled, clean, and ergonomic parser engine focused on
-    validated token consumption and grammar execution, delegating navigation,
-    transactions, backtracking, lookahead, and telemetry to `ParseControl`.
-
-ES:
-    Implementa el motor de análisis sintáctico desacoplado, limpio y enfocado
-    en el consumo validado de tokens, delegando la navegación, transacciones,
-    backtracking, lookahead y reporte de telemetría a una instancia de `ParseControl`.
+Core Parser Engine (`gram.core.parser.core`).
+=============================================
+Defines the high-level `Parser` entry class that binds a lexed token stream
+to `ParseState` and delegates grammatical evaluation to `ASTAnalyzer`.
 """
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, contextmanager
-from typing import TYPE_CHECKING, Any, Generator, Sequence
+from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
-from gram.core.lexer.tokens import CustomToken, Token
-from gram.core.parser.control import ParseControl
-from gram.utilities import Format, info
+from gram import errors
+from gram.core.ast import ASTAnalyzer
+from gram.core.parser.control import ParseState
 
 if TYPE_CHECKING:
-    from gram.errors import coderr as CodeError
-    from gram.core.lexer.items import TokenStream
-    from gram.core.lexer.tokens import TokenType
-    from gram.core.parser.checkpoint import Checkpoint
-    from gram.utilities import error
-    from gram.utilities.info import Node as InfoNode, StackInfo
+    from gram.core.combinators import RuleItem
+    from gram.core.lexer import TokenType
 
 
-
-class Parser:
+class Parser(ParseState):
     """
-    EN:
-        Main parser for the Gram Framework.
-        Provides an ergonomic interface for token consumption and grammar parsing,
-        modularly delegating cursors, lookahead, backtracking, and telemetry
-        to its `ParseControl` component.
-
-    ES:
-        Analizador sintáctico principal de Gram Framework.
-        Proporciona una interfaz ergonómica para el consumo de tokens y análisis de reglas,
-        delegando de forma modular la lógica de cursores, lookahead, backtracking
-        y enrutamiento de telemetría a su componente `ParseControl`.
+    Main syntactic parser managing token stream state and triggering AST analysis.
     """
 
-    _stack: info.StackInfo = info.StackInfo(
-        'parser-log',
-        'PARSER',
-        'Registro y diagnóstico del analizador sintáctico',
-        expose_nodes=True,
-        generate_log_file=config.PARSER_ADD_INFO and config.INFO_GENERATE_LOGFILE,
-        generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR
-    )
-    
-    @classmethod
-    def get_stack(cls):
-        return cls._stack
-    
-    @classmethod
-    def reset_stack(cls):
-        cls._stack: info.StackInfo = info.StackInfo(
-            'parser-log',
-            'PARSER',
-            'Registro y diagnóstico del analizador sintáctico',
-            expose_nodes=True,
-            generate_log_file=config.PARSER_ADD_INFO and config.INFO_GENERATE_LOGFILE,
-            generate_on_error=config.INFO_GENERATE_LOGFILE_ON_ERROR
-        )
-        
-    def __init__(
-        self,
-        tokens: TokenStream,
-    ) -> None:
+    def __init__(self, tokens: list[TokenType], log_file: str | None = None) -> None:
         """
-        EN: Initializes the syntactic parser with its token stream.
-        ES: Inicializa el analizador sintáctico con su flujo de tokens.
+        Initialize the parser with a list of lexed tokens.
 
         Args:
-            tokens: TokenStream to parse.
-   
+            tokens (list[TokenType]): Sequence of tokens produced by the lexer.
+            log_file (str | None): Optional log file path for diagnostic telemetry.
         """
-        self._control: ParseControl = ParseControl(tokens)
+        super().__init__(log_file)
+        self.tokens = tokens
 
-    # ==========================================================================
-    # CONTROLADOR Y PROPIEDADES DE ACCESO / CONTROLLER & ACCESS PROPERTIES
-    # ==========================================================================
-
-    @property
-    def control(self) -> ParseControl:
+    def parse(self, entrypoint: type[RuleItem]) -> Any:
         """
-        EN: Navigation, backtracking, and telemetry controller.
-        ES: Controlador de navegación, backtracking y telemetría.
-        """
-        return self._control
-
-    @property
-    def tokens(self) -> list[TokenType]:
-        """
-        EN: Analyzed token stream list.
-        ES: Flujo de tokens analizado.
-        """
-        return self._control.tokens
-
-    @tokens.setter
-    def tokens(self, value: Sequence[TokenType] | TokenStream) -> None:
-        self._control.tokens = value
-
-    @property
-    def pos(self) -> int:
-        """
-        EN: Current physical cursor index.
-        ES: Posición actual del cursor físico.
-        """
-        return self._control.pos
-
-    @pos.setter
-    def pos(self, value: int) -> None:
-        self._control.pos = value
-
-    @property
-    def virtual_pos(self) -> int:
-        """
-        EN: Current virtual speculative cursor index.
-        ES: Posición actual del cursor virtual.
-        """
-        return self._control.virtual_pos
-
-    @virtual_pos.setter
-    def virtual_pos(self, value: int) -> None:
-        self._control.virtual_pos = value
-
-    @property
-    def node(self) -> InfoNode:
-        """
-        EN: Active telemetry node in the controller.
-        ES: Nodo de telemetría activo en el controlador.
-        """
-        return self._control.node
-
-    @property
-    def stack(self) -> StackInfo:
-        """
-        EN: Active telemetry and error stack (StackInfo).
-        ES: Pila (StackInfo) de telemetría y errores activa en el analizador sintáctico.
-        """
-        return Parser._stack
-
-    @property
-    def errors(self) -> list[error.ParserError]:
-        """
-        EN: History of syntactic errors collected by the parser.
-        ES: Historial de errores sintácticos recolectados por el parser.
-        """
-        return self._control.errors
-
-    @property
-    def watcher(self) -> Any:
-        """
-        EN: Connected debugging/execution watcher.
-        ES: Observador/depurador conectado.
-        """
-        return self._control.watcher
-
-    @watcher.setter
-    def watcher(self, value: Any) -> None:
-        self._control.watcher = value
-
-    # ==========================================================================
-    # GESTIÓN Y REDIRECCIÓN DE TELEMETRÍA / TELEMETRY ROUTING
-    # ==========================================================================
-
-    def reset_node(self) -> None:
-        """
-        EN: Resets telemetry routing back to the default root node.
-        ES: Restablece el nodo de telemetría al nodo raíz por defecto.
-        """
-        self._control.reset_node()
-
-    def use_node(self, node: InfoNode | StackInfo) -> AbstractContextManager[InfoNode]:
-        """
-        EN: Context manager temporarily redirecting logs to a specific node.
-        ES: Context manager para enviar logs a un nodo o stack específico temporalmente.
-        """
-        return self._control.scoped_node(node)
-
-    def note(
-        self,
-        message: str,
-        note_type: Format.LogType = 'normal',
-        node: InfoNode | StackInfo | None = None,
-    ) -> None:
-        """
-        EN: Emits a diagnostic telemetry note through the controller.
-        ES: Emite una nota de telemetría a través del controlador.
-        """
-        self._control.note(message, note_type=note_type, node=node)
-
-    def fail(
-        self,
-        message: str,
-        code: CodeError,
-        *caution: str,
-        node: InfoNode | StackInfo | None = None,
-        raise_exception: bool = True,
-    ) -> error.ParserError:
-        """
-        EN: Emits and/or raises a structured syntactic error through the controller.
-        ES: Emite y/o levanta un error sintáctico a través del controlador.
-        """
-        return self._control.fail(
-            message,
-            code,
-            *caution,
-            node=node,
-            raise_exception=raise_exception,
-        )
-
-    # ==========================================================================
-    # CONSULTA Y ESTADO DEL FLUJO / STREAM STATUS & INSPECTION
-    # ==========================================================================
-
-    def count(self) -> int:
-        """
-        EN: Total count of tokens in the stream.
-        ES: Cantidad total de tokens en el flujo.
-        """
-        return self._control.count()
-
-    def remaining(self) -> int:
-        """
-        EN: Number of tokens remaining to be consumed.
-        ES: Cantidad de tokens pendientes de consumir.
-        """
-        return self._control.remaining()
-
-    def not_empty(self) -> bool:
-        """
-        EN: Indicates whether tokens are available at the physical cursor.
-        ES: Indica si hay tokens disponibles en el cursor físico.
-        """
-        return self._control.not_empty()
-
-    def virtual_not_empty(self) -> bool:
-        """
-        EN: Indicates whether tokens are available at the virtual cursor.
-        ES: Indica si hay tokens disponibles en el cursor virtual.
-        """
-        return self._control.virtual_not_empty()
-
-    def is_eof(self) -> bool:
-        """
-        EN: Indicates whether the physical cursor is at or beyond the EOF token.
-        ES: Indica si el cursor físico se encuentra en o más allá del token EOF.
-        """
-        return self._control.is_eof()
-
-    def current(self, node: InfoNode | None = None) -> TokenType:
-        """
-        EN: Returns the active token under the physical cursor without consuming it.
-        ES: Devuelve el token actual bajo el cursor físico sin consumirlo.
-
-        Raises:
-            ParserError: If no tokens are available (PARSER_EARLY_EOF).
-        """
-        if not self.not_empty():
-            self._control.fail(
-                "Fin inesperado del flujo de tokens",
-                errors.PARSER_EARLY_EOF,
-                "Se intentó inspeccionar el token actual pero no quedan tokens disponibles.",
-                node=node,
-            )
-        return self._control.tokens[self._control.pos]
-
-    # ==========================================================================
-    # CONSUMO DE TOKENS (FÍSICO) / TOKEN CONSUMPTION
-    # ==========================================================================
-
-    def consume(
-        self,
-        expected: Token | str | None = None,
-        node: InfoNode | None = None,
-    ) -> TokenType:
-        """
-        EN: Physically consumes the active token and advances the cursor by one position.
-            If `expected` is specified, validates that the consumed token matches.
-        ES: Consume físicamente el token actual y avanza el cursor real una posición.
-            Si se especifica `expected`, valida que el token consumido coincida con el tipo o valor.
+        Execute syntactic analysis starting from the given grammar entrypoint rule.
 
         Args:
-            expected: Expected Token enum type or string value.
-            node: Optional telemetry node.
+            entrypoint (type[RuleItem]): The root grammar rule class to evaluate.
 
         Returns:
-            TokenType: Consumed token.
-
-        Raises:
-            ParserError: If EOF is reached or token does not match expectation.
+            Any: The resulting AST or visitor output from `ASTAnalyzer.process()`.
         """
-        if not self.not_empty():
-            self._control.fail(
-                "Fin prematuro de entrada al intentar consumir token",
-                errors.PARSER_EARLY_EOF,
-                "Se esperaba consumir un token pero el flujo ha alcanzado el final del archivo.",
-                node=node,
-            )
-
-        token = self._control.tokens[self._control.pos]
-
-        if expected is not None:
-            matches_expected = (
-                token.token == expected
-                if isinstance(expected, Token)
-                else token.token.name == expected or str(token.value) == expected
-            )
-
-            if not matches_expected:
-                exp_name = expected.name if isinstance(expected, Token) else expected
-                self._control.fail(
-                    f"Token inesperado '{token.value}': se esperaba {exp_name}",
-                    errors.PARSER_UNEXPECTED_TOKEN,
-                    f"Encontrado {token.token.name} ({token.value!r}) en línea {token.line}, columna {token.col}.",
-                    node=node,
+        if not self.tokens:
+            self.error('Cannot start syntactic analysis: token stream is empty.')
+            self.report_error(
+                errors.ParserError(
+                    'ParserNotStarted',
+                    errors.PARSER_NOT_STARTED,
+                    'No se puede iniciar el análisis sintáctico porque la lista de tokens está vacía.',
+                    'Asegúrese de ejecutar el analizador léxico y pasar sus tokens al Parser.',
                 )
-
-        if config.PARSER_ADD_INFO:
-            self._control.note(
-                f"Consumiendo [{self._control.pos}]: {token.token.name} = {token.value!r}",
-                'normal',
-                node=node,
             )
-
-        self._control.advance(1)
-        self._control._skip_whitespace()
-
-        if self._control.watcher is not None:
-            self._control.watcher.update_token(token)
-
-        if config.PARSER_ADD_INFO:
-            self._control.note(
-                f"Cursor físico avanzado a posición {self._control.pos}",
-                'success',
-                node=node,
-            )
-
-        return token
-
-    def consume_if(
-        self,
-        *expected: Token | str,
-        node: InfoNode | None = None,
-    ) -> TokenType | None:
-        """
-        EN: Consumes current token only if it matches any of the expected types or values.
-            Otherwise leaves cursor unmoved and returns None.
-        ES: Consume el token actual solo si coincide con alguno de los tipos o valores provistos.
-            De lo contrario no mueve el cursor y retorna None.
-        """
-        if not self.not_empty():
             return None
 
-        curr = self._control.tokens[self._control.pos]
-        for exp in expected:
-            if isinstance(exp, Token) and curr.token == exp:
-                return self.consume(node=node)
-            if isinstance(exp, str) and (curr.token.name == exp or str(curr.value) == exp):
-                return self.consume(node=node)
-
-        return None
-
-    def advance(self, steps: int = 1) -> int:
-        """
-        EN: Advances the physical cursor by the specified step count and returns new position.
-        ES: Avanza el cursor físico la cantidad de pasos indicada y retorna la nueva posición.
-        """
-        return self._control.advance(steps)
-
-    # ==========================================================================
-    # GESTIÓN DE DELIMITADORES / BRACKET-AWARE MODE
-    # ==========================================================================
-
-    def enter_bracket(self) -> None:
-        """
-        EN: Enters open delimiter mode (suppresses NEWLINE, INDENT, DEDENT).
-        ES: Entra en modo de delimitador abierto (suprime NEWLINE, INDENT, DEDENT).
-        """
-        self._control.enter_bracket()
-
-    def exit_bracket(self) -> None:
-        """
-        EN: Exits open delimiter mode.
-        ES: Sale del modo de delimitador abierto.
-        """
-        self._control.exit_bracket()
-
-    @contextmanager
-    def bracket_context(self) -> Generator[None, None, None]:
-        """
-        EN: Context manager for delimited operations (parentheses, brackets, braces).
-            Guarantees exit_bracket() is called on block exit.
-        ES: Gestor de contexto para operaciones delimitadas (paréntesis, corchetes, llaves).
-            Garantiza que exit_bracket() sea invocado al salir del bloque.
-        """
-        self.enter_bracket()
-        try:
-            yield
-        finally:
-            self.exit_bracket()
-
-    # ==========================================================================
-    # DELEGACIONES ERGONÓMICAS HACIA PARSECONTROL / ERGONOMIC DELEGATIONS
-    # ==========================================================================
-
-    def peek(self, offset: int = 0) -> TokenType | None:
-        """
-        EN: Inspects token at relative offset without moving the physical cursor.
-        ES: Inspecciona token a distancia offset sin mover el cursor físico.
-        """
-        return self._control.peek(offset)
-
-    def peek_token(
-        self,
-        offset: int = 0,
-    ) -> Token | CustomToken | None:
-        """
-        EN: Inspects Token enum type at relative offset.
-        ES: Inspecciona tipo de token (Enum) a distancia offset.
-        """
-        return self._control.peek_token(offset)
-
-    def lookahead(self, count: int = 1) -> list[TokenType]:
-        """
-        EN: Retrieves upcoming `count` tokens without consuming them.
-        ES: Obtiene los siguientes `count` tokens sin consumirlos.
-        """
-        return self._control.lookahead(count)
-
-    def matches(
-        self,
-        *expected: Token | str,
-        offset: int = 0,
-    ) -> bool:
-        """
-        EN: Checks if token at relative offset matches any of the expected types.
-        ES: Verifica si el token en posición relativa coincide con los esperados.
-        """
-        return self._control.matches(*expected, offset=offset)
-
-    def slice(self, start: int, end: int) -> list[TokenType]:
-        """
-        EN: Slices an arbitrary range of tokens without altering parser state.
-        ES: Extrae un rango arbitrario de tokens sin alterar el estado.
-        """
-        return self._control.slice(start=start, end=end)
-
-    def savepoint(self, node: InfoNode | None = None) -> Checkpoint:
-        """
-        EN: Creates an immutable snapshot checkpoint of the current state.
-        ES: Crea una instantánea inmutable del estado actual.
-        """
-        return self._control.savepoint(node=node)
-
-    def restore(
-        self,
-        checkpoint: Checkpoint | int,
-        node: InfoNode | None = None,
-    ) -> None:
-        """
-        EN: Restores cursors to the given savepoint checkpoint or integer index.
-        ES: Restaura los cursores al punto de guardado o posición indicada.
-        """
-        self._control.restore(checkpoint=checkpoint, node=node)
-
-    def transaction(
-        self,
-        node: InfoNode | None = None,
-    ) -> AbstractContextManager[Checkpoint]:
-        """
-        EN: Context manager for atomic operations with automatic rollback on failure.
-        ES: Context manager para operaciones atómicas con rollback automático ante fallo.
-        """
-        return self._control.transaction(node=node)
-
-    def future(self, node: InfoNode | None = None) -> TokenType | None:
-        """
-        EN: Reads token under virtual cursor and advances virtual cursor.
-        ES: Obtiene token bajo cursor virtual y avanza cursor virtual.
-        """
-        return self._control.future(node=node)
-
-    def peek_virtual(self, offset: int = 0) -> TokenType | None:
-        """
-        EN: Inspects token relative to the virtual cursor without moving it.
-        ES: Inspecciona relativo al cursor virtual sin moverlo.
-        """
-        return self._control.peek_virtual(offset)
-
-    def set_virtual_token(self, pos: int, node: InfoNode | None = None) -> int:
-        """
-        EN: Manually positions the virtual speculative cursor.
-        ES: Ajusta manualmente la posición del cursor virtual.
-        """
-        return self._control.set_virtual_token(pos=pos, node=node)
-
-    def reset_virtual(self, node: InfoNode | None = None) -> None:
-        """
-        EN: Resets virtual cursor, resynchronizing it with the physical cursor.
-        ES: Restablece el cursor virtual sincronizándolo con el físico.
-        """
-        self._control.reset_virtual(node=node)
-
-    def rollback(self, node: InfoNode | None = None) -> None:
-        """
-        EN: Alias to discard virtual speculative exploration.
-        ES: Alias para descartar la exploración virtual.
-        """
-        self._control.rollback(node=node)
-
-    def commit(self, node: InfoNode | None = None) -> list[TokenType]:
-        """
-        EN: Commits virtual exploration, advancing physical cursor to match virtual.
-        ES: Sincroniza cursor físico con virtual consumiendo físicamente los explorados.
-        """
-        return self._control.commit(node=node)
-
-    def quit(self, tok: Token, node: InfoNode | None = None) -> int:
-        """
-        EN: Removes tokens of the specified type and readjusts cursors.
-        ES: Elimina tokens del tipo especificado y reajusta cursores.
-        """
-        return self._control.quit(tok=tok, node=node)
-
-    def synchronize(
-        self,
-        sync_tokens: tuple[Token, ...] | None = None,
-        node: InfoNode | None = None,
-    ) -> list[TokenType]:
-        """
-        EN: Discards tokens until encountering a designated synchronization barrier token.
-        ES: Descarta tokens hasta un delimitador de sincronización seguro.
-        """
-        return self._control.synchronize(sync_tokens=sync_tokens, node=node)
-
-    # ==========================================================================
-    # EJECUCIÓN PRINCIPAL DE PARSING / MAIN PARSE EXECUTION
-    # ==========================================================================
-
-    def parse(
-        self,
-        grammar: Any,
-        node: InfoNode | None = None,
-    ) -> Any:
-        """
-        EN: Executes complete syntactic analysis against combinator grammar, delegating to ASTAnalyzer.
-        ES: Ejecuta el análisis sintáctico completo contra una gramática de combinadores, delegando en ASTAnalyzer.
-
-        Args:
-            grammar: Dictionary of grammatical rules and combinators.
-            node: Optional telemetry node.
-
-        Returns:
-            ASTProgram: Fully built and structured abstract syntax tree.
-        """
-        target_node = self._control._get_target_node(node)
-        self._control.clear_failures()
-
-        if config.PARSER_ADD_INFO:
-            self._control.note(
-                f"Iniciando análisis sintáctico con gramática {grammar}",
-                'normal',
-                node=target_node,
-            )
-
-        from gram.core.ast.analyzer import ASTAnalyzer
-
-        analyzer = ASTAnalyzer(self, grammar, node=target_node)
-        result = analyzer.process()
-
-        if config.PARSER_ADD_INFO:
-            self._control.note(
-                "Análisis sintáctico finalizado con éxito",
-                'success',
-                node=target_node,
-            )
-
-        return result
+        self.debug('Starting syntactic analysis')
+        analyzer = ASTAnalyzer(self, entrypoint)
+        return analyzer.process()
 
 
 __all__ = ['Parser']

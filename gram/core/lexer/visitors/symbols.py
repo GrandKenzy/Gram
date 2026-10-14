@@ -1,79 +1,54 @@
 """
-Visitante Léxico para Símbolos y Operadores (`gram.core.lexer.visitors.symbols`).
-=================================================================================
-Identifica operadores aritméticos, de asignación, comparación, delimitadores,
-flechas y símbolos Unicode utilizando coincidencia máxima (maximal munch).
+Symbol and Operator Lexical Visitor (`gram.core.lexer.visitors.symbols`).
+=========================================================================
+Identifies arithmetic, assignment, comparison, logical, delimiter, arrow,
+and Unicode operators using maximal-munch matching against `MAP_SYMBOLS`.
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from gram.utilities.info import Node
+from gram import errors
+from gram.core.lexer.tokens import MAP_SYMBOLS, Token, TokenType, get_sorted_symbols
 
-from gram import config, errors
-from gram.core.lexer.tokens import MAP_SYMBOLS, TokenType, get_sorted_symbols
-from gram.utilities import error
+if TYPE_CHECKING:
+    from gram.core.lexer.control import LexerState
 
 
 def process(
-    lexer: Any,
+    lexer: LexerState,
     char: str,
-    node: Node | Any,
+    node: Any = None,
 ) -> TokenType:
     """
-    Identifica y procesa operadores simples, compuestos y delimitadores a partir del catálogo base.
-
-    Args:
-        lexer: Instancia activa del analizador léxico.
-        char: Primer carácter del símbolo.
-        node: Nodo de telemetría asignado a esta operación.
-
-    Returns:
-        TokenType generado con el token correspondiente.
-
-    Raises:
-        LexerError: Si el carácter o secuencia de caracteres no corresponde a ningún símbolo reconocido.
+    Match the longest registered operator or delimiter starting at `lexer.col`
+    (maximal munch), or report `LEXER_UNEXPECTED_CHARACTER` if unrecognized.
     """
     start = lexer.col
     start_line = lexer.line
     line = lexer.currline
 
-    if config.LEXER_ADD_INFO:
-        node.note(
-            f'Buscando símbolo desde línea {start_line}, columna {start}',
-            'normal',
-        )
+    lexer.debug(f"Buscando símbolo desde línea {start_line + 1}, columna {start}")
 
-    # Evaluación por longitud descendente para maximal munch (ej. '<<=' antes que '<<' y '<')
     for symbol in get_sorted_symbols():
-        end = lexer.col + len(symbol)
-
-        if line[lexer.col:end] == symbol:
+        end = start + len(symbol)
+        if line[start:end] == symbol:
             lexer.col = end
             token_type = MAP_SYMBOLS[symbol]
+            lexer.success(f"Símbolo reconocido: {symbol!r} -> {token_type}")
+            return TokenType(token_type, symbol, start_line, start)
 
-            if config.LEXER_ADD_INFO:
-                node.note(f'Símbolo reconocido: {symbol!r} -> {token_type}', 'success')
-
-            return TokenType(
-                token_type,
-                symbol,
-                start_line,
-                start,
-            )
-
-    # Carácter o símbolo no reconocido en el catálogo
-    if config.LEXER_ADD_ERROR:
-        node.note(f'Carácter o símbolo desconocido: {char!r}', 'error')
-
+    lexer.error(f"Carácter o símbolo desconocido: {char!r}")
     lexer.advance()
+    lexer.report_error(
+        errors.LexerError(
+            "UnexpectedCharacter",
+            errors.LEXER_UNEXPECTED_CHARACTER,
+            f"Carácter o símbolo desconocido {char!r} en línea {start_line + 1}, columna {start}.",
+            f"El analizador léxico no reconoce el símbolo {char!r} en el catálogo MAP_SYMBOLS.",
+        )
+    )
+    return TokenType(Token.ERROR, char, start_line, start)
 
-    error.LexerError(
-        f'Carácter o símbolo desconocido {char!r} en línea {start_line}, columna {start}',
-        errors.LEXER_UNEXPECTED_CHARACTER,
-        f'El lexer no reconoce el símbolo {char!r} en la sintaxis del lenguaje.',
-    ).raise_error()
 
-
-__all__ = ['process']
+__all__ = ["process"]

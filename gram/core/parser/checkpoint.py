@@ -1,22 +1,14 @@
 """
-EN:
-    Immutable Parser State Snapshot (`gram.core.parser.checkpoint`).
-    ================================================================
-    Defines the immutable data structure storing physical and virtual cursor positions,
-    bracket delimiter nesting depth, and the active telemetry node, enabling atomic
-    syntax transactions and side-effect-free backtracking.
-
-ES:
-    Instantánea Inmutable del Estado del Parser (`gram.core.parser.checkpoint`).
-    ============================================================================
-    Define la estructura de datos inmutable que almacena las posiciones de los
-    cursores físico y virtual, profundidad de delimitadores y nodo de telemetría activo,
-    posibilitando transacciones sintácticas atómicas y backtracking sin efectos colaterales.
+Immutable Parser State Snapshot (`gram.core.parser.checkpoint`).
+================================================================
+Defines the immutable data structure storing physical and virtual cursor positions,
+bracket delimiter nesting depth, and the active diagnostic target stack, enabling
+atomic syntax transactions and side-effect-free backtracking.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from gram.utilities.info import Node
@@ -25,34 +17,39 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class Checkpoint:
     """
-    EN:
-        Represents an immutable snapshot of the parser's internal state.
-        Allows saving and restoring physical and virtual cursor positions
-        and bracket delimiter depth during backtracking operations.
+    Represents an immutable snapshot of the parser's internal state.
 
-    ES:
-        Representa una instantánea inmutable del estado interno del parser.
-        Permite guardar y restaurar posiciones de cursores (físico y virtual)
-        y la profundidad de delimitadores durante operaciones de backtracking.
+    Stores physical and virtual cursor positions, bracket delimiter depth,
+    and an immutable copy of the active diagnostic target stack to support
+    safe state restoration during backtracking operations.
 
     Attributes:
-        pos (int): Real physical cursor position at the time of snapshot.
-                   Posición del cursor físico real en el momento del guardado.
-        virtual_pos (int): Virtual cursor position for speculative lookahead.
-                           Posición del cursor virtual para exploración previa.
-        bracket_depth (int): Bracket delimiter nesting depth (bracket-aware mode).
-                             Profundidad de delimitadores abiertos (bracket-aware mode).
-        target_node (Node | None): Active telemetry node at the time of snapshot.
-                                   Nodo de telemetría activo en el momento del guardado.
+        pos (int): Physical cursor position at the time of the snapshot.
+        vpos (int): Virtual cursor position for speculative lookahead.
+        bracket_depth (int): Open bracket delimiter nesting depth.
+        targets (tuple[Node, ...]): Snapshot of the active diagnostic node stack.
+        name (str): Descriptive identifier for the checkpoint.
     """
     pos: int
-    virtual_pos: int
+    vpos: int
     bracket_depth: int = 0
-    target_node: Node | None = None
+    targets: tuple[Node, ...] = ()
+    storage: tuple[tuple[str, Any], ...] = ()
+    tk_tags: tuple[tuple[int, frozenset[str]], ...] = ()
+    token_overrides: tuple[tuple[int, Any], ...] = ()
+    name: str = 'checkpoint'
+
+    @property
+    def target(self) -> Node | None:
+        """Return the top diagnostic node from the saved stack, if any."""
+        return self.targets[-1] if self.targets else None
 
     def __repr__(self) -> str:
-        node_label = f", node={self.target_node.name!r}" if self.target_node is not None else ""
-        return f"Checkpoint(pos={self.pos}, virtual={self.virtual_pos}, bracket={self.bracket_depth}{node_label})"
+        node_label = f", target={self.target}" if self.target is not None else ""
+        return (
+            f"Checkpoint(name={self.name!r}, pos={self.pos}, "
+            f"virtual={self.vpos}, bracket={self.bracket_depth}{node_label})"
+        )
 
 
 __all__ = ['Checkpoint']

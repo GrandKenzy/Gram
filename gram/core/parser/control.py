@@ -1,887 +1,598 @@
 """
-EN:
-    Parser State, Navigation, and Telemetry Controller (`gram.core.parser.control`).
-    ================================================================================
-    Centralizes syntax analyzer control logic:
-      1. Dynamic telemetry routing (diagnostics/notes) and errors to designated nodes.
-      2. Physical and virtual cursor management with non-destructive speculative lookahead.
-      3. Atomic syntactic transactions and backtracking mechanisms (savepoint/restore).
-      4. Delimited bracket-aware mode with newline and indentation suppression.
-      5. Error recovery strategies and stream synchronization delimiters.
-
-ES:
-    Controlador de Estado, Navegación y Telemetría del Parser (`gram.core.parser.control`).
-    ========================================================================================
-    Centraliza la lógica de control del analizador sintáctico:
-      1. Enrutamiento dinámico de telemetría (notas) y errores hacia nodos externos o propios.
-      2. Gestión de cursores físico y virtual con exploración especulativa no destructiva.
-      3. Mecanismos de transacciones sintácticas y backtracking atómico (savepoint/restore).
-      4. Modo delimitado (bracket-aware mode) con supresión inteligente de saltos de línea e indentación.
-      5. Estrategias de recuperación ante fallos y sincronización de flujo.
+Parser State and Cursor Control (`gram.core.parser.control`).
+=============================================================
+Provides the `ParseState` class, managing physical and virtual token cursors,
+speculative lookahead, bracket-aware whitespace skipping, formal error reporting,
+and stack-based diagnostic telemetry.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Generator, Sequence
+from typing import Literal
 
-from gram import config
-from gram.core.lexer.items import TokenStream
-from gram.core.lexer.tokens import CustomToken, Token, TokenType
-from gram.core.parser.checkpoint import Checkpoint
-from gram.utilities import Format, error
-from gram.utilities.info import Node as InfoNode, StackInfo
-
-if TYPE_CHECKING:
-    from gram.errors import coderr as CodeError
+from gram import config, errors
+from gram.core.lexer import Token, TokenType
+from gram.core.parser import Checkpoint
+from gram.utilities import Diagnostics, Format, error
 
 
-class ParseControl:
+class ParseState(Diagnostics):
     """
-    EN:
-        State, navigation, backtracking, and telemetry controller for the Parser.
-        Enables transparent routing of diagnostics to designated telemetry nodes,
-        managing both physical and virtual cursors and atomic transactions.
-
-    ES:
-        Controlador de estado, navegación, backtracking y telemetría para el Parser.
-        Permite redirigir de forma transparente notas y errores hacia un nodo específico,
-        gestionando simultáneamente cursores físico y virtual y transacciones seguras.
+    Manages token stream navigation, backtracking checkpoints, virtual lookahead,
+    and diagnostic telemetry for the parser.
     """
 
-    def __init__(
-        self,
-        tokens: TokenStream,
-    ) -> None:
+    def __init__(self, file: str | None = None) -> None:
         """
-        EN: Initialize parser state, token stream, and telemetry stack.
-        ES: Inicializa el estado del parser, el flujo de tokens y la pila de telemetría.
+        Initialize the parser state and underlying diagnostics stack.
 
         Args:
-            tokens: Token sequence or TokenStream to control.
-                    Flujo de tokens o TokenStream a controlar.
+            file (str | None): Optional log file identifier for diagnostics output.
         """
-        self._tokens: list[TokenType] = self._normalize_tokens(tokens)
-
-        self._pos: int = 0
-        self._virtual_pos: int = 0
-        self.watcher: Any = None
-        self._errors: list[error.ParserError] = []
-        self._bracket_depth: int = 0
-        self._furthest_failure_pos: int = -1
-        self._failure_expectations: set[str] = set()
-        self._failure_token: TokenType | None = None
-
-        from gram.core.parser import Parser
-        Parser.reset_stack()
-
-        self._default_node: InfoNode = self._stack.node(
-            "PARSER-INFO-NODE",
-            f"Control de parsing inicializado ({len(self._tokens)} tokens)",
-            priority=2,
+        self.pos: int = 0
+        self.vpos: int = 0
+        self.bracket_depth: int = 0
+        self.tokens: list[TokenType] = []
+        self.storage: dict[str, TokenType] = {}
+        self.tk_tags: dict[int, frozenset[str]] = {}
+        self._token_overrides: dict[int, TokenType] = {}
+        super().__init__(
+            file or 'parser-log',
+            'PARSER',
+            'pending',
+            True,
+            config.INFO_GENERATE_LOGFILE,
+            config.INFO_GENERATE_LOGFILE_ON_ERROR,
         )
-        self._target_node: InfoNode | None = None
 
-        if config.PARSER_ADD_INFO:
-            self.note(
-                f"ParseControl inicializado con {len(self._tokens)} tokens",
-                "success",
-            )
-            
-    @property
-    def _stack(self):
-        from gram.core.parser import Parser
-        return Parser.get_stack()
+    def load(self, checkpoint: Checkpoint) -> None:
+        self.pos = checkpoint.pos
+        self.vpos = checkpoint.vpos
+        self.bracket_depth = checkpoint.bracket_depth
+        self._targets = list(checkpoint.targets)
+        self.storage = dict(checkpoint.storage)
+        self.tk_tags = dict(checkpoint.tk_tags)
 
-    # ==========================================================================
-    # VINCULACIÓN Y FLUJO DE TOKENS
-    # ==========================================================================
+        # Revert any in-place token replacements made after the checkpoint
+        saved_overrides = dict(checkpoint.token_overrides)
+        for idx, orig_tok in list(self._token_overrides.items()):
+            if idx not in saved_overrides:
+                self.tokens[idx] = orig_tok
+                del self._token_overrides[idx]
 
-    @staticmethod
-    def _normalize_tokens(
-        tokens: Sequence[TokenType] | TokenStream | None,
-    ) -> list[TokenType]:
+    def report_error(self, err: error.Error) -> error.Error:
         """
-        EN: Extract token list from sequence or TokenStream.
-        ES: Extrae la lista de tokens tanto de secuencias como de TokenStream.
-        """
-        if tokens is None:
-            return []
-        if isinstance(tokens, TokenStream):
-            return list(tokens.tokens)
-        return list(tokens)
-
-    @property
-    def tokens(self) -> list[TokenType]:
-        """
-        EN: Token stream managed by this controller.
-        ES: Flujo de tokens gestionado por este controlador.
-        """
-        return self._tokens
-
-    @tokens.setter
-    def tokens(self, new_tokens: Sequence[TokenType] | TokenStream) -> None:
-        self.bind_tokens(new_tokens)
-
-    def bind_tokens(self, tokens: Sequence[TokenType] | TokenStream) -> None:
-        """
-        EN: Bind a new token stream to the controller and reset cursors.
-        ES: Vincula un nuevo flujo de tokens al controlador y reinicia los cursores.
+        Record a diagnostic error and raise it immediately if configured to exit on error.
 
         Args:
-            tokens: New token sequence or TokenStream.
-                    Nueva secuencia de tokens o TokenStream.
-        """
-        self._tokens = self._normalize_tokens(tokens)
-        self._pos = 0
-        self._virtual_pos = 0
-        self._bracket_depth = 0
-        self.clear_failures()
-        if config.PARSER_ADD_INFO:
-            self.note(
-                f"Nuevo flujo de tokens vinculado ({len(self._tokens)} tokens)",
-                "normal",
-            )
-
-    def clear_failures(self) -> None:
-        """Reset speculative syntax failures before a new parsing operation."""
-        self._furthest_failure_pos = -1
-        self._failure_expectations.clear()
-        self._failure_token = None
-
-    def record_failure(
-        self,
-        expected: str,
-        position: int,
-        token: TokenType | None,
-    ) -> None:
-        """Remember the most specific mismatch encountered during backtracking."""
-        if position > self._furthest_failure_pos:
-            self._furthest_failure_pos = position
-            self._failure_expectations = {expected}
-            self._failure_token = token
-        elif position == self._furthest_failure_pos:
-            self._failure_expectations.add(expected)
-            if self._failure_token is None and token is not None:
-                self._failure_token = token
-
-    def failure_context(self) -> str | None:
-        """Format the furthest mismatch for inclusion in a top-level parser error."""
-        if self._furthest_failure_pos < 0:
-            return None
-
-        expected = " o ".join(sorted(self._failure_expectations))
-        token = self._failure_token
-        if token is None:
-            actual = f"fin de entrada (posición {self._furthest_failure_pos})"
-        elif token.token == Token.EOF:
-            actual = (
-                f"EOF en línea {token.line}, columna {token.col} "
-                f"(posición {self._furthest_failure_pos})"
-            )
-        else:
-            actual = f"{token.token.name} ({token.value!r})"
-            actual += f" en línea {token.line}, columna {token.col}"
-            actual += f" (posición {self._furthest_failure_pos})"
-        return f"Fallo más profundo: se esperaba {expected}; se encontró {actual}."
-
-    # ==========================================================================
-    # CURSORES Y ACCESO POSICIONAL
-    # ==========================================================================
-
-    @property
-    def pos(self) -> int:
-        """
-        EN: Current physical cursor index in the token stream.
-        ES: Posición actual del cursor físico real en el flujo de tokens.
-        """
-        return self._pos
-
-    @pos.setter
-    def pos(self, value: int) -> None:
-        self._pos = max(0, min(value, len(self._tokens)))
-
-    @property
-    def virtual_pos(self) -> int:
-        """
-        EN: Current virtual cursor index for speculative lookahead.
-        ES: Posición actual del cursor virtual para exploración previa.
-        """
-        return self._virtual_pos
-
-    @virtual_pos.setter
-    def virtual_pos(self, value: int) -> None:
-        self._virtual_pos = max(0, min(value, len(self._tokens)))
-
-    def advance(self, steps: int = 1) -> int:
-        """
-        EN: Advance the physical cursor by the specified number of steps.
-        ES: Avanza el cursor físico la cantidad de pasos indicada.
-
-        Args:
-            steps: Number of tokens to advance (default 1).
-                   Cantidad de tokens a avanzar (por defecto 1).
+            err (error.Error): The error instance to record.
 
         Returns:
-            New physical cursor position.
-            Nueva posición del cursor físico.
+            error.Error: The recorded error instance.
         """
-        self._pos = min(len(self._tokens), self._pos + steps)
-        return self._pos
-
-    # ==========================================================================
-    # MODO BRACKET-AWARE (Supresión de saltos de línea dentro de delimitadores)
-    # ==========================================================================
-
-    @property
-    def bracket_depth(self) -> int:
-        """
-        EN: Current nesting depth of open bracket delimiters.
-        ES: Profundidad actual de delimitadores abiertos.
-        """
-        return self._bracket_depth
-
-    @property
-    def in_bracket(self) -> bool:
-        """
-        EN: Indicates whether the parser is currently inside at least one open delimiter.
-        ES: Indica si el parser se encuentra dentro de al menos un delimitador abierto.
-        """
-        return self._bracket_depth > 0
-
-    def enter_bracket(self) -> None:
-        """
-        EN: Increment open delimiter depth (suppressing newlines and indentation).
-        ES: Incrementa la profundidad de delimitadores abiertos (suprimiendo saltos e indentación).
-        """
-        self._bracket_depth += 1
-
-    def exit_bracket(self) -> None:
-        """
-        EN: Decrement open delimiter depth (restoring indentation sensitivity when reaching 0).
-        ES: Decrementa la profundidad de delimitadores abiertos (restaurando sensibilidad al llegar a 0).
-        """
-        self._bracket_depth = max(0, self._bracket_depth - 1)
-
-    def _skip_whitespace(self) -> None:
-        """
-        EN: Skip NEWLINE, INDENT, and DEDENT tokens while in bracket-aware mode.
-        ES: Avanza el cursor físico sobre tokens NEWLINE, INDENT y DEDENT en modo bracket-aware.
-        """
-        if self._bracket_depth <= 0:
-            return
-
-        whitespace_types = (Token.NEWLINE, Token.INDENT, Token.DEDENT)
-        while self._pos < len(self._tokens) and self._tokens[self._pos].token in whitespace_types:
-            self._pos += 1
-
-    # ==========================================================================
-    # ENRUTAMIENTO DINÁMICO DE TELEMETRÍA Y ERRORES
-    # ==========================================================================
-
-    @property
-    def stack(self) -> StackInfo:
-        """
-        EN: Parser diagnostics and telemetry StackInfo instance.
-        ES: Pila (StackInfo) de telemetría y diagnóstico del parser.
-        """
-        return self._stack
-
-    @property
-    def errors(self) -> list[error.ParserError]:
-        """
-        EN: Historical list of syntax errors collected during parsing.
-        ES: Lista histórica de errores sintácticos recolectados por este parser.
-        """
-        return list(self._errors)
-
-    @property
-    def node(self) -> InfoNode:
-        """
-        EN: Active target node where notes and diagnostics are routed.
-        ES: Devuelve el nodo activo al que se deben enviar notas y diagnósticos.
-        """
-        return self._target_node if self._target_node is not None else self._default_node
-
-    @property
-    def target_node(self) -> InfoNode | None:
-        """
-        EN: Designated external telemetry target node, or None.
-        ES: Devuelve el nodo destino externo actualmente asignado, o None.
-        """
-        return self._target_node
-
-
-    def reset_node(self) -> None:
-        """
-        EN: Restore telemetry routing to default root node.
-        ES: Restaura el destino de telemetría al nodo raíz por defecto.
-        """
-        self._target_node = None
-        if config.PARSER_ADD_INFO:
-            self.note("Nodo de telemetría restaurado al nodo por defecto", 'advice')
-
-    @contextmanager
-    def scoped_node(self, node: InfoNode | StackInfo) -> Generator[InfoNode, None, None]:
-        """
-        EN: Context manager to temporarily redirect telemetry and errors to a node.
-        ES: Gestor de contexto para redirigir temporalmente la telemetría y errores a un nodo.
-
-        Args:
-            node: Scoped Node or StackInfo target.
-                  Nodo o StackInfo de destino temporal.
-
-        Yields:
-            Target InfoNode.
-            Nodo InfoNode de destino.
-        """
-        previous_node = self._target_node
-        target = node.main if isinstance(node, StackInfo) else node
-
-        self._target_node = target
-        try:
-            yield target
-        finally:
-            self._target_node = previous_node
-
-    def _get_target_node(self, node: InfoNode | StackInfo | None) -> InfoNode:
-        """
-        EN: Resolve effective telemetry target node, prioritizing explicit argument.
-        ES: Determina el nodo destino priorizando el argumento explícito sobre el configurado.
-        """
-        if node is not None:
-            return node.main if isinstance(node, StackInfo) else node
-        return self.node
-
-    def note(
-        self,
-        message: str,
-        note_type: Format.LogType = 'normal',
-        node: InfoNode | StackInfo | None = None,
-    ) -> None:
-        """
-        EN: Emit a diagnostic note to the active target telemetry node.
-        ES: Emite una nota de telemetría al nodo destino activo.
-
-        Args:
-            message: Informational note text.
-                     Texto del mensaje de telemetría.
-            note_type: Note category ('normal', 'success', 'advice', 'warning', 'error').
-                       Tipo de nota ('normal', 'success', 'advice', 'warning', 'error').
-            node: Optional specific target node override.
-                  Nodo destino específico opcional.
-        """
-        if config.PARSER_ADD_INFO:
-            target = self._get_target_node(node)
-            target.note(message, note_type)
-
-    def fail(
-        self,
-        name: str,
-        code: CodeError,
-        *caution: str,
-        node: InfoNode | StackInfo | None = None,
-        raise_exception: bool = True,
-    ) -> error.ParserError:
-        """
-        EN: Record a syntax error in telemetry and optionally raise ParserError.
-        ES: Registra un error sintáctico en telemetría y opcionalmente levanta ParserError.
-
-        Args:
-            name: Descriptive failure explanation.
-                     Explicación descriptiva del fallo.
-            code: Standardized CodeError token.
-                  Código de error estandarizado CodeError.
-            caution: Optional cautionary contextual remarks.
-                     Notas de advertencia contextuales opcionales.
-            node: Target telemetry node override.
-                  Nodo destino de telemetría opcional.
-            raise_exception: If True, immediately raises ParserError.
-                             Si es True, levanta ParserError inmediatamente.
-
-        Returns:
-            Constructed ParserError instance.
-            Instancia ParserError construida.
-        """
-        target = self._get_target_node(node)
-
-        if config.PARSER_ADD_ERROR:
-            target.note(f"Error sintáctico: {name} ({code})", 'error')
-
-        err = error.ParserError(name, code, *caution)
-        self._errors.append(err)
-        if raise_exception:
+        err = self.record_failure(err)
+        if config.ERROR_EXIT_ON_ERROR:
             err.raise_error()
         return err
 
+    def _report_empty_or_eof(self, operation: str) -> None:
+        """
+        Report `PARSER_NOT_STARTED` if the token list is empty, or
+        `PARSER_EARLY_EOF` if the cursor has exhausted the token stream.
+
+        Args:
+            operation (str): Name of the cursor operation that triggered the failure.
+        """
+        if not self.tokens:
+            self.error(f'{operation} failed: token stream is empty or uninitialized.')
+            self.report_error(
+                errors.ParserError(
+                    'ParserNotStarted',
+                    errors.PARSER_NOT_STARTED,
+                    f'No se puede ejecutar "{operation}" porque el flujo de tokens está vacío.',
+                    'Inicialice el parser con una lista válida de tokens antes de analizar.',
+                )
+            )
+        else:
+            self.error(f'{operation} failed: unexpected EOF at pos={self.pos}.')
+            self.report_error(
+                errors.ParserError(
+                    'UnexpectedEOF',
+                    errors.PARSER_EARLY_EOF,
+                    f'Fin de archivo (EOF) prematuro durante "{operation}" en la posición {self.pos}.',
+                    'Verifique que todas las expresiones y bloques estén cerrados correctamente.',
+                )
+            )
+
+    def snapshot(self) -> dict[str, int]:
+        """Return a dictionary of the current cursor and delimiter state."""
+        return {
+            'pos': self.pos,
+            'vpos': self.vpos,
+            'bracket_depth': self.bracket_depth,
+        }
+
+    def sender(self, msg: str, nt: Format.LogType) -> None:  # type: ignore
+        """Emit a diagnostic note to the active node if parser logging is enabled."""
+        if config.PARSER_ADD_INFO:
+            self.current().note(msg, nt)
+
     # ==========================================================================
-    # CONSULTA, ESTADO Y LOOKAHEAD
+    # POSITIONS AND SIZES
     # ==========================================================================
 
     def count(self) -> int:
-        """
-        EN: Return the total number of tokens in the stream.
-        ES: Devuelve la cantidad total de tokens en el flujo.
-        """
-        return len(self._tokens)
+        """Return the total number of tokens in the stream."""
+        return len(self.tokens)
 
     def remaining(self) -> int:
-        """
-        EN: Return the count of unconsumed tokens from current physical position.
-        ES: Cantidad de tokens pendientes de consumir desde el cursor físico.
-        """
-        return max(0, len(self._tokens) - self._pos)
+        """Return the number of unconsumed tokens remaining from the physical cursor."""
+        return max(0, len(self.tokens) - self.pos)
 
-    def not_empty(self) -> bool:
-        """
-        EN: Check whether tokens remain available from physical cursor.
-        ES: Indica si existen tokens disponibles desde el cursor físico.
-        """
-        return self._pos < len(self._tokens)
+    # ==========================================================================
+    # PRIMITIVE CHECKS
+    # ==========================================================================
 
-    def virtual_not_empty(self) -> bool:
-        """
-        EN: Check whether tokens remain available from virtual cursor.
-        ES: Indica si existen tokens disponibles desde el cursor virtual.
-        """
-        return self._virtual_pos < len(self._tokens)
+    def empty(self) -> bool:
+        """Return True if all tokens in the stream have been consumed."""
+        return self.pos >= len(self.tokens)
 
     def is_eof(self) -> bool:
-        """
-        EN: Check whether the physical cursor is at or past the EOF token.
-        ES: Indica si el cursor físico se encuentra en o más allá del token EOF.
-        """
-        if not self.not_empty():
+        """Return True if the stream is exhausted or the current token is EOF."""
+        if self.empty():
             return True
-        from gram.core.lexer.tokens import Token
-        curr = self._tokens[self._pos]
-        return curr.token == Token.EOF
+        return self.tokens[self.pos].token == Token.EOF
 
-    def peek(self, offset: int = 0) -> TokenType | None:
+    def normalice_index(self, index: int) -> int:
+        """Clamp an index within the valid token stream boundaries `[0, count()]`."""
+        return max(0, min(len(self.tokens), index))
+
+    def validate_pos(self, pos: int, *, allow_end: bool = False) -> bool:
         """
-        EN: Non-destructively inspect token at relative offset from physical cursor.
-        ES: Inspecciona el token ubicado a `offset` posiciones del cursor físico actual.
+        Check whether a position index is within the valid bounds of the token stream.
 
         Args:
-            offset: Relative index offset from physical cursor (default 0).
-                    Desplazamiento relativo respecto al cursor físico (por defecto 0).
-        Returns:
-            TokenType at relative position or None if out of bounds.
-            TokenType en la posición relativa o None si excede los límites.
+            pos (int): Position index to validate.
+            allow_end (bool): If True, allows `pos == len(self.tokens)` (for cursors/slices).
         """
-        index = self._pos + offset
-        if 0 <= index < len(self._tokens):
-            return self._tokens[index]
+        upper = len(self.tokens) if allow_end else len(self.tokens) - 1
+        return 0 <= pos <= upper
+
+    # ==========================================================================
+    # BASIC CURSOR CONTROL
+    # ==========================================================================
+
+    def peek(self) -> TokenType | None:
+        """Return the token at the current physical cursor without consuming it."""
+        if self.empty():
+            self._report_empty_or_eof('peek')
+            return None
+
+        if not self.validate_pos(self.pos):
+            self.error(f'peek out of bounds. current: {self.pos}, total: {self.count()}')
+            self.report_error(
+                errors.ParserError(
+                    'CursorOutOfBounds',
+                    errors.PARSER_SYNTAX_ERROR,
+                    f'El cursor físico ({self.pos}) está fuera de los límites ({self.count()}).',
+                    'Revise las operaciones de desplazamiento del cursor en el parser.',
+                )
+            )
+            return None
+
+        tok = self.tokens[self.pos]
+        self.debug(f'Peeked {tok}. Line={tok.line}, Col={tok.col}, Type={tok.token.name}')
+        return tok
+
+    def consume(self, expected: Token | str | None = None) -> TokenType | None:
+        """
+        Consume and return the current token, optionally verifying it matches `expected`.
+
+        Args:
+            expected (Token | str | None): Expected token type, token name, or lexeme value.
+        """
+        if self.empty():
+            self._report_empty_or_eof('consume')
+            return None
+
+        token = self.tokens[self.pos]
+        if expected is None:
+            self.advance(1)
+            return token
+
+        matches_expected = (
+            token.token == expected
+            if isinstance(expected, Token)
+            else token.token.name == expected or token.value == expected
+        )
+
+        if not matches_expected:
+            exp_name = expected.name if isinstance(expected, Token) else expected
+            self.error(
+                f'Token mismatch at line={token.line}, col={token.col}: '
+                f'expected {exp_name!r}, got {token.token.name!r} ({token.value!r})'
+            )
+            self.report_error(
+                errors.ParserError(
+                    'UnexpectedToken',
+                    errors.PARSER_UNEXPECTED_TOKEN,
+                    f'Se esperaba el token "{exp_name}", pero se encontró "{token.token.name}" '
+                    f'(valor={token.value!r}) en línea {token.line}, columna {token.col}.',
+                    'Verifique la sintaxis cerca de la posición indicada.',
+                )
+            )
+            return None
+
+        self.advance(1)
+        return token
+
+    def advance(self, steps: int = 1) -> None:
+        """
+        Move the physical cursor forward by `steps` tokens.
+
+        Args:
+            steps (int): Number of positions to advance.
+        """
+        target = self.pos + steps
+        if not self.validate_pos(target, allow_end=True):
+            self.error(f'advance exceeded bounds. current: {self.pos}, target: {target}')
+            self.report_error(
+                errors.ParserError(
+                    'AdvanceOutOfBounds',
+                    errors.PARSER_EARLY_EOF,
+                    f'Intento de avanzar el cursor fuera de límites (actual={self.pos}, destino={target}, total={self.count()}).',
+                    'Asegúrese de no avanzar más allá del final del flujo de tokens.',
+                )
+            )
+            return
+        self.pos = target
+
+    # ==========================================================================
+    # ADVANCED CURSOR CONTROL
+    # ==========================================================================
+
+    def consume_if(self, *expected: Token | str) -> TokenType | None:
+        """
+        Consume and return the current token only if it matches any of `expected`.
+        """
+        if self.empty():
+            return None
+
+        current = self.tokens[self.pos]
+        for exp in expected:
+            if isinstance(exp, Token) and current.token == exp:
+                return self.consume()
+            if isinstance(exp, str) and (current.token.name == exp or current.value == exp):
+                return self.consume()
         return None
 
-    def peek_token(
-        self,
-        offset: int = 0,
-    ) -> Token | CustomToken | None:
+    def peek_dist(self, offset: int = 0) -> TokenType | None:
         """
-        EN: Return the enum Token type at relative offset from physical cursor.
-        ES: Devuelve el tipo de token (Enum Token) en la posición relativa `offset`.
+        Return the token at `self.pos + offset` without moving the physical cursor.
+        """
+        target = self.pos + offset
+        if not self.validate_pos(target):
+            self.error(f'peek_dist out of bounds. current: {self.pos}, target: {target}')
+            self.report_error(
+                errors.ParserError(
+                    'LookaheadOutOfBounds',
+                    errors.PARSER_EARLY_EOF,
+                    f'Exploración lookahead fuera de rango (actual={self.pos}, destino={target}, total={self.count()}).',
+                    'Verifique la cantidad de tokens restantes antes de inspeccionar con offset.',
+                )
+            )
+            return None
+        return self.tokens[target]
 
-        Args:
-            offset: Relative index offset from physical cursor (default 0).
-                    Desplazamiento relativo respecto al cursor físico (por defecto 0).
-        Returns:
-            Enum Token type or None if out of bounds.
-            Tipo Enum Token o None si excede los límites.
-        """
-        tok = self.peek(offset)
-        return tok.token if tok is not None else None
+    # ==========================================================================
+    # LOOKAHEAD, SAVEPOINTS, AND BACKTRACKING
+    # ==========================================================================
 
-    def lookahead(self, count: int = 1) -> list[TokenType]:
-        """
-        EN: Fetch next `count` tokens ahead of physical cursor without consuming.
-        ES: Obtiene los siguientes `count` tokens a partir del cursor físico actual sin consumirlos.
+    def lookahead(self, count: int = 1) -> list[TokenType | None]:
+        """Return a list of the next `count` tokens starting from the physical cursor."""
+        return [self.peek_dist(c) for c in range(count)]
 
-        Args:
-            count: Number of upcoming tokens to inspect (default 1).
-                   Cantidad de tokens a inspeccionar hacia adelante (por defecto 1).
-        Returns:
-            List of upcoming tokens up to end of stream.
-            Lista de próximos tokens hasta el final del flujo.
+    def matches(self, *expected: Token | str, offset: int = 0) -> bool:
         """
-        end = min(self._pos + count, len(self._tokens))
-        return self._tokens[self._pos:end]
-
-    def matches(
-        self,
-        *expected: Token | str,
-        offset: int = 0,
-    ) -> bool:
+        Return True if the token at `self.pos + offset` matches any of `expected`.
         """
-        EN: Check whether token at relative offset matches any expected token type or value.
-        ES: Comprueba si el token en la posición relativa `offset` coincide con alguno
-            de los tipos de token o nombres esperados.
-
-        Args:
-            *expected: Target Token enum variants, token names, or literal strings.
-                       Variantes de Token enum, nombres de token o cadenas literales esperadas.
-            offset: Relative index offset from physical cursor (default 0).
-                    Desplazamiento relativo respecto al cursor físico (por defecto 0).
-        Returns:
-            True if matched, False otherwise.
-            True si coincide, False en caso contrario.
-        """
-        tok = self.peek(offset)
-        if tok is None:
+        target = self.pos + offset
+        if not self.validate_pos(target):
             return False
 
+        token = self.tokens[target]
         for exp in expected:
             if isinstance(exp, str):
-                if tok.token.name == exp or str(tok.value) == exp:
+                if token.token.name == exp or str(token.value) == exp:
                     return True
-            else:
-                if tok.token == exp:
-                    return True
+            elif token.token == exp:
+                return True
         return False
 
     def slice(self, start: int, end: int) -> list[TokenType]:
         """
-        EN: Extract a slice of tokens between indices without changing cursor state.
-        ES: Extrae un rango arbitrario de tokens sin alterar el estado del parser.
-
-        Args:
-            start: Starting token index (inclusive).
-                   Índice inicial de token (inclusivo).
-            end: Ending token index (exclusive).
-                 Índice final de token (exclusivo).
-
-        Returns:
-            Extracted token sublist.
-            Sublista de tokens extraída.
+        Return a slice of tokens between indices `start` and `end`.
         """
-        return self._tokens[max(0, start):min(end, len(self._tokens))]
+        if start > end:
+            self.error(f'Invalid slice range: start={start} > end={end}')
+            self.report_error(
+                errors.ParserError(
+                    'InvalidSliceRange',
+                    errors.PARSER_SYNTAX_ERROR,
+                    f'Rango de corte inválido en slice: start ({start}) es mayor que end ({end}).',
+                    'Asegúrese de que el índice inicial sea menor o igual al índice final.',
+                )
+            )
+            return []
 
-    # ==========================================================================
-    # PUNTOS DE GUARDADO Y BACKTRACKING
-    # ==========================================================================
+        for label, idx in (('start', start), ('end', end)):
+            if not self.validate_pos(idx, allow_end=True):
+                self.error(f'slice index out of bounds. current={self.pos}, {label}={idx}')
+                self.report_error(
+                    errors.ParserError(
+                        'SliceOutOfBounds',
+                        errors.PARSER_SYNTAX_ERROR,
+                        f'El índice {label}={idx} en slice excede los límites del flujo de tokens (total={self.count()}).',
+                        'Verifique los límites del flujo antes de realizar el corte.',
+                    )
+                )
+                return []
 
-    def savepoint(self, node: InfoNode | None = None) -> Checkpoint:
-        """
-        EN: Capture an immutable snapshot of cursor positions and bracket depth.
-        ES: Genera una captura inmutable del estado actual de los cursores físico y virtual
-            y la profundidad de brackets para posibilitar backtracking seguro.
+        return self.tokens[start:end]
 
-        Args:
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
-
-        Returns:
-            Immutable Checkpoint snapshot.
-            Instantánea inmutable Checkpoint.
-        """
-        target = self._get_target_node(node)
+    def savepoint(self, name: str) -> Checkpoint:
         cp = Checkpoint(
-            pos=self._pos,
-            virtual_pos=self._virtual_pos,
-            bracket_depth=self._bracket_depth,
-            target_node=target,
+            pos=self.pos,
+            vpos=self.vpos,
+            bracket_depth=self.bracket_depth,
+            targets=tuple(self._targets),
+            storage=tuple(self.storage.items()),
+            tk_tags=tuple(self.tk_tags.items()),
+            token_overrides=tuple(self._token_overrides.items()),
+            name=name,
         )
-
-        if config.PARSER_ADD_INFO:
-            self.note(
-                f"Savepoint creado: pos={cp.pos}, virtual={cp.virtual_pos}, bracket={cp.bracket_depth}",
-                'normal',
-                node=target,
-            )
-
+        self.success(
+            f'Savepoint created: pos={cp.pos}, virtual={cp.vpos}, target={cp.target}'
+        )
         return cp
+    
+    def replace_token_at(self, index: int, new_token: TokenType) -> None:
+        """Replace token at `index` in-place while recording original for checkpoint rollback."""
+        if 0 <= index < len(self.tokens):
+            if index not in self._token_overrides:
+                self._token_overrides[index] = self.tokens[index]
+            self.tokens[index] = new_token
 
-    def restore(
-        self,
-        checkpoint: Checkpoint | int,
-        node: InfoNode | None = None,
-    ) -> None:
+    def restore(self, checkpoint: Checkpoint) -> None:
         """
-        EN: Restore parser state to a prior savepoint, unwinding consumed tokens.
-        ES: Restaura el parser a un estado previo guardado, deshaciendo
-            el consumo de tokens tras una alternativa fallida.
-
-        Args:
-            checkpoint: Checkpoint snapshot or raw integer position to restore to.
-                        Instantánea Checkpoint o posición entera a restaurar.
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
+        Restore the parser state and diagnostic target stack to a given `Checkpoint`.
         """
-        target = self._get_target_node(node)
-
-        if isinstance(checkpoint, Checkpoint):
-            new_pos = checkpoint.pos
-            new_virtual = checkpoint.virtual_pos
-            self._bracket_depth = checkpoint.bracket_depth
-        else:
-            new_pos = checkpoint
-            new_virtual = checkpoint
-
-        if config.PARSER_ADD_INFO:
-            self.note(
-                f"Backtracking: restaurando cursor físico {self._pos} -> {new_pos}",
-                'advice',
-                node=target,
+        self.load(checkpoint)
+        if checkpoint.target is not None:
+            self.advice(
+                f'Checkpoint {checkpoint.name} is restoring target to {checkpoint.target}'
             )
-
-        self._pos = max(0, min(new_pos, len(self._tokens)))
-        self._virtual_pos = max(0, min(new_virtual, len(self._tokens)))
-
-    @contextmanager
-    def transaction(
-        self,
-        node: InfoNode | None = None,
-    ) -> Generator[Checkpoint, None, None]:
-        """
-        EN: Context manager for atomic syntax transactions with automatic rollback on error.
-        ES: Gestor de contexto para transacciones sintácticas atómicas con rollback automático.
-
-        Args:
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
-
-        Yields:
-            Initial Checkpoint of the transaction.
-            Checkpoint inicial de la transacción.
-        """
-        target = self._get_target_node(node)
-        cp = self.savepoint(target)
-        try:
-            yield cp
-        except Exception:
-            self.restore(cp, target)
-            raise
+        self.success(f'Backtracking: restored checkpoint {checkpoint.name}')
 
     # ==========================================================================
-    # EXPLORACIÓN VIRTUAL Y COMMIT/ROLLBACK
+    # VIRTUAL CURSOR CONTROL
     # ==========================================================================
 
-    def future(self, node: InfoNode | None = None) -> TokenType | None:
-        """
-        EN: Fetch token at virtual cursor and advance virtual cursor, leaving physical cursor intact.
-        ES: Obtiene el token bajo el cursor virtual y avanza dicho cursor una posición,
-            sin afectar el cursor físico real.
-
-        Args:
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
-
-        Returns:
-            Token under virtual cursor or None if exhausted.
-            Token bajo el cursor virtual o None si está agotado.
-        """
-        target = self._get_target_node(node)
-
-        if not self.virtual_not_empty():
+    def future(self) -> TokenType | None:
+        """Consume and return the token at the virtual cursor, advancing `vpos` by 1."""
+        if self.empty():
+            self._report_empty_or_eof('future')
             return None
 
-        token = self._tokens[self._virtual_pos]
-        if config.PARSER_ADD_INFO:
-            self.note(
-                f"Consultando virtual [{self._virtual_pos}]: {token.token.name} = {token.value!r}",
-                'normal',
-                node=target,
+        if not self.validate_pos(self.vpos):
+            self.error(f'future exceeded bounds: {self.vpos} >= {self.count()}')
+            self.report_error(
+                errors.ParserError(
+                    'VirtualCursorOutOfBounds',
+                    errors.PARSER_EARLY_EOF,
+                    f'El cursor virtual ({self.vpos}) alcanzó el final del flujo de tokens ({self.count()}).',
+                    'Sincronice o restablezca el cursor virtual antes de consumir más tokens.',
+                )
             )
+            return None
 
-        self._virtual_pos += 1
+        token = self.tokens[self.vpos]
+        self.debug(f'Virtual consume [{self.vpos}]: {token}')
+        self.vpos += 1
         return token
 
-    def peek_virtual(self, offset: int = 0) -> TokenType | None:
+    def peek_vtoken(self, offset: int = 0) -> TokenType | None:
+        """Return the token at `self.vpos + offset` without advancing the virtual cursor."""
+        target = self.vpos + offset
+        if not self.validate_pos(target):
+            self.error(f'peek_vtoken exceeded bounds: {target} >= {self.count()}')
+            self.report_error(
+                errors.ParserError(
+                    'VirtualPeekOutOfBounds',
+                    errors.PARSER_EARLY_EOF,
+                    f'Inspección virtual fuera de límites (destino={target}, total={self.count()}).',
+                    'Verifique el límite de tokens disponibles durante la exploración virtual.',
+                )
+            )
+            return None
+        return self.tokens[target]
+
+    def set_vtoken(
+        self, pos: int | Literal['sync', 'end', 'start', 'front', 'back']
+    ) -> None:
         """
-        EN: Inspect token relative to current virtual cursor without moving it.
-        ES: Inspecciona un token relativo a la posición virtual actual sin mover el cursor.
-
-        Args:
-            offset: Relative index offset from virtual cursor (default 0).
-                    Desplazamiento relativo respecto al cursor virtual (por defecto 0).
-        Returns:
-            Token at offset or None if out of bounds.
-            Token en la posición relativa o None si excede límites.
+        Position the virtual cursor using an explicit index or a relative preset.
         """
-        index = self._virtual_pos + offset
-        if 0 <= index < len(self._tokens):
-            return self._tokens[index]
-        return None
-
-    def set_virtual_token(self, pos: int, node: InfoNode | None = None) -> int:
-        """
-        EN: Manually adjust virtual cursor position (-1 = last token, -2 = sync with physical cursor).
-        ES: Establece manualmente la posición del cursor virtual (-1 = último token, -2 = sincronizar con físico).
-
-        Args:
-            pos: New virtual position (-1 for last, -2 to sync with physical cursor).
-                 Nueva posición virtual (-1 para último, -2 para sincronizar con cursor físico).
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
-
-        Returns:
-            Effective virtual cursor position.
-            Posición efectiva del cursor virtual.
-        """
-        target = self._get_target_node(node)
-
-        if pos == -1:
-            new_pos = max(0, self.count() - 1)
-        elif pos == -2:
-            new_pos = self._pos
+        if pos == 'start':
+            resolved = 0
+        elif pos == 'end':
+            resolved = max(0, self.count() - 1)
+        elif pos == 'sync':
+            resolved = self.pos
+        elif pos == 'front':
+            resolved = self.pos + 1
+        elif pos == 'back':
+            resolved = self.pos - 1
         else:
-            new_pos = pos
+            resolved = pos
 
-        if new_pos < 0 or new_pos > self.count():
-            if config.PARSER_ADD_ERROR:
-                self.note(
-                    f"Posición virtual fuera de rango: {new_pos} (válido: 0..{self.count()})",
-                    'error',
-                    node=target,
+        if not self.validate_pos(resolved, allow_end=True):
+            self.error(f'Invalid position for set_vtoken: {resolved} (total={self.count()})')
+            self.report_error(
+                errors.ParserError(
+                    'InvalidVirtualPosition',
+                    errors.PARSER_SYNTAX_ERROR,
+                    f'Posición inválida para set_vtoken: {resolved} (total de tokens={self.count()}).',
+                    'Proporcione un índice dentro del rango válido de tokens.',
                 )
-            return self._virtual_pos
-
-        old_pos = self._virtual_pos
-        self._virtual_pos = new_pos
-
-        if config.PARSER_ADD_INFO:
-            self.note(
-                f"Cursor virtual actualizado: {old_pos} -> {self._virtual_pos}",
-                'success',
-                node=target,
             )
+            return
+        self.vpos = resolved
 
-        return self._virtual_pos
+    def rollback(self) -> None:
+        """Reset the virtual cursor back to the current physical cursor position."""
+        self.vpos = self.pos
+        self.advice(
+            f'Virtual cursor rolled back: physical={self.pos}, virtual={self.vpos}'
+        )
 
-    def reset_virtual(self, node: InfoNode | None = None) -> None:
+    def commit(self) -> list[TokenType]:
         """
-        EN: Reset virtual cursor back to synchronize with the current physical cursor.
-        ES: Restablece el cursor virtual sincronizándolo con el cursor físico actual.
-
-        Args:
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
+        Advance the physical cursor to match the virtual cursor and return all
+        tokens consumed in the range `[pos, vpos)`.
         """
-        target = self._get_target_node(node)
-        if config.PARSER_ADD_INFO:
-            self.note(
-                f"Restableciendo cursor virtual: {self._virtual_pos} -> {self._pos}",
-                'advice',
-                node=target,
+        if self.vpos <= self.pos:
+            self.error(
+                f'Cannot commit backward or empty virtualization: '
+                f'physical={self.pos}, virtual={self.vpos}'
             )
-        self._virtual_pos = self._pos
-
-    def rollback(self, node: InfoNode | None = None) -> None:
-        """
-        EN: Discard speculative virtual exploration (alias for reset_virtual).
-        ES: Descarta la exploración virtual especulativa (alias de reset_virtual).
-
-        Args:
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
-        """
-        self.reset_virtual(node)
-
-    def commit(self, node: InfoNode | None = None) -> list[TokenType]:
-        """
-        EN: Commit virtual traversal into physical cursor, consuming examined tokens.
-        ES: Sincroniza el cursor físico con el virtual, consumiendo tokens explorados.
-
-        Args:
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
-
-        Returns:
-            List of newly consumed tokens during commit interval.
-            Lista de tokens consumidos en el intervalo de confirmación.
-        """
-        target = self._get_target_node(node)
-        consumed: list[TokenType] = []
-
-        if self._virtual_pos > self._pos:
-            consumed = self._tokens[self._pos:self._virtual_pos]
-            if config.PARSER_ADD_INFO:
-                self.note(
-                    f"Commit: consumidos físicamente {len(consumed)} tokens ({self._pos} -> {self._virtual_pos})",
-                    'success',
-                    node=target,
+            self.report_error(
+                errors.ParserError(
+                    'InvalidVirtualCommit',
+                    errors.PARSER_SYNTAX_ERROR,
+                    f'No se puede confirmar (commit) una virtualización nula o hacia atrás '
+                    f'(físico={self.pos}, virtual={self.vpos}).',
+                    'Asegúrese de que el cursor virtual haya avanzado más allá del cursor físico.',
                 )
-            self._pos = self._virtual_pos
-            if self.watcher is not None and consumed:
-                self.watcher.update_token(consumed[-1])
+            )
+            return []
 
+        if not self.validate_pos(self.vpos, allow_end=True):
+            self.error(
+                f'Virtual position out of bounds: size={self.count()}, virtual={self.vpos}'
+            )
+            self.report_error(
+                errors.ParserError(
+                    'VirtualCommitOutOfBounds',
+                    errors.PARSER_EARLY_EOF,
+                    f'La posición virtual ({self.vpos}) excede el tamaño del flujo ({self.count()}).',
+                    'Verifique el avance del cursor virtual antes de ejecutar commit.',
+                )
+            )
+            return []
+
+        if not self.validate_pos(self.pos, allow_end=True):
+            self.error(
+                f'Physical position out of bounds: size={self.count()}, physical={self.pos}'
+            )
+            self.report_error(
+                errors.ParserError(
+                    'PhysicalCommitOutOfBounds',
+                    errors.PARSER_SYNTAX_ERROR,
+                    f'La posición física ({self.pos}) es inválida para el tamaño del flujo ({self.count()}).',
+                    'Restaure un checkpoint válido antes de confirmar tokens.',
+                )
+            )
+            return []
+
+        consumed: list[TokenType] = self.tokens[self.pos : self.vpos]
+        self.success(
+            f'Commit succeeded. Consumed {len(consumed)} tokens ({self.pos} --> {self.vpos})'
+        )
+        self.pos = self.vpos
         return consumed
 
     # ==========================================================================
-    # RECUPERACIÓN Y LIMPIEZA
+    # CONTEXT AND DELIMITER CONTROL
     # ==========================================================================
 
-    def quit(self, tok: Token, node: InfoNode | None = None) -> int:
+    def enter_delimiter(self) -> None:
+        """Increment the open bracket delimiter nesting depth."""
+        self.bracket_depth += 1
+
+    def exit_delimiter(self) -> None:
+        """Decrement the open bracket delimiter nesting depth (clamped at 0)."""
+        self.bracket_depth = max(0, self.bracket_depth - 1)
+
+    def in_bracket(self) -> bool:
+        """Return True if the parser is currently inside open bracket delimiters."""
+        return self.bracket_depth > 0
+
+    def skip_whitespace(self, *extra: Token) -> None:
         """
-        EN: Strip all occurrences of the specified token type from stream and adjust cursors.
-        ES: Elimina del flujo todos los tokens del tipo especificado y reajusta los cursores.
-
-        Args:
-            tok: Target Token enum type to purge from the token list.
-                 Tipo Token enum a purgar de la lista de tokens.
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
-
-        Returns:
-            Count of removed tokens.
-            Cantidad de tokens eliminados.
+        Skip NEWLINE, INDENT, DEDENT, and any `extra` tokens while inside brackets.
         """
-        target = self._get_target_node(node)
-        initial_size = len(self._tokens)
+        if self.bracket_depth <= 0:
+            return
 
-        self._tokens = [t for t in self._tokens if t.token != tok]
-        removed = initial_size - len(self._tokens)
+        whitespace_types = {Token.NEWLINE, Token.INDENT, Token.DEDENT, *extra}
+        n_tokens = len(self.tokens)
+        while self.pos < n_tokens and self.tokens[self.pos].token in whitespace_types:
+            self.pos += 1
 
-        if config.PARSER_ADD_INFO:
-            self.note(
-                f"Quit: se eliminaron {removed} tokens de tipo {tok.name}",
-                'success',
-                node=target,
-            )
+    @contextmanager
+    def transaction(self, name: str) -> Iterator[Checkpoint]:
+        """
+        Context manager executing a parsing block atomically, restoring state on exception.
+        """
+        cp = self.savepoint(f'transaction-{name}')
+        try:
+            yield cp
+        except Exception:
+            self.restore(cp)
+            raise
 
-        self._pos = min(self._pos, len(self._tokens))
-        self._virtual_pos = min(self._virtual_pos, len(self._tokens))
+    def quit(self, tok: Token) -> int:
+        """
+        Remove all occurrences of token type `tok` from the stream and clamp cursors.
+        """
+        initial_size = len(self.tokens)
+        self.tokens = [t for t in self.tokens if t.token != tok]
+        removed = initial_size - len(self.tokens)
+        self.success(f'Removed {removed} tokens of type {tok.name}')
+
+        self.pos = self.normalice_index(self.pos)
+        self.vpos = self.normalice_index(self.vpos)
         return removed
 
     def synchronize(
-        self,
-        sync_tokens: tuple[Token, ...] | None = None,
-        node: InfoNode | None = None,
-    ) -> list[TokenType]:
+        self, sync_tokens: tuple[Token, ...] | None = None
+    ) -> tuple[list[TokenType], TokenType | None]:
         """
-        EN: Panic-mode recovery: consume tokens until a safe synchronization delimiter is found.
-        ES: Recuperación en modo pánico: consume tokens hasta hallar un delimitador seguro.
-
-        Args:
-            sync_tokens: Tuple of synchronization delimiter tokens (default NEWLINE, DEDENT, EOF).
-                         Tupla de delimitadores de sincronización (por defecto NEWLINE, DEDENT, EOF).
-            node: Optional target telemetry node.
-                  Nodo de telemetría de destino opcional.
-
-        Returns:
-            List of discarded tokens during recovery synchronization.
-            Lista de tokens descartados durante la sincronización de recuperación.
+        Advance the physical cursor until a synchronization token is reached
+        (panic-mode error recovery).
         """
-        target = self._get_target_node(node)
         if sync_tokens is None:
-            from gram.core.lexer.tokens import Token as T
-            sync_tokens = (T.NEWLINE, T.DEDENT, T.EOF)
+            sync_tokens = (Token.NEWLINE, Token.DEDENT, Token.EOF)
 
         discarded: list[TokenType] = []
-        while self.not_empty():
-            curr = self._tokens[self._pos]
-            if curr.token in sync_tokens:
+        breaker: TokenType | None = None
+        while not self.empty():
+            current = self.tokens[self.pos]
+            if current.token in sync_tokens:
+                breaker = current
                 break
-            discarded.append(curr)
-            self._pos += 1
+            discarded.append(current)
+            self.pos += 1
 
-        if discarded and config.PARSER_ADD_INFO:
-            self.note(
-                f"Sincronización: se descartaron {len(discarded)} tokens hasta delimitador seguro",
-                'advice',
-                node=target,
-            )
-
-        return discarded
+        if discarded:
+            until_msg = f" until {breaker.token.name}" if breaker is not None else " until EOF"
+            self.advice(f'Discarded {len(discarded)} tokens during synchronization{until_msg}')
+        return discarded, breaker
 
 
-__all__ = ['ParseControl']
+__all__ = [
+    'Diagnostics',
+    'ParseState',
+]

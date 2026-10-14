@@ -1,199 +1,122 @@
 """
-Combinador de Coincidencia de Palabras Clave (`gram.core.combinators.match.match_keyword`).
-=========================================================================================
-Evalúa si el token bajo el cursor del analizador corresponde a una palabra clave
-(Token.KEYWORD) debidamente registrada en el catálogo global `words` y con el valor exacto.
+Keyword Matching Combinator (`gram.core.combinators.match.match_keyword`).
+==========================================================================
+Validates that the token currently under the parser cursor is a registered
+`Token.KEYWORD` matching an exact keyword identifier.
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.lexer import words
-from gram.core.lexer.tokens import Token, TokenType
+from gram.core.lexer.tokens import Token
 from gram.core.lexer.words import Keyword
-from gram.utilities import error
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
-    from gram.core.parser.core import Parser
 
 
 class MatchKeyword(Combinator):
     """
-    ES:
-        Combinador atómico que valida que el token actual sea una palabra clave
-        (Token.KEYWORD) debidamente registrada en el catálogo léxico y con el texto esperado.
-
-    EN:
-        Atomic combinator validating that current token is a registered KEYWORD.
+    Atomic combinator that validates whether the current token is a `Token.KEYWORD`
+    matching the expected keyword lexeme.
     """
 
     def __init__(self, keyword: str | Keyword) -> None:
         """
-        Inicializa el combinador con el nombre de la palabra clave esperada.
+        Initialize the keyword matcher with the target keyword name or `Keyword` object.
 
         Args:
-            keyword: Identificador de la palabra clave (ej. 'def', 'if', 'return') o instancia Keyword.
+            keyword (str | Keyword): Expected keyword string (e.g., `'def'`, `'if'`)
+                or `Keyword` instance.
         """
-        if isinstance(keyword, Keyword):
-            self.keyword: str = keyword.name
-        else:
-            self.keyword = str(keyword)
+        super().__init__()
+        self.keyword: str = (
+            keyword.name if isinstance(keyword, Keyword) else str(keyword)
+        )
 
-    def parse(
-        self,
-        analyzer: ASTAnalyzer | Parser | Any,
-        current: TokenType | None = None,
-        ignore_errors: bool = False,
-    ) -> TokenType | None:
+    def parse(self, analyzer: ASTAnalyzer) -> Any | None:
         """
-        Verifica si el token actual es la palabra clave esperada.
+        Verify that the current token is a `Token.KEYWORD` with value `self.keyword`.
 
         Args:
-            analyzer: Instancia activa del analizador sintáctico o parser.
-            current: Token actual posicionado bajo el cursor, o None para consumir del parser.
-            ignore_errors: Si True, retorna None en vez de lanzar excepciones ante discrepancias.
+            analyzer (ASTAnalyzer): Active AST analyzer instance.
 
         Returns:
-            TokenType | None: El token reconocido si coincide; None en caso contrario.
-
-        Raises:
-            ParserError: Si el token no es KEYWORD, la keyword no existe o el valor no coincide.
+            Any | None: Delegated AST node on match, or `None` on mismatch.
         """
-        parser = self._get_parser(analyzer)
-        target_node = self._get_node(analyzer)
+        parser = analyzer.parser
+        father = parser.node(
+            "ProcessingMatchKeyword",
+            "Procesando match de palabra clave",
+            set_target=True,
+        )
+        father.note(f"Revisando Keyword: {self.keyword}", "normal")
 
-        if config.PARSER_ADD_INFO:
-            target_node.note(f"MatchKeyword: esperando {self.keyword!r}", "Normal")
-
-        checkpoint = parser.savepoint(node=target_node)
-
-        if current is None:
-            if not parser.not_empty():
-                self._record_failure(
-                    analyzer,
-                    f"palabra clave {self.keyword!r}",
-                    checkpoint.pos,
-                    None,
-                )
-                if not ignore_errors:
-                    if config.PARSER_ADD_ERROR:
-                        target_node.note(
-                            f"Error sintáctico: se esperaba palabra clave {self.keyword!r} pero se alcanzó EOF",
-                            "Error",
-                        )
-                    error.ParserError(
-                        "Palabra clave inesperada",
+        try:
+            if parser.empty():
+                father.note("Salida inesperada. No se encontró ningún Token.", "error")
+                analyzer.report_error(
+                    errors.ParserError(
+                        "EmptyTokenStream",
                         errors.PARSER_EARLY_EOF,
-                        f"Se esperaba la palabra reservada {self.keyword!r} pero se alcanzó el final del archivo.",
-                    ).raise_error()
+                        f"Salida inesperada (EOF) al buscar la palabra clave {self.keyword!r}.",
+                        "Verifique que la expresión esté completa.",
+                    ),
+                    pos=parser.pos,
+                )
                 return None
-            tok = parser.consume(node=target_node)
-        else:
-            tok = current
 
-        current_token = tok.token
-        current_name = current_token.name
+            current = parser.peek()
+            if current is None:
+                return None
 
-        # 1. El token debe ser de categoría KEYWORD
-        if current_token != Token.KEYWORD and current_name != "KEYWORD":
-            self._record_failure(
-                analyzer,
-                f"palabra clave {self.keyword!r}",
-                checkpoint.pos,
-                tok,
-            )
-            parser.restore(checkpoint, node=target_node)
-
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"Se recibió {current_name!r}; se esperaba KEYWORD",
-                    "Warn",
+            if current.token != Token.KEYWORD:
+                father.note(
+                    f"El Token actual no es de tipo KEYWORD. Line: {current.line}, Col: {current.col}",
+                    "error",
                 )
-
-            if not ignore_errors:
-                if config.PARSER_ADD_ERROR:
-                    target_node.note(
-                        f"Error sintáctico: se esperaba palabra clave {self.keyword!r}",
-                        "Error",
-                    )
-                error.ParserError(
-                    "Palabra clave inesperada",
-                    errors.PARSER_UNEXPECTED_TOKEN,
-                    f"Se esperaba la palabra reservada {self.keyword!r} pero se encontró {current_name}.",
-                    f"Encontrado en línea {tok.line}, columna {tok.col}.",
-                ).raise_error()
-
-            return None
-
-        # 2. La palabra clave debe existir en el catálogo global del lexer
-        if not words.keyword_exists(self.keyword):
-            self._record_failure(
-                analyzer,
-                f"palabra clave registrada {self.keyword!r}",
-                checkpoint.pos,
-                tok,
-            )
-            parser.restore(checkpoint, node=target_node)
-
-            if config.PARSER_ADD_ERROR:
-                target_node.note(
-                    f"La palabra clave {self.keyword!r} no está registrada en el lexer",
-                    "Error",
+                analyzer.report_error(
+                    errors.ParserError(
+                        "KeywordTypeMismatch",
+                        errors.PARSER_UNEXPECTED_TOKEN,
+                        f"Se esperaba la palabra clave {self.keyword!r}, pero se obtuvo el token "
+                        f"'{current.token.name}' ({current.value!r}) en línea {current.line}, columna {current.col}.",
+                        f"Asegúrese de colocar la palabra clave '{self.keyword}' en esta posición.",
+                    ),
+                    pos=parser.pos,
                 )
-            if not ignore_errors:
-                error.ParserError(
-                    "Palabra clave no registrada",
-                    errors.KEYWORD_NOT_FOUND,
-                    f"La palabra clave {self.keyword!r} no está registrada.",
-                    "Asegúrese de registrarla con gram.core.lexer.words.add_keyword().",
-                ).raise_error()
-            return None
+                return None
 
-        # 3. Coincidencia exacta del valor textual de la palabra clave
-        if tok.value != self.keyword:
-            self._record_failure(
-                analyzer,
-                f"palabra clave {self.keyword!r}",
-                checkpoint.pos,
-                tok,
-            )
-            parser.restore(checkpoint, node=target_node)
-
-            if config.PARSER_ADD_INFO:
-                target_node.note(
-                    f"Keyword no coincide: se esperaba {self.keyword!r}, se recibió {tok.value!r}",
-                    "Warn",
+            if current.value != self.keyword:
+                father.note(
+                    f"El Token actual no coincide con el esperado: "
+                    f"current={current.value}, expected={self.keyword}. "
+                    f"Line: {current.line}, Col: {current.col}",
+                    "error",
                 )
+                analyzer.report_error(
+                    errors.ParserError(
+                        "KeywordValueMismatch",
+                        errors.PARSER_UNEXPECTED_TOKEN,
+                        f"Se esperaba la palabra clave {self.keyword!r}, pero se encontró "
+                        f"{current.value!r} en línea {current.line}, columna {current.col}.",
+                        f"Reemplace {current.value!r} por {self.keyword!r}.",
+                    ),
+                    pos=parser.pos,
+                )
+                return None
 
-            if not ignore_errors:
-                if config.PARSER_ADD_ERROR:
-                    target_node.note(
-                        f"Discrepancia en palabra clave: {self.keyword!r} != {tok.value!r}",
-                        "Error",
-                    )
-                error.ParserError(
-                    "Palabra clave discrepante",
-                    errors.PARSER_UNEXPECTED_TOKEN,
-                    f"Se esperaba {self.keyword!r} pero se recibió {tok.value!r}.",
-                    f"En línea {tok.line}, columna {tok.col}.",
-                ).raise_error()
-
-            return None
-
-        # Si current fue pasado explícitamente y el parser aún apuntaba a él, avanzar cursor físico
-        if current is not None and parser.not_empty() and parser.tokens[parser.pos] is current:
-            parser.advance()
-
-        if config.PARSER_ADD_INFO:
-            target_node.note(
-                f"MatchKeyword exitoso: {self.keyword!r}",
-                "Success",
+            father.note(
+                f"Se encontró el keyword {current}. Line: {current.line}, Col: {current.col}",
+                "success",
             )
-
-        return tok
+            parser.consume()
+            analyzer.discard_staged_failure(min_weight=parser.pos)
+            return analyzer.delegate_return_node(current)
+        finally:
+            parser.down()
 
     def __repr__(self) -> str:
         return f"MatchKeyword({self.keyword!r})"

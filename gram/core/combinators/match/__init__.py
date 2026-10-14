@@ -1,12 +1,12 @@
 """
-Subpaquete de Combinadores de Coincidencia (`gram.core.combinators.match`).
-==========================================================================
-Proporciona combinadores atómicos especializados en validar y filtrar tokens:
-- `MatchToken`: Coincidencia por tipo de token (`Token` enum, `CustomToken` o nombre).
-- `MatchKeyword`: Coincidencia por palabra clave registrada en el lexer.
-- `MatchGroup`: Coincidencia por pertenencia a un grupo semántico (`WordGroup`).
-- `MatchSymbol` / `MatchSeqSymbol`: Coincidencia textual por expresión regular o símbolos.
-- `generador_expr`: Función constructora de expresiones regulares.
+Token Matching Combinators Subpackage (`gram.core.combinators.match`).
+======================================================================
+Provides atomic combinators specialized in validating and filtering tokens:
+- `MatchToken`: Matches by token type (`Token` enum, `CustomToken`, or name).
+- `MatchKeyword`: Matches a specific registered keyword in the lexer.
+- `MatchGroup`: Matches membership within a semantic `WordGroup`.
+- `MatchSymbol` / `MatchSeqSymbol`: Matches token text via regex or symbol list.
+- `generador_expr`: Helper builder for regular expression patterns.
 """
 from __future__ import annotations
 
