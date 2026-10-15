@@ -23,7 +23,7 @@ class DummyEntryRule(RuleItem):
 
 class DummyEntrypoint(RuleItem):
     """Valid entrypoint rule configured with Alt(Ref(DummyEntryRule))."""
-    grammar = Alt(Ref(DummyEntryRule))
+    entrypoint = Alt(Ref(DummyEntryRule))
 
 
 class CombinatorTestCase(unittest.TestCase):

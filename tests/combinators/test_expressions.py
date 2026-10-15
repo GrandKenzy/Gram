@@ -20,7 +20,7 @@ from tests.combinators.base import CombinatorTestCase
 
 class UnnamedNonNodeable(RuleItem):
     nodeable = False
-    grammar = None
+    entrypoint = None
 
 
 class TestExpressionCombinators(CombinatorTestCase):

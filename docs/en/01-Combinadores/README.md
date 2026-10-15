@@ -14,7 +14,7 @@ The framework categorizes combinators by syntactic function:
 | :--- | :--- | :--- |
 | **[Matching](./01-matching.md)** | `MatchToken`, `MatchKeyword`, `MatchSymbol`, `MatchGroup`, `MatchSeqSymbol` | Atomic validation and consumption of specific tokens, keywords, symbols, or semantic word groups. |
 | **[Structural](./02-structural.md)** | `Seq`, `Alt`, `Opt`, `Enclosed` | Ordering, alternatives, optional cardinality, and delimited bracket/parenthesis grouping. |
-| **[Repetition](./03-repetition.md)** | `Many`, `Some`, `Until`, `Separator` / `Sep` | Loops ($0..n$, $1..n$), delimiter consumption, and separated lists with trailing support. |
+| **[Repetition](./03-repetition.md)** | `Many`, `Some`, `Until`, `UntilIndent`, `Separator` / `Sep` | Loops ($0..n$, $1..n$), delimiter consumption, and separated lists with trailing support. |
 | **[Rules & Storage](./04-rules-and-storage.md)** | `Ref`, `Item`, `Literal`, `Save`, `Load` | Production rule references, atomic token sequences, literals, and session-level parser storage. |
 | **[Lookahead & Control](./05-lookahead-and-control.md)** | `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator` | Zero-width positive/negative lookahead, branching, control signals, token tagging, and error capture. |
 | **[Fluent Validation](./06-fluent-validation.md)** | `Req` | Fluent constraints (case, bounds, prefix/suffix) and in-place transformations on matched tokens. |

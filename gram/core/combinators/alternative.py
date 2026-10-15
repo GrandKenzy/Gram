@@ -65,6 +65,10 @@ class Alt(Combinator):
         analyzer.debug(f"Procesando ALT con {len(self.combinators)} alternativas")
 
         checkpoint = parser.savepoint("ALT-Analysis")
+        # [RayTracing/Diagnostics Isolation] Guardar el estado previo de _staged_failure
+        # para aislar las ramas especulativas y no contaminar combinadores (ej. Opt) en ramas posteriores.
+        saved_staged = analyzer._staged_failure
+        best_staged = saved_staged
 
         try:
             for index, combinator in enumerate(self.combinators, start=1):
@@ -72,6 +76,9 @@ class Alt(Combinator):
                     f"Probando alternativa No. {index}: {combinator.type()}",
                     "normal",
                 )
+                # Aislar cada intento: restablecer el fallo preparado para que el intento anterior
+                # no deje residuos de mayor peso que hagan fallar erróneamente combinadores opcionales.
+                analyzer._staged_failure = saved_staged
                 try:
                     with analyzer.safe_mode():
                         res = analyzer.visitor(combinator)
@@ -87,6 +94,12 @@ class Alt(Combinator):
 
                 if res is None:
                     father.note(f"Alternativa No. {index} rechazada", "normal")
+                    # Registrar el fallo que mayor profundidad de tokens alcanzó (mayor peso)
+                    # para ofrecer el mejor diagnóstico posible si todas las alternativas fallan.
+                    curr_staged = analyzer._staged_failure
+                    if curr_staged is not None:
+                        if best_staged is None or curr_staged[0] > best_staged[0]:
+                            best_staged = curr_staged
                     parser.restore(checkpoint)
                     continue
 
@@ -94,6 +107,9 @@ class Alt(Combinator):
                 analyzer.discard_staged_failure(min_weight=parser.pos)
                 return res
 
+            # Si todas las alternativas fueron rechazadas, restaurar el fallo más profundo
+            # para que el reporte de errores y los hooks de diagnóstico muestren la causa más cercana.
+            analyzer._staged_failure = best_staged
             father.note("Todas las alternativas fueron rechazadas", "error")
             curr_tok = parser.peek() if not parser.empty() else None
             tok_info = (

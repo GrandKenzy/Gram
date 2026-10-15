@@ -7,7 +7,7 @@ from gram import errors
 from gram.core.ast.nodes import Identifier, LiteralNumber
 from gram.core.combinators.many import Many
 from gram.core.combinators.match import MatchKeyword, MatchToken
-from gram.core.combinators.separator import Sep, Separator, SeparatorResult
+from gram.core.combinators.separator import ArrayNode, Separator
 from gram.core.combinators.some import Some
 from gram.core.combinators.until import Until
 from gram.core.lexer.tokens import Token
@@ -97,30 +97,63 @@ class TestRepetitionAndSeparator(CombinatorTestCase):
     # =========================================================================
 
     def test_separator_shape_and_variants(self) -> None:
-        """1. Result shape: SeparatorResult (subclass of list)."""
+        """1. Result shape: ArrayNode."""
         sep_comb = Separator(values=[Token.NUMBER], sep=Token.COMMA)
 
         # Variant A: Multiple comma-separated numbers
         res, a1 = self.parse_with_analyzer(sep_comb, "1, 2, 3 + 4")
-        self.assertIsInstance(res, SeparatorResult)
-        self.assertIsInstance(res, list)
+        self.assertIsInstance(res, ArrayNode)
         self.assertEqual(len(res), 3)
         self.assertEqual([x.token.value for x in res], [1, 2, 3])
-        self.assertFalse(res.trailing_separator)
+        self.assertFalse(res.trailing)
         self.assertEqual(a1.parser.pos, 5)
 
         # Variant B: Trailing separator allowed
-        sep_trailing = Sep(values=[Token.IDENT], sep=Token.COMMA, allow_trailing=True)
+        sep_trailing = Separator(values=[Token.IDENT], sep=Token.COMMA, allow_trailing=True)
         res_tr, a2 = self.parse_with_analyzer(sep_trailing, "x, y,")
-        self.assertIsInstance(res_tr, SeparatorResult)
+        self.assertIsInstance(res_tr, ArrayNode)
         self.assertEqual(len(res_tr), 2)
-        self.assertTrue(res_tr.trailing_separator)
+        self.assertTrue(res_tr.trailing)
 
         # Variant C: Single item without separator
         res_single, a3 = self.parse_with_analyzer(sep_comb, "999")
-        self.assertIsInstance(res_single, SeparatorResult)
+        self.assertIsInstance(res_single, ArrayNode)
         self.assertEqual(len(res_single), 1)
         self.assertEqual(res_single[0].token.value, 999)
+
+        # Variant D: Empty input with min=0 produces empty ArrayNode
+        res_empty, a4 = self.parse_with_analyzer(sep_comb, "abc")
+        self.assertIsInstance(res_empty, ArrayNode)
+        self.assertEqual(len(res_empty), 0)
+        self.assertFalse(bool(res_empty))
+        self.assertFalse(res_empty.trailing)
+        self.assertEqual(a4.parser.pos, 0)
+
+        # Variant E: min > 0 constraint failure returns None
+        sep_min = Separator(values=[Token.NUMBER], sep=Token.COMMA, min=2)
+        res_min_fail, a5 = self.parse_with_analyzer(sep_min, "10 abc")
+        self.assertIsNone(res_min_fail)
+
+        # Variant F: max constraint stops consuming
+        sep_max = Separator(values=[Token.NUMBER], sep=Token.COMMA, max=2)
+        res_max, a6 = self.parse_with_analyzer(sep_max, "1, 2, 3, 4")
+        self.assertIsInstance(res_max, ArrayNode)
+        self.assertEqual(len(res_max), 2)
+        self.assertEqual([x.token.value for x in res_max], [1, 2])
+
+        # Variant G: allow_trailing=False leaves trailing separator in stream
+        sep_no_trailing = Separator(values=[Token.IDENT], sep=Token.COMMA, allow_trailing=False)
+        res_nt, a7 = self.parse_with_analyzer(sep_no_trailing, "x, y,")
+        self.assertIsInstance(res_nt, ArrayNode)
+        self.assertEqual(len(res_nt), 2)
+        self.assertFalse(res_nt.trailing)
+        self.assertEqual(a7.parser.peek().token, Token.COMMA)
+
+        # Variant H: ArrayNode protocol tests (__iter__, __getitem__, __bool__)
+        self.assertTrue(bool(res_nt))
+        self.assertEqual([item.token.value for item in res_nt], ["x", "y"])
+        self.assertEqual(res_nt[0].token.value, "x")
+        self.assertEqual(res_nt[1].token.value, "y")
 
     def test_separator_errors(self) -> None:
         """3. Errors: Invalid value configuration in Separator raises GrammarError."""

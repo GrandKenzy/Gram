@@ -107,7 +107,7 @@ class RuleMeta(type):
     user-defined rules in `code_manager`.
     """
 
-    grammar: Combinator | None = None
+    entrypoint: Combinator | None = None
     name: str = ""
     code: int = 0
     nodeable: bool = True
@@ -139,7 +139,7 @@ class RuleMeta(type):
             f"code={cls.code!r}, "
             f"name={cls.name or cls.__name__!r}, "
             f"nodeable={cls.nodeable!r}, "
-            f"grammar={bool(cls.grammar)}"
+            f"entrypoint={bool(cls.entrypoint)}"
             f")"
         )
 
@@ -156,7 +156,7 @@ class RuleItem(metaclass=RuleMeta):
     name: str = ""
     nodeable: bool = True
     description: str = ""
-    grammar: Combinator | None = None
+    entrypoint: Combinator | None = None
 
     # Mapas declarativos VSIX / LSP (requieren nodeable = True)
     colors: dict[TokenIndexKey, str] = {}

@@ -116,7 +116,7 @@ words.add_keyword("let", hex_color="#569CD6", description="Variable declaration"
 # 2. Define grammar rules using RuleItem
 class LetStatement(RuleItem):
     name = "LetStatement"
-    grammar = Seq(
+    entrypoint = Seq(
         MatchKeyword("let"),
         MatchToken(Token.IDENT),
         MatchToken(Token.ASSIGN),
@@ -127,7 +127,7 @@ class LetStatement(RuleItem):
 grammar = {
     PROGRAM: Many(Ref(DECLARATION)),
     DECLARATION: Alt(Ref(LetStatement)),
-    LetStatement: LetStatement.grammar,
+    LetStatement: LetStatement.entrypoint,
 }
 
 # 4. Tokenize source code

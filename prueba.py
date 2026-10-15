@@ -34,7 +34,7 @@ class CALL_DECL(combinators.RuleItem):
 
 
 class VALUE(combinators.RuleItem):
-    grammar = combinators.Alt(
+    entrypoint = combinators.Alt(
         combinators.DualExpr(
             lexer.Token.IDENT, lexer.Token.NUMBER, lexer.Token.STRING, combinators.Ref(CALL_DECL), lexer.Token.BOOL
         ),
@@ -48,7 +48,7 @@ class VALUE(combinators.RuleItem):
 
 
 class VAR_ASSIGN(combinators.RuleItem):
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchToken('ASSIGN'),
         combinators.Ref(VALUE)
     )
@@ -60,7 +60,7 @@ class VAR_DECL(combinators.RuleItem):
     }
     autocomplete = ['int', 'str']
     hints = '<type> <identifier> [= <value>]'
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchGroup('types'),
         combinators.MatchToken('IDENT'),
         combinators.Opt(combinators.Ref(VAR_ASSIGN))
@@ -69,7 +69,7 @@ class VAR_DECL(combinators.RuleItem):
 
 
 class ARG_PAIRS(combinators.RuleItem):
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchToken('IDENT'),
         combinators.MatchToken('COLON'),
         combinators.MatchGroup('types')
@@ -78,7 +78,7 @@ class ARG_PAIRS(combinators.RuleItem):
 
 
 class ARGUMENTS(combinators.RuleItem):
-    grammar = combinators.Enclosed(
+    entrypoint = combinators.Enclosed(
         open=lexer.Token.LPAREN,
         content=combinators.Separator(
             values=[combinators.Ref(ARG_PAIRS)],
@@ -97,7 +97,7 @@ class RETURN_DECL(combinators.RuleItem):
     }
     autocomplete = ['return']
     hints = 'return <expression>'
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchKeyword('return'),
         combinators.Ref(VALUE)
     )
@@ -105,7 +105,7 @@ class RETURN_DECL(combinators.RuleItem):
 
 class FUNC_BODY(combinators.RuleItem):
     nodeable = True
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchToken('INDENT'),
         combinators.Alt(
             combinators.Ref(RETURN_DECL),
@@ -120,7 +120,7 @@ class FUNC_DECL(combinators.RuleItem):
         'types': 'storage.type'
     }
     hints = '<type> <name>(<args>):\n    <body>'
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchGroup('types'),
         combinators.MatchToken('IDENT'),
         combinators.Ref(ARGUMENTS),
@@ -132,7 +132,7 @@ class FUNC_DECL(combinators.RuleItem):
 
 class BLOCK_BODY(combinators.RuleItem):
     nodeable = True
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchToken('INDENT'),
         combinators.Many(combinators.Ref(VAR_DECL)),
         combinators.MatchToken('DEDENT')
@@ -147,7 +147,7 @@ class BLOCK_DECL(combinators.RuleItem):
     }
     autocomplete = ['block', 'end']
     hints = 'block <name>:\n    <statements>\nend <name>'
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchKeyword('block'),
         combinators.MatchToken('IDENT'),
         combinators.MatchToken('COLON'),
@@ -165,14 +165,14 @@ class IMPORT_DECL(combinators.RuleItem):
     autocomplete = ['import']
     suggestions = get_gram_directories
     hints = 'import <module>'
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchKeyword('import'),
         combinators.MatchToken('IDENT')
     )
 
 
 class PROGRAM(combinators.RuleItem):
-    grammar = combinators.Alt(
+    entrypoint = combinators.Alt(
         combinators.Ref(BLOCK_DECL),
         combinators.Ref(IMPORT_DECL),
         combinators.Ref(FUNC_DECL),
@@ -181,7 +181,7 @@ class PROGRAM(combinators.RuleItem):
 
 
 class PARAMS(combinators.RuleItem):
-    grammar = combinators.Enclosed(
+    entrypoint = combinators.Enclosed(
         open=lexer.Token.LPAREN,
         close=lexer.Token.RPAREN,
         content=combinators.Separator(
@@ -192,7 +192,7 @@ class PARAMS(combinators.RuleItem):
     nodeable = True
 
 
-CALL_DECL.grammar = combinators.Seq(
+CALL_DECL.entrypoint = combinators.Seq(
     combinators.MatchToken('IDENT'),
     combinators.Ref(PARAMS)
 )

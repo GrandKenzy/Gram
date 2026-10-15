@@ -1,5 +1,5 @@
 class VAR_DECL(combinators.RuleItem):
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchGroup('types'),
         combinators.MatchToken('IDENT'),
         combinators.Opt(combinators.Ref(VAR_ASSIGN))

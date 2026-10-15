@@ -89,28 +89,72 @@ statement_body = combinators.Until(
 
 ---
 
-## 4. `Separator` / `Sep`
+## 4. `UntilIndent`
 
-Parses elements separated by a delimiter token (such as comma-separated function arguments or semicolon-separated statements). Supports minimum/maximum count bounds and optional trailing delimiters.
+Sequentially consumes tokens until encountering an indentation transition that matches a target indentation level or relative direction (`"back"` / `"front"`).
+
+### Constructor
+```python
+UntilIndent(
+    target: int | Literal["back", "front"] | str,
+    *,
+    consume_target: bool = False,
+    allow_eof: bool = False,
+    max_tokens: int | None = None,
+)
+```
+
+- `target`: Target indentation condition:
+  - `int` (e.g. `0`, `4`): Consumes until finding an indentation level matching `target` (e.g. `0` reaches base level).
+  - `"back"`: Consumes until finding any indentation lower than the active level at start (dedentation / `DEDENT`).
+  - `"front"`: Consumes until finding any indentation higher than the active level at start (indentation / `INDENT`).
+- `consume_target`: If `False` (default), stops immediately before the target `INDENT`/`DEDENT` token, leaving it in the stream for parent rules (such as block dedents). If `True`, consumes the target token.
+- `allow_eof`: If `True`, reaching EOF without matching target is considered a valid end-of-block.
+- `max_tokens`: Optional maximum cap of tokens consumed.
+
+### Return Shape
+Returns `list[Any]` containing all tokens/nodes consumed prior to reaching the indentation target.
+
+### Example
+```python
+from gram import combinators as cmb
+
+# 1. Consumes tokens until dedenting (leaving DEDENT for the enclosing block)
+return_stmt = cmb.Seq(
+    cmb.MatchKeyword("return"),
+    cmb.Opt(cmb.Ref(VALUE)),
+    cmb.UntilIndent("back", consume_target=False),
+)
+
+# 2. Consumes all tokens inside a block until returning to root level 0
+root_block = cmb.UntilIndent(0)
+
+# 3. Consumes header tokens until entering an indented block ('front')
+block_header = cmb.UntilIndent("front", consume_target=False)
+```
+
+---
+
+## 5. `Separator`
+
+Parses elements separated by a delimiter token (such as comma-separated function arguments or semicolon-separated statements). Supports minimum/maximum count bounds and optional trailing delimiters, returning an `ArrayNode`.
 
 ### Constructor
 ```python
 Separator(
-    values: Sequence[RuleItem | Ref | MatchToken | Token | str],
-    sep: Token | MatchToken | str,
-    *,
+    values: Sequence[RuleItem | Ref | MatchToken | Token | str] | Combinator | Token | str,
+    sep: Token | MatchToken | Combinator | str = Token.COMMA,
     min: int = 0,
     max: int | None = None,
-    allow_trailing: bool = False,
+    allow_trailing: bool = True,
 )
 ```
-*(Also exported under the alias `Sep`)*
 
 ### Return Shape
-Returns a [`SeparatorResult`](file:///c:/Users/Kentucky/Desktop/Gram/gram/core/combinators/separator.py#L25) instance, which subclasses `list[Any]` and provides:
-- `.trailing_separator`: Boolean flag indicating if a trailing separator was consumed.
-- `.to_list()`: Recursively converts the result into plain Python lists.
-- `.items`: Returns a shallow list copy of the elements.
+Returns an [`ArrayNode`](file:///c:/Users/Kentucky/Desktop/Gram/gram/core/ast/nodes.py) AST node instance, providing:
+- `.items`: `tuple[Any, ...]`: The parsed child AST elements.
+- `.trailing`: `bool`: Boolean flag indicating if a trailing separator was consumed.
+- Full sequence protocol support (`len(node)`, `iter(node)`, `node[idx]`, `bool(node)`).
 
 ### Errors Raised
 - Raises `UnsupportedSeparatorValue` if an invalid specification is passed in `values`.

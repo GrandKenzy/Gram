@@ -7,7 +7,8 @@ references (`ASTRef`) produced during syntactic analysis.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from gram.core.lexer.tokens import TokenType
@@ -76,10 +77,42 @@ class ASTRef(ASTNode):
         self.nodes: list[ASTNode] = nodes
 
     def __repr__(self) -> str:
-        return f'AstRef(content={len(self.nodes)}, name={self.name})'
+        return f'AstRef(nodes={len(self.nodes)}, name={self.name})'
+
+
+class ArrayNode(ASTNode):
+    """AST node representing a delimited sequence of elements (e.g. matched by Separator)."""
+    __slots__ = ('items', 'trailing')
+
+    def __init__(self, items: Sequence[Any], trailing: bool = False) -> None:
+        """
+        Initialize an ArrayNode.
+
+        Args:
+            items (Sequence[Any]): Child elements in the sequence.
+            trailing (bool): Whether a trailing separator was present.
+        """
+        self.items: tuple[Any, ...] = tuple(items)
+        self.trailing: bool = trailing
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def __getitem__(self, idx: int) -> Any:
+        return self.items[idx]
+
+    def __bool__(self) -> bool:
+        return len(self.items) > 0
+
+    def __repr__(self) -> str:
+        return f"ArrayNode(items={list(self.items)!r}, trailing={self.trailing})"
 
 
 __all__ = [
+    'ArrayNode',
     'ASTKeyword',
     'ASTNode',
     'ASTRef',

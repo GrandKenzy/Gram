@@ -6,7 +6,7 @@ These combinators link modular grammar rules, group atomic token sequences, vali
 
 ## 1. `Ref` (Rule Reference)
 
-Enables modular grammar composition by referencing a `RuleItem` class. Solves recursion and forward references by resolving `rule.grammar` dynamically at parse time.
+Enables modular grammar composition by referencing a `RuleItem` class. Solves recursion and forward references by resolving `rule.entrypoint` dynamically at parse time.
 
 ### Constructor
 ```python
@@ -20,7 +20,7 @@ Ref(rule: type[RuleItem] | str, name: str | None = None, strict: bool = False)
 - If anonymous (`name = None` and `rule.nodeable = False`): Returns the raw visitor result directly.
 
 ### Errors Raised
-- Reports `EmptyRuleReference` if the referenced rule does not have a `grammar` attribute defined.
+- Reports `EmptyRuleReference` if the referenced rule does not have an `entrypoint` attribute defined.
 
 ### Example
 ```python
@@ -29,10 +29,10 @@ from gram.core.lexer import Token
 
 class EXPR(combinators.RuleItem):
     nodeable = True
-    grammar = combinators.MatchToken(Token.NUMBER)
+    entrypoint = combinators.MatchToken(Token.NUMBER)
 
 class STATEMENT(combinators.RuleItem):
-    grammar = combinators.Seq(
+    entrypoint = combinators.Seq(
         combinators.MatchKeyword("return"),
         combinators.Ref(EXPR),  # produces ASTRef('EXPR', [LiteralNumber])
     )

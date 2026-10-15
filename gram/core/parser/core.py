@@ -6,7 +6,7 @@ to `ParseState` and delegates grammatical evaluation to `ASTAnalyzer`.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from gram import errors
 from gram.core.ast import ASTAnalyzer
@@ -47,12 +47,17 @@ class Parser(ParseState):
         self.tokens = tokens
         self.analyzer_ast_instance: ASTAnalyzer | None = None
 
-    def parse(self, entrypoint: type[RuleItem]) -> Any:
+    def parse(
+        self,
+        entrypoint: type[RuleItem],
+        mode: Literal["Many", "Some"] = "Many",
+    ) -> Any:
         """
         Execute syntactic analysis starting from the given grammar entrypoint rule.
 
         Args:
             entrypoint (type[RuleItem]): The root grammar rule class to evaluate.
+            mode (Literal['Many', 'Some']): Top-level repetition mode ('Many' for 0+ or 'Some' for 1+).
 
         Returns:
             Any: The resulting AST or visitor output from `ASTAnalyzer.process()`.
@@ -70,7 +75,7 @@ class Parser(ParseState):
             return None
 
         self.debug('Starting syntactic analysis')
-        analyzer = ASTAnalyzer(self, entrypoint)
+        analyzer = ASTAnalyzer(self, entrypoint, mode=mode)
         self.analyzer_ast_instance = analyzer
         return analyzer.process()
 

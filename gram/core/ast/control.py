@@ -157,24 +157,24 @@ class ASTState(utilities.Diagnostics):
 
     def is_valid_entrypoint(self, entrypoint: type[RuleItem]) -> bool:
         """
-        Validate that `entrypoint.grammar` is an `Alt` combinator composed
+        Validate that `entrypoint.entrypoint` is an `Alt` combinator composed
         exclusively of `Ref` combinators.
         """
-        if not isinstance(entrypoint.grammar, Alt):
+        if not isinstance(entrypoint.entrypoint, Alt):
             self.error(f"El entrypoint {entrypoint.name} debe ser de tipo Alt.")
             self.report_error(
                 errors.ASTError(
                     "InvalidEntryPointCombinator",
                     errors.AST_PROGRAM_INVALID_COMBINATOR,
                     f'El Entrypoint "{entrypoint.name}" utiliza un combinador raíz inválido '
-                    f"({type(entrypoint.grammar).__name__}).",
+                    f"({type(entrypoint.entrypoint).__name__}).",
                     "Defina la gramática del Entrypoint utilizando un combinador Alt(...).",
                 )
             )
             return False
 
-        entrypoint.grammar.ignore = True
-        for i, child in enumerate(entrypoint.grammar.combinators):
+        entrypoint.entrypoint.ignore = True
+        for i, child in enumerate(entrypoint.entrypoint.combinators):
             if not isinstance(child, Ref):
                 self.error(
                     f"El combinador en la posición {i} del entrypoint no es un Ref. "

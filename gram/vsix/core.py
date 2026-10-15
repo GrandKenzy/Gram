@@ -44,9 +44,9 @@ class VSIXAnalyzer(VSIXState):
             visited.add(rule_cls)
             collected.append(rule_cls)
 
-            grammar = getattr(rule_cls, "grammar", None)
-            if grammar is not None:
-                _inspect_combinator(grammar)
+            entrypoint = getattr(rule_cls, "entrypoint", None)
+            if entrypoint is not None:
+                _inspect_combinator(entrypoint)
 
         def _inspect_combinator(comb: Any) -> None:
             if comb is None:
@@ -141,7 +141,7 @@ class VSIXAnalyzer(VSIXState):
                 for r in comb._ref_values:
                     _walk(r)
 
-        _walk(getattr(rule_cls, "grammar", None))
+        _walk(getattr(rule_cls, "entrypoint", None))
         return deps
 
     def _extract_lexicon(self) -> dict[str, Any]:

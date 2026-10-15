@@ -18,18 +18,18 @@ from tests.combinators.base import CombinatorTestCase
 class SimpleNamedRule(RuleItem):
     """Rule with explicit nodeable=True."""
     nodeable = True
-    grammar = MatchToken(Token.IDENT)
+    entrypoint = MatchToken(Token.IDENT)
 
 
 class AnonymousRule(RuleItem):
     """Rule without nodeable (returns raw AST node)."""
     nodeable = False
-    grammar = MatchToken(Token.IDENT)
+    entrypoint = MatchToken(Token.IDENT)
 
 
 class EmptyGrammarRule(RuleItem):
-    """Rule with no grammar defined."""
-    grammar = None
+    """Rule with no entrypoint defined."""
+    entrypoint = None
 
 
 class TestReferenceAndItems(CombinatorTestCase):
@@ -68,7 +68,7 @@ class TestReferenceAndItems(CombinatorTestCase):
         self.assertEqual(res_raw.token.value, "raw_var")
 
     def test_ref_errors(self) -> None:
-        """3. Errors: EmptyRuleReference reported when rule grammar is None."""
+        """3. Errors: EmptyRuleReference reported when rule entrypoint is None."""
         ref_empty = Ref(EmptyGrammarRule)
         res, analyzer = self.parse_with_analyzer(ref_empty, "int x")
         self.assertIsNone(res)

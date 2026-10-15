@@ -33,13 +33,14 @@ class ASTAnalyzer(ASTState):
         parser: Parser,
         entrypoint: type[RuleItem],
         logfile: str | None = None,
+        mode: Literal["Many", "Some"] = "Many",
     ) -> None:
         super().__init__(logfile)
         self.parser: Parser = parser
         self.entrypoint: type[RuleItem] = entrypoint
         self.comments: list[TokenType] = []
         self.current_level: int = 0
-        self.mode: Literal["Many", "Some"] = "Many"
+        self.mode: Literal["Many", "Some"] = mode
         self.stack_errors: list[str] = []
 
         self.debug(
@@ -130,7 +131,7 @@ class ASTAnalyzer(ASTState):
         """
         self.debug(f"Generando AST en modo {self.mode}")
 
-        entry = getattr(self.entrypoint, "grammar", None)
+        entry = getattr(self.entrypoint, "entrypoint", None)
 
         if not entry:
             self.error("No se encontró ningún combinador en el punto de entrada")
@@ -139,7 +140,7 @@ class ASTAnalyzer(ASTState):
                     "EmptyEntryPoint",
                     errors.AST_PROGRAM_RULE_NOT_FOUND,
                     f'El Entrypoint "{self.entrypoint.name}" no contiene ningún combinador gramatical.',
-                    'Asegúrese de definir el atributo "grammar" con una regla válida en el punto de entrada.',
+                    'Asegúrese de definir el atributo "entrypoint" con una regla válida en el punto de entrada.',
                 )
             )
             return None

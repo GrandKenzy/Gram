@@ -76,7 +76,7 @@ class Ref(Combinator):
         father = parser.node("ProcessingRef", "Procesando referencia", set_target=True)
         try:
             r_name = self.rule_name
-            entrypoint = getattr(self.rule, "grammar", None)
+            entrypoint = getattr(self.rule, "entrypoint", None)
 
             if entrypoint is None:
                 father.note(
@@ -87,8 +87,8 @@ class Ref(Combinator):
                     errors.GrammarError(
                         "EmptyRuleReference",
                         errors.GRAMMAR_RULE_NOT_FOUND,
-                        f'La regla referenciada "{r_name}" no tiene un combinador "grammar" definido.',
-                        "Asegúrese de asignar un combinador válido al atributo 'grammar' de la regla.",
+                        f'La regla referenciada "{r_name}" no tiene un combinador "entrypoint" definido.',
+                        "Asegúrese de asignar un combinador válido al atributo 'entrypoint' de la regla.",
                     )
                 )
                 return None
