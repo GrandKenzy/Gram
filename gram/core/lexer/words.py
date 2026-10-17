@@ -40,7 +40,7 @@ class Keyword:
         documentation (str): Extended documentation for hover/completion.
     """
 
-    __slots__ = ("name", "hex_color", "group", "description", "documentation")
+    __slots__ = ("description", "documentation", "group", "hex_color", "name")
 
     def __init__(
         self,
@@ -119,7 +119,7 @@ class WordGroup:
     (e.g., `'$TYPES'`, `'$CONTROL'`).
     """
 
-    __slots__ = ("name", "color_group", "description", "_keywords", "_lower_names")
+    __slots__ = ("_keywords", "_lower_names", "color_group", "description", "name")
 
     def __init__(
         self,
@@ -131,7 +131,6 @@ class WordGroup:
         self.color_group: str = color_group
         self.description: str = description
         self._keywords: dict[str, Keyword] = {}
-        self._lower_names: set[str] = set()
 
     @property
     def values(self) -> list[str]:
@@ -145,7 +144,10 @@ class WordGroup:
 
     def contains(self, keyword_name: str) -> bool:
         """Return True if `keyword_name` belongs to this group (case-insensitive, $O(1)$)."""
-        return keyword_name.lower() in self._lower_names
+        for k in self._keywords:
+            if k == keyword_name:
+                return True
+        return False
 
     def add_keyword(self, item: str | Keyword) -> Keyword | None:
         """Add a registered `Keyword` (or keyword name) to this group."""
@@ -174,17 +176,14 @@ class WordGroup:
         if kw.group is None or kw.group == self.name:
             kw.group = self.name
             self._keywords[name] = kw
-            self._lower_names.add(name.lower())
             return kw
         return None
 
     def remove_keyword(self, name: str) -> Keyword | None:
         """Remove a keyword by name from this group."""
         kw = self._keywords.pop(name, None)
-        if kw is not None:
-            self._lower_names.discard(name.lower())
-            if kw.group == self.name:
-                kw.group = None
+        if kw is not None and kw.group == self.name:
+            kw.group = None
         return kw
 
     def count(self) -> int:
@@ -194,7 +193,6 @@ class WordGroup:
     def clear(self) -> None:
         """Remove all keywords from this group."""
         self._keywords.clear()
-        self._lower_names.clear()
 
     def __repr__(self) -> str:
         return (

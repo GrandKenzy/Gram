@@ -64,7 +64,6 @@ class MatchGroup(Combinator):
         parser = analyzer.parser
         parser.node("ProcessingMatchGroup", "Procesando Match Grupal", set_target=True)
         parser.debug(f"MatchGroup: buscando pertenencia al grupo {self.group!r}")
-
         try:
             if parser.empty():
                 parser.error("Salida inesperada. No se encontró ningún Token.")
@@ -80,11 +79,11 @@ class MatchGroup(Combinator):
                 return None
 
             current = parser.peek()
+
             if current is None:
                 return None
 
-            location = f"Line: {current.line}, Col: {current.col}"
-
+        
             if not words.exists_in_group(current.value, self.group):
                 if not words.group_exists(self.group):
                     parser.error(f"El grupo {self.group} no existe.")
@@ -93,7 +92,7 @@ class MatchGroup(Combinator):
                             "WordGroupNotFound",
                             errors.LEXER_WORDGROUP_NOT_FOUND,
                             f"El grupo léxico {self.group!r} no existe en el registro.",
-                            location,
+                            f"Line: {current.line}, Col: {current.col}",
                         ),
                         pos=parser.pos,
                     )
@@ -106,7 +105,7 @@ class MatchGroup(Combinator):
                             "GroupMismatch",
                             errors.PARSER_UNEXPECTED_TOKEN,
                             f"El valor {current.value!r} no pertenece al grupo {self.group!r}.",
-                            location,
+                            f"Line: {current.line}, Col: {current.col}",
                         ),
                         pos=parser.pos,
                     )
@@ -121,7 +120,7 @@ class MatchGroup(Combinator):
                         "GroupValueNotAllowed",
                         errors.PARSER_UNEXPECTED_TOKEN,
                         f"El valor {current.value!r} pertenece a {self.group!r}, pero no está entre los valores permitidos.",
-                        location,
+                        f"Line: {current.line}, Col: {current.col}",
                     ),
                     pos=parser.pos,
                 )
@@ -136,12 +135,11 @@ class MatchGroup(Combinator):
                         "GroupValueDenied",
                         errors.PARSER_UNEXPECTED_TOKEN,
                         f"El valor {current.value!r} está excluido para esta regla del grupo {self.group!r}.",
-                        location,
+                        f"Line: {current.line}, Col: {current.col}",
                     ),
                     pos=parser.pos,
                 )
                 return None
-
             parser.consume()
             analyzer.discard_staged_failure(min_weight=parser.pos)
             return analyzer.delegate_return_node(current)
