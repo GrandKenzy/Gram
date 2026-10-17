@@ -119,7 +119,7 @@ class WordGroup:
     (e.g., `'$TYPES'`, `'$CONTROL'`).
     """
 
-    __slots__ = ("_keywords", "_lower_names", "color_group", "description", "name")
+    __slots__ = ("_keywords", "color_group", "description", "name")
 
     def __init__(
         self,
@@ -144,10 +144,7 @@ class WordGroup:
 
     def contains(self, keyword_name: str) -> bool:
         """Return True if `keyword_name` belongs to this group (case-insensitive, $O(1)$)."""
-        for k in self._keywords:
-            if k == keyword_name:
-                return True
-        return False
+        return keyword_name in self._keywords
 
     def add_keyword(self, item: str | Keyword) -> Keyword | None:
         """Add a registered `Keyword` (or keyword name) to this group."""
