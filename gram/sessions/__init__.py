@@ -40,6 +40,7 @@ class Session():
             
     def load(self):
         words.MAP_KEYWORDS = self.words
+        assert self.group is not None
         words.groups._groups = self.group._groups
         config.load(self.config)
         
@@ -53,5 +54,5 @@ class Session():
         if not entry:
             raise RuntimeError('No se especificó una entrada')
         else:
-            return p.parse(entry, self.mode)
+            return p.parse(entry, self.mode) # type: ignore
         
