@@ -1,9 +1,9 @@
 # VNMA Package Configuration (vnma_config.toml)
-# Specification: https://github.com/GrandKenzy/vnma/blob/main/docs/en/01-Use/03-configuration-specs.md
 
 [package]
-name = "gram-framework"
-version = "2.0.0b0"
+name = "gram-framework2.0.0Beta"
+packname = "gram"
+version = "2.0.0b"
 type = "pure-python"
 
 [runtime]
