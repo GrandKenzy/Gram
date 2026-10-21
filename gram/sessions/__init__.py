@@ -21,8 +21,7 @@ class Session():
         self.entrypoint: type[RuleItem] | None = entrypoint
 
     def clear_global(self):
-        words.groups._groups.clear()
-        words.MAP_KEYWORDS.clear()
+        words.clear_all()
         
     def init(self):
        self.last_config = config.save() # type: ignore

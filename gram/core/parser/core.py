@@ -51,7 +51,7 @@ class Parser(ParseState):
         self,
         entrypoint: type[RuleItem],
         mode: Literal["Many", "Some"] = "Many",
-    ) -> Any:
+    ):
         """
         Execute syntactic analysis starting from the given grammar entrypoint rule.
 

@@ -11,11 +11,12 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from gram import errors
 from gram.core.ast.control import ASTState
+from gram.core.ast.raytracing import RayTracing
 from gram.core.ast.visitor import Visitor
 from gram.core.combinators import Combinator, RuleItem
 from gram.core.lexer import Token
-from gram.core.ast.raytracing import RayTracing
 
+from gram.core.ast.nodes import ASTNode
 
 if TYPE_CHECKING:
     from gram.core.lexer import TokenType
@@ -124,7 +125,7 @@ class ASTAnalyzer(ASTState):
             return None
         return results
 
-    def process(self) -> Any:
+    def process(self) -> (list[ASTNode] | None):
         """
         Validate the grammar entrypoint and execute top-level AST generation
         using `visit_many` or `visit_some`.

@@ -41,26 +41,10 @@ _DEFAULTS: dict[str, Any] = {
     'ERROR_GENERATE_LOGFILE': False,
     'ERROR_HIDE_CONSOLE': False,
     # Info & Logging
-    'INFO_INIT': False,
     'INFO_GENERATE_LOGFILE': False,
     'INFO_SHOW_TYPES': ['Advice', 'Error', 'Normal', 'Success', 'Warn'],
     'INFO_SHOW_PRIORITY': 3,
-    'INFO_FLATTEN_OUTPUT': True,
     'LOG_HIDE_CONSOLE': True,
-    # Rules
-    'RULE_SET_WORK_INT': 10000,
-    # Plugins & Security
-    'PLUGINS_ALLOW_ALL_PLUGINS': False,
-    'PLUGIN_ALLOW_INSTALL_DEPENDENCIES': False,
-    'PLUGIN_DEFINE_COMMANDS': True,
-    'PLUGIN_ALLOW_PYTHON_INSTALL_LIBS': False,
-    'DATA_DIR': Path('./data'),
-    'TEMP_DIR': Path('./data/temp'),
-    'CACHE_DIR': Path('./data/.cache'),
-    # Environment
-    'ENVIRONMENT_DIR': Path('./environment/env'),
-    'ENVIRONMENT_AUTO_CREATE': True,
-    'ENVIRONMENT_BASE_REQUIREMENTS': ["setuptools", "wheel"],
 }
 
 # ==============================================================================
@@ -99,8 +83,9 @@ ERROR_HIDE_CONSOLE: bool = False
 INFO_INIT: bool = False
 INFO_GENERATE_LOGFILE: bool = False
 INFO_GENERATE_LOGFILE_ON_ERROR: bool = False
-INFO_FLATTEN_OUTPUT: bool = True
 LOG_HIDE_CONSOLE: bool = True
+INFO_SHOW_TYPES = ['Advice', 'Error', 'Normal', 'Success', 'Warn']
+INFO_SHOW_PRIORITY = 3
 
 # ==============================================================================
 # 6. REGLAS Y TRABAJO INTERNO
