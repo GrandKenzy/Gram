@@ -5,6 +5,7 @@ Punto de entrada directo para el paquete Gram: python -m gram
 from __future__ import annotations
 
 import sys
+
 from gram import __version__
 
 

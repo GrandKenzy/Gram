@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import inspect
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -246,6 +247,151 @@ class _ConfigModule(ModuleType):
         super().__setattr__(name, value)
 
 
+import json
+import os
+
+# ==============================================================================
+# PERSISTENCIA DE CONFIGURACIÓN
+# ==============================================================================
+_PATH_KEYS: frozenset[str] = frozenset(
+    k for k, v in _DEFAULTS.items() if isinstance(v, Path)
+)
+
+
+def _serialize(value: Any) -> Any:
+    if isinstance(value, Path):
+        return value.as_posix()
+    if isinstance(value, (list, tuple)):
+        return [_serialize(v) for v in value]
+    return value
+
+
+def _coerce(key: str, value: Any) -> Any:
+    """Valida el tipo de `value` contra el default de `key` y lo convierte."""
+    default = _DEFAULTS[key]
+
+    if key in _PATH_KEYS:  # Path | str | None
+        if value is None or isinstance(value, Path):
+            return value
+        if isinstance(value, str):
+            return Path(value)
+        raise TypeError(f"'{key}' espera str, Path o null, recibió {type(value).__name__}.")
+
+    if isinstance(default, bool):
+        if not isinstance(value, bool):
+            raise TypeError(f"'{key}' espera bool, recibió {type(value).__name__}.")
+        return value
+
+    if isinstance(default, int):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"'{key}' espera int, recibió {type(value).__name__}.")
+        return value
+
+    if isinstance(default, str):
+        if not isinstance(value, str):
+            raise TypeError(f"'{key}' espera str, recibió {type(value).__name__}.")
+        return value
+
+    if isinstance(default, list):
+        if not isinstance(value, list):
+            raise TypeError(f"'{key}' espera list, recibió {type(value).__name__}.")
+        return list(value)
+
+    return value
+
+
+def _snapshot(only_changed: bool, serialize: bool) -> dict[str, Any]:
+    """Construye un diccionario con la configuración activa."""
+    data = to_dict()
+    if only_changed:
+        data = {k: v for k, v in data.items() if v != _DEFAULTS[k]}
+    if serialize:
+        return {k: _serialize(v) for k, v in data.items()}
+    # Copias de las listas para que mutar el resultado no afecte a config.
+    return {k: list(v) if isinstance(v, list) else v for k, v in data.items()}
+
+
+def save(
+    path: Path | str | None = None,
+    *,
+    only_changed: bool = False,
+    serialize: bool = False,
+) -> Path | dict[str, Any]:
+    """
+    Guarda la configuración activa.
+
+    Args:
+        path: Si se indica, escribe un archivo JSON y devuelve su ruta.
+              Si es None, no escribe nada y devuelve un diccionario.
+        only_changed: Si es True, solo incluye las variables que difieren de los defaults.
+        serialize: Solo aplica al modo diccionario. Si es True, las rutas se
+                   convierten a str (apto para json.dumps). Por defecto se
+                   conservan como Path.
+
+    Returns:
+        Path del archivo escrito, o dict con la configuración.
+    """
+    if path is None:
+        return _snapshot(only_changed, serialize)
+
+    data = _snapshot(only_changed, serialize=True)  # JSON siempre serializado
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    tmp = target.with_suffix(target.suffix + '.tmp')
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    os.replace(tmp, target)
+    return target
+
+
+def load(
+    source: Path | str | Mapping[str, Any] = 'gram_config.json',
+    *,
+    strict: bool = True,
+) -> dict[str, Any]:
+    """
+    Carga configuración desde un archivo JSON o desde un diccionario.
+
+    Las claves ausentes conservan su valor actual. La carga es atómica:
+    si alguna clave es inválida, no se aplica ningún cambio.
+
+    Args:
+        source: Ruta a un JSON (str | Path) o un diccionario (Mapping).
+        strict: Si es True, una clave desconocida lanza KeyError;
+                si es False, se ignora.
+
+    Returns:
+        Diccionario con los valores aplicados.
+    """
+    is_plugin, plugin_name = _is_caller_plugin()
+    if is_plugin:
+        raise PermissionError(
+            f"El plugin '{plugin_name}' no tiene permisos para cargar configuración."
+        )
+
+    if isinstance(source, Mapping):
+        raw = dict(source)
+    else:
+        with open(source, 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            raise ValueError("El archivo de configuración debe contener un objeto JSON.")
+
+    validated: dict[str, Any] = {}
+    for key, value in raw.items():
+        if key not in _DEFAULTS:
+            if strict:
+                raise KeyError(f"Variable de configuración desconocida: '{key}'.")
+            continue
+        validated[key] = _coerce(key, value)
+
+    current_module = sys.modules[__name__]
+    for key, value in validated.items():
+        setattr(current_module, key, value)
+    return validated
+
+
 # Inicializar wrapper y registrar en sys.modules
 _current = sys.modules[__name__]
 _wrapper = _ConfigModule(__name__, __doc__)
@@ -253,6 +399,10 @@ for _k, _v in list(_current.__dict__.items()):
     setattr(_wrapper, _k, _v)
 _wrapper._initialized = True
 sys.modules[__name__] = _wrapper
+
+
+
+
 
 __all__ = [
     "AST_ADD_ERROR",
@@ -292,7 +442,9 @@ __all__ = [
     # Reglas
     "RULE_SET_WORK_INT",
     "TEMP_DIR",
+    "load",
     # Funciones de utilidad
     "reset_to_defaults",
-    "to_dict",
+    "save",
+    "to_dict"
 ]
