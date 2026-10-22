@@ -6,7 +6,7 @@ from gram.core.lexer import Lexer, TokenType, words
 from gram.core.parser import Parser
 
 
-class Session():
+class Session:
     def __init__(self, name: str, mode: Literal['Many', 'Some'], entrypoint: type[RuleItem] | None = None):
 
         if mode not in ('Many', 'Some'):

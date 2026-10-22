@@ -17,7 +17,12 @@ if TYPE_CHECKING:
 class ASTNode:
     """Base class for all nodes in the Gram Abstract Syntax Tree."""
     __slots__ = ()
+    
+    def __repr__(self) -> str:
+        return self.__class__.__name__
 
+    def __eq__(self, value: object) -> bool:
+        return self.__class__.__name__ == value
 
 class ASTTokenNode(ASTNode):
     """Base class for terminal AST nodes backed by a single lexed token."""
@@ -34,6 +39,11 @@ class ASTTokenNode(ASTNode):
 
     def __repr__(self) -> str:
         return self.token.token.name
+    
+    def __eq__(self, value: object) -> bool:
+        return self.token.token.name == value
+
+
 
 
 class LiteralString(ASTTokenNode):
@@ -59,6 +69,7 @@ class LiteralSymbol(ASTTokenNode):
 class ASTKeyword(ASTTokenNode):
     """AST node representing a reserved language keyword."""
     __slots__ = ()
+
 
 
 class ASTRef(ASTNode):
