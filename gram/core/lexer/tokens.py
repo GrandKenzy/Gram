@@ -318,6 +318,11 @@ class _MapSymbolsDict(dict[str, Token]):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._rev: dict[Any, str] = {}
+        self._rebuild_reverse()
+
+    def _rebuild_reverse(self) -> None:
+        """Recompute the reverse index (`Token` / token name -> symbol) from the current items."""
+        self._rev.clear()
         for sym, tok in self.items():
             self._rev[tok] = sym
             self._rev[tok.name] = sym
@@ -430,6 +435,63 @@ MAP_SYMBOLS: _MapSymbolsDict = _MapSymbolsDict({
 _SORTED_SYMBOLS: list[str] = sorted(MAP_SYMBOLS.keys(), key=len, reverse=True)
 
 
+def _sync_symbol_indexes() -> None:
+    """
+    Rebuild the derived indexes after `MAP_SYMBOLS` is mutated: the reverse
+    lookup inside the dictionary and the length-sorted symbol list used for
+    maximal-munch tokenization (updated in place so existing references stay valid).
+    """
+    MAP_SYMBOLS._rebuild_reverse()
+    _SORTED_SYMBOLS[:] = sorted(MAP_SYMBOLS.keys(), key=len, reverse=True)
+
+
+def insert_symbol(symbol: str, token: Token) -> None:
+    """
+    Register `symbol` in `MAP_SYMBOLS` as the lexeme of an existing `Token`.
+
+    Raises:
+        TypeError: If `symbol` is not a `str` or `token` is not a `Token` member.
+        ValueError: If `symbol` is empty, contains whitespace, or is already
+            assigned to a different `Token` (remove it first with `disabled_symbol`).
+    """
+    if not isinstance(symbol, str):
+        raise TypeError(f"El símbolo debe ser str, no {type(symbol).__name__}.")
+    if not isinstance(token, Token):
+        raise TypeError(f"Se requiere un miembro existente de Token, no {type(token).__name__}.")
+    if not symbol or any(ch.isspace() for ch in symbol):
+        raise ValueError("El símbolo no puede estar vacío ni contener espacios.")
+
+    current = dict.get(MAP_SYMBOLS, symbol)
+    if current is not None:
+        if current is token:
+            return
+        raise ValueError(
+            f"El símbolo '{symbol}' ya está asignado a Token.{current.name}; "
+            "retíralo antes con disabled_symbol()."
+        )
+
+    dict.__setitem__(MAP_SYMBOLS, symbol, token)
+    _sync_symbol_indexes()
+
+
+def disabled_symbol(symbol: str) -> Token:
+    """
+    Remove `symbol` from `MAP_SYMBOLS` and return the `Token` it was mapped to.
+
+    Raises:
+        TypeError: If `symbol` is not a `str`.
+        KeyError: If `symbol` is not currently registered.
+    """
+    if not isinstance(symbol, str):
+        raise TypeError(f"El símbolo debe ser str, no {type(symbol).__name__}.")
+    if not dict.__contains__(MAP_SYMBOLS, symbol):
+        raise KeyError(symbol)
+
+    token: Token = dict.pop(MAP_SYMBOLS, symbol)
+    _sync_symbol_indexes()
+    return token
+
+
 def get_tokens() -> tuple[Token, ...]:
     """Return an immutable tuple of all `Token` enum members."""
     return Token.get_tokens()
@@ -448,6 +510,8 @@ __all__ = [
     "CustomToken",
     "Token",
     "TokenType",
+    "disabled_symbol",
     "get_sorted_symbols",
     "get_tokens",
+    "insert_symbol",
 ]
