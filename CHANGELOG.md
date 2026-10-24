@@ -58,7 +58,7 @@ Importing or reading them now raises `AttributeError`.
   release rollback snapshots while keeping results readable.
 - `Parser._restore_from_pos`: cursor position abandoned by the last `restore()`.
 - `Diagnostics.failure_scope()`: isolates the failure candidate of speculative
-  attempts. `Alt`, `Opt`, `Many`, `Some`, `Sep`, `Until`, `If`, `Not`, `Peek`
+  attempts. `Alt`, `Opt`, `Many`, `Some`, `Separator`, `Until`, `If`, `Not`, `Peek`
   and expression parsing use it so a discarded branch cannot leak diagnostics.
 - `config.INFO_INIT` and `config.INFO_GENERATE_LOGFILE_ON_ERROR`; both are
   saved and restored per `Session`.

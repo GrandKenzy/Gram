@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="badge/header.jpeg" alt="Gram Framework" width="100%">
+</p>
+
 # Gram Framework
 
 <p align="center">
-  <strong>Pure-Python Meta-Interpretation & Language Design Engine</strong><br>
-  Combinator parsing with atomic backtracking, AST RayTracing telemetry, Pratt expression engine, and Language Server Protocol (LSP) tooling for VS Code.
+  <strong>Pure-Python Combinator Parsing & Language Design Toolkit</strong><br>
+  Lexer, backtracking parser combinators, Pratt expression parsing, AST construction, and VS Code / LSP tooling.
 </p>
 
 <p align="center">
@@ -13,97 +17,105 @@
   <a href="https://github.com/GrandKenzy/Gram"><img src="https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg" alt="Zero External Dependencies"></a>
 </p>
 
-> **Gram v2.0.0 Beta Release (current: `2.0.0b1`):**  
-> Gram has evolved into **v2.0.0 Beta**, introducing unified AST **RayTracing** telemetry, immutable **TokenInfo** snapshots, the **Hookr** event observer pattern for LSP/IDE tools, a modernized **Pratt expression climbing engine**, VNMA vendor compatibility (`vnma_config.toml`), and an exhaustive test suite with comprehensive documentation.
-
 > [!WARNING]
-> **Breaking change in `2.0.0b1`:** `config.ERROR_EXIT_ON_ERROR` now defaults to **`True`**, so unsuppressed errors terminate the process instead of being collected. To keep the old behaviour set `config.ERROR_EXIT_ON_ERROR = False`. See the [CHANGELOG](CHANGELOG.md) for details and the other removed settings.
+> **Breaking change in `2.0.0b1`:** `config.ERROR_EXIT_ON_ERROR` now defaults to **`True`**, so unsuppressed errors call `Error.raise_error()` and terminate the process (`sys.exit(1)`). To collect diagnostics without exiting, set `config.ERROR_EXIT_ON_ERROR = False` or register an error hook returning `ErrorAction.SUPPRESS_RAISE` / `ErrorAction.OMIT`. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 ---
 
-## What is Gram?
+## Overview
 
-**Gram** is a zero-dependency, pure-Python framework designed to build programming languages, domain-specific languages (DSLs), and structured data formats with high expressiveness, modularity, and strict typing.
+**Gram** is a zero-dependency, pure-Python library for tokenizing source text, defining grammars with composable parser combinators, and building Abstract Syntax Trees (ASTs).
 
-Rather than relying on external parser generators or complex C extensions, Gram provides:
-- **Atomic Backtracking Combinator Engine:** Composable parsing primitives (`Seq`, `Alt`, `Many`, `Sep`, `Enclosed`, etc.) with atomic `savepoint` and `restore` semantics.
-- **AST RayTracing Telemetry:** Full execution tracing (`RayTracing`, `RayRecord`) capturing rule call-stacks, execution duration, token spans, and path profiling for real-time LSP diagnostics.
-- **Hookr Observer Pipeline:** Non-intrusive event emitter hook system (`before_match`, `after_match`, `on_backtrack`, `on_error`, `on_complete`) decoupling parser telemetry from AST transformations.
-- **TokenInfo Snapshots:** Immutable, rich token metadata (row, column, length, value, token type, custom group, source text) for diagnostics and language tooling.
-- **Pratt Expression Engine:** Infix, prefix, and ternary operator precedence parsing (`DualExpr`, `ArithmeticExpr`, `ConditionalExpr`, `ChainL`, `ChainR`).
-- **VS Code Extension & LSP Tooling:** Native generator creating VS Code extensions (VSIX) with TextMate syntax highlighting, live completion, and Language Server Protocol (`gram.vsix.lsp`) communication.
-- **VNMA Vendor Support:** Full compatibility with [VNMA](https://github.com/GrandKenzy/vnma) via `vnma_config.toml` for zero-overhead, hermetic vendoring without virtualenv bloat.
+What is actually implemented in the repository:
+- **Lexer (`gram.core.lexer`):** Configurable line/multiline tokenizer supporting keywords (`Keyword`), semantic keyword groups (`WordGroup`), custom operator symbols (`MAP_SYMBOLS`, `insert_symbol`, `disabled_symbol`), indentation tracking (`Token.INDENT` / `Token.DEDENT`), strings, docstrings, numbers, and configurable single- or multi-character line comments.
+- **Transactional Parser State (`gram.core.parser`):** Token stream cursor (`Parser`, `ParseState`) with immutable `Checkpoint` snapshots (`savepoint` and `restore`) that roll back the cursor, virtual lookahead cursor (`vpos`), bracket depth, `storage` dictionary, `tk_tags` token tags, and in-place token replacements.
+- **Combinator Library (`gram.core.combinators`):**
+  - **Matching:** `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSymbol` (`MatchSeqSymbol`), `generador_expr`.
+  - **Structural:** `Seq` (`Sequence`), `Alt`, `Opt`, `Enclosed`, plus `+` (`Seq`) and `|` (`Alt`) operator overloads.
+  - **Repetition & Delimited Lists:** `Many`, `Some`, `Until`, `UntilIndent`, `Separator` (produces `ArrayNode`).
+  - **Rules, Atoms & State:** `RuleItem`, `Ref`, `Item`, `Literal`, `Save`, `Load`.
+  - **Lookahead, Signals & Tagging:** `Peek`, `Not`, `If`, `Skip` (with `SkipFlowSignal`, `BreakFlowSignal`, `BacktrackSignal`, `CutFlowSignal`, `AbortFlowSignal`), `Tag`, `Tokenize`, `ErrorCombinator`.
+  - **Fluent Token Constraints:** `Req` (case, substring, length, numeric bounds, digit counts, and value transformations).
+  - **Pratt Expression Engine:** `ArithmeticExpr`, `ConditionalExpr`, and `DualExpr` producing `ASTBinaryOp` and `ASTUnaryOp` nodes.
+- **AST & Tracing (`gram.core.ast`):** `ASTAnalyzer` validates the root entrypoint rule (`Alt` of `Ref` branches), evaluates combinators through `Visitor`, and records execution traces in `RayTracing` (`trace="off" | "basic" | "detailed"`).
+- **Isolated Language Sessions (`gram.sessions`):** `Session` snapshots, migrates, and restores global `config`, `MAP_KEYWORDS`, `WordGroup` registries, and `MAP_SYMBOLS` so multiple language definitions can coexist in the same process.
+- **VS Code & LSP Tooling (`gram.vsix`):** VSIX extension generator (`VSIXGenerator`, `pack_vsix`), AST token coloring (`ASTColorResolver`), and a JSON-RPC Language Server (`LSPServer`, `LSPState`).
 
 ---
 
-## Architecture Overview
+## Pipeline Architecture
 
 ```
-                         ┌─────────────────────────┐
-                         │       Source Code       │
-                         └───────────┬─────────────┘
-                                     │
-                                     ▼
-                         ┌─────────────────────────┐
-                         │       Lexer Engine      │  <-- Keywords, custom groups,
-                         └───────────┬─────────────┘      indents/dedents, comments
-                                     │ Stream of Tokens (TokenInfo)
-                                     ▼
-                         ┌─────────────────────────┐
-                         │   Parser & Combinators  │ <== Hookr Event Emitter
-                         └───────────┬─────────────┘     (savepoint / restore backtracking)
-                                     │
-                                     ▼
-                         ┌─────────────────────────┐
-                         │   ASTAnalyzer Engine    │ <== RayTracing Telemetry
-                         └───────────┬─────────────┘     (call stack, profiling, AST nodes)
-                                     │
-                        ┌────────────┴────────────┐
-                        ▼                         ▼
-             ┌─────────────────────┐   ┌─────────────────────┐
-             │  Custom Rules &     │   │   VSIX & LSP        │
-             │  Modular Grammar    │   │   for VS Code       │
-             └─────────────────────┘   └─────────────────────┘
+Source Text (str | list[str])
+      │
+      ▼
+Lexer(source).process()           ──► list[TokenType]
+      │
+      ▼
+Parser(tokens)                    ──► ParseState + Checkpoint savepoint/restore
+      │                               + Hookr ('save' / 'restore' callbacks)
+      ▼
+ASTAnalyzer(parser, Entrypoint)   ──► Evaluates RuleItem & Combinator tree
+      │                               + Diagnostics (failure_scope, error hooks)
+      │                               + RayTracing (trace="off"|"basic"|"detailed")
+      ▼
+list[ASTNode]                     ──► ASTRef, ArrayNode, ASTBinaryOp, ASTUnaryOp,
+                                      Identifier, LiteralNumber, LiteralString,
+                                      LiteralSymbol, ASTKeyword
 ```
 
 ---
 
 ## Installation
 
-### From Source Repository:
+Gram is a pure-Python package with zero third-party runtime dependencies (Python 3.10+).
+
+### 1. From Source (Git Checkout)
+
+Clone the repository and add its root directory to `PYTHONPATH` (or work directly inside the repository root):
 
 ```bash
 git clone https://github.com/GrandKenzy/Gram.git
 cd Gram
-pip install -e .
-```
-
-### With VNMA (Hermetic Vendoring):
-
-```bash
-# In your project:
-vnma install git+https://github.com/GrandKenzy/Gram.git@main
-```
-
-### Verification:
-
-```bash
 python -m gram
+# Output: Gram Framework v2.0.0b1
 ```
+
+### 2. With VNMA (Vendor Manager)
+
+Gram includes a [`vnma_config.toml`](vnma_config.toml) manifest exposing the `gram` module and the `gram` CLI entry point (`gram.__main__:main`). Declare Gram in your project's `vnma.toml`:
+
+```toml
+[project]
+name = "my-compiler"
+version = "0.1.0"
+
+[dependencies]
+# From GitHub (pinned to the v2.0.0b1 beta tag or tracking main):
+gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.0.0b1" }
+# gramv2.0.0b = { git = "https://github.com/GrandKenzy/Gram.git", branch = "main" }
+
+# Or from a local directory for real-time editable changes:
+# gram = { path = "~/Desktop/Gram", editable = true }
+
+[tool.vnma]
+vendor_dir = "vendor"
+ide_integration = ["vscode", "pycharm"]
+```
+
+Then run `vnma install` (or `vnma link "~/Desktop/Gram"`). For any questions regarding **VNMA**, refer to its official documentation at **[https://github.com/GrandKenzy/vnma](https://github.com/GrandKenzy/vnma)**.
 
 ---
 
-## Quickstart (Python API)
+## Quickstart
 
-Define a grammar rule, parse structured input, construct an AST, and inspect execution telemetry via RayTracing:
+A root entrypoint rule passed to `ASTAnalyzer` (or `Parser.parse`) must be a `RuleItem` subclass whose `entrypoint` is an `Alt` composed of `Ref(...)` rules. At least one keyword must be registered in `gram.core.lexer.words` before running `Lexer.process()`.
 
 ```python
-from gram.core.ast.analyzer import ASTAnalyzer
+from gram.core.ast import ASTAnalyzer
 from gram.core.combinators import (
-    DECLARATION,
-    PROGRAM,
     Alt,
-    Many,
+    ArithmeticExpr,
     MatchKeyword,
     MatchToken,
     Ref,
@@ -113,122 +125,127 @@ from gram.core.combinators import (
 from gram.core.lexer import Lexer, Token, words
 from gram.core.parser import Parser
 
-# 1. Register language keywords and syntax theme colors
-words.add_keyword("let", hex_color="#569CD6", description="Variable declaration")
+# 1. Register keywords in the lexer
+words.clear_all()
+words.add_keyword("let", hex_color="#569CD6", description="Variable binding")
 
-# 2. Define grammar rules using RuleItem
+# 2. Define production rules with RuleItem
 class LetStatement(RuleItem):
-    name = "LetStatement"
+    # nodeable=True is the default on RuleItem subclasses, so Ref(LetStatement)
+    # wraps matched children in ASTRef(name="LetStatement", nodes=[...]).
     entrypoint = Seq(
         MatchKeyword("let"),
         MatchToken(Token.IDENT),
         MatchToken(Token.ASSIGN),
-        MatchToken(Token.NUMBER),
+        ArithmeticExpr(Token.NUMBER, Token.IDENT),
+        MatchToken(Token.SEMICOLON),
     )
 
-# 3. Assemble root grammar table
-grammar = {
-    PROGRAM: Many(Ref(DECLARATION)),
-    DECLARATION: Alt(Ref(LetStatement)),
-    LetStatement: LetStatement.entrypoint,
-}
+# 3. Root entrypoint rule: must be an Alt(...) of Ref(...) branches
+class Program(RuleItem):
+    entrypoint = Alt(Ref(LetStatement))
 
 # 4. Tokenize source code
-source_code = "let total = 100"
-lexer = Lexer(source_code)
-tokens = [t for t in lexer.process() if t.token != Token.EOF]
+source = "let total = 10 + 20 * 3;"
+tokens = Lexer(source).process()
 
-# 5. Parse and build AST
+# 5. Parse and analyze (with detailed raytracing enabled)
 parser = Parser(tokens)
-analyzer = ASTAnalyzer(parser, grammar)
-ast = analyzer.process()
+analyzer = ASTAnalyzer(parser, Program, mode="Many", trace="detailed")
+nodes = analyzer.process()
 
-# 6. Inspect AST nodes
-for node in ast.body:
-    print(node.format())
-    # Output: └── [L0] LetStatement (code=0) -> values=['let', 'total', 100]
+print("AST roots:", nodes)
+stmt = nodes[0]
+print("Statement name:", stmt.name)
+print("Identifier:", stmt.nodes[1].token.value)
+print("Expression:", stmt.nodes[3])
+print("\nDetailed trace:\n" + analyzer.raytracing.detailed())
+```
 
-# 7. Telemetry & Profiling with RayTracing (v2.0.0 Beta)
-if analyzer.raytracing:
-    print(analyzer.raytracing.stringify())
-    # Detailed tree of rule executions, durations, and token consumption
+Output:
+
+```text
+AST roots: [AstRef(nodes=5, name=LetStatement)]
+Statement name: LetStatement
+Identifier: total
+Expression: ASTBinaryOp(left=NUMBER, op=PLUS, right=ASTBinaryOp(left=NUMBER, op=STAR, right=NUMBER))
+
+Detailed trace:
+PROGRAM
+    ->Ref(LetStatement) [0:9] SUCCESS
+        ->Seq [0:9] SUCCESS
+            ->MatchKeyword [0:1] SUCCESS
+            ->MatchToken [1:2] SUCCESS
+            ->MatchToken [2:3] SUCCESS
+            ->ArithmeticExpr [3:8] SUCCESS
+            ->MatchToken [8:9] SUCCESS
 ```
 
 ---
 
-## What's New in v2.0.0 Beta
+## Core Subsystems Reference
 
-| Feature | Description | Reference |
+| Subsystem | Module | Key Classes & Functions |
 | :--- | :--- | :--- |
-| **AST RayTracing Telemetry** | Full rule execution tree recording duration, token intervals, and status (`SUCCESS`, `FAILED`, `BACKTRACKED`). | `gram.core.ast.raytracing` |
-| **Immutable `TokenInfo`** | Clean `get_token_info()` interface delivering row, col, length, source text, and custom token category. | `gram.core.parser.core.Parser.get_token_info` |
-| **Hookr Observer Pipeline** | Reactive hooks (`before_match`, `after_match`, `on_backtrack`, `on_error`) for decoupled IDE/LSP listeners. | `gram.core.parser.hookr` |
-| **Combinator `ignore` Flag** | Explicit bypass of auxiliary wrapper nodes (e.g., entrypoint `Alt` wrappers) in tracing and AST generation. | `gram.core.combinators.base.Combinator` |
-| **Pratt Expression Engine** | Modernized precedence parsing (`DualExpr`, `ArithmeticExpr`, `ConditionalExpr`) with ternary and binary chains. | `gram.core.combinators.expressions` |
-| **VNMA Compatibility** | Native `vnma_config.toml` specification for zero-overhead, zero-magic dependency vendoring. | `vnma_config.toml` |
-| **Exhaustive Test Suite** | 45 comprehensive unit tests covering all combinator variants, return types, and failure states. | `tests/combinators/` |
-| **English Technical Docs** | Fully updated documentation modules with practical usage guides and code examples. | `docs/en/01-Combinadores/` |
+| **Configuration** | [`gram.config`](gram/config.py) | `ERROR_EXIT_ON_ERROR`, `ERROR_HIDE_CONSOLE`, `LOG_HIDE_CONSOLE`, `INFO_INIT`, `INFO_GENERATE_LOGFILE`, `INFO_GENERATE_LOGFILE_ON_ERROR`, `save()`, `load()`, `reset_to_defaults()`, `to_dict()` |
+| **Lexer** | [`gram.core.lexer`](gram/core/lexer/__init__.py) | `Lexer`, `Token`, `TokenType`, `CustomToken`, `MAP_SYMBOLS`, `insert_symbol()`, `disabled_symbol()`, `words.add_keyword()`, `words.add_group()` |
+| **Parser & Checkpoints** | [`gram.core.parser`](gram/core/parser/__init__.py) | `Parser`, `ParseState`, `Checkpoint`, `TokenInfo`, `Hookr` (`'save'` and `'restore'` checkpoint hooks) |
+| **AST & RayTracing** | [`gram.core.ast`](gram/core/ast/__init__.py) | `ASTAnalyzer`, `ASTNode`, `ASTTokenNode`, `Identifier`, `LiteralNumber`, `LiteralString`, `LiteralSymbol`, `ASTKeyword`, `ASTRef`, `ArrayNode`, `RayTracing`, `Trace`, `TraceRecord` |
+| **Combinators** | [`gram.core.combinators`](gram/core/combinators/__init__.py) | `Seq`, `Alt`, `Opt`, `Enclosed`, `Many`, `Some`, `Until`, `UntilIndent`, `Separator`, `Ref`, `RuleItem`, `Item`, `Literal`, `Save`, `Load`, `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator`, `Req`, `ArithmeticExpr`, `ConditionalExpr`, `DualExpr` |
+| **Diagnostics & Hooks** | [`gram.utilities`](gram/utilities/__init__.py) | `Diagnostics`, `ErrorAction` (`OMIT`, `SUPPRESS_RAISE`), `Diagnostics.hook_errors()`, `Diagnostics.failure_scope()` |
+| **Sessions** | [`gram.sessions`](gram/sessions/__init__.py) | `Session` (`init()`, `migrate()`, `load()`, `tokenize()`, `parse()`) |
+| **VSIX & LSP (Beta)** | [`gram.vsix`](gram/vsix/__init__.py) | `VSIXGenerator`, `VSIXAnalyzer`, `ASTColorResolver`, `LSPServer`, `LSPState`, `pack_vsix()`, `up()` |
 
 ---
 
-## Technical Documentation
+## Documentation
 
-Detailed guides and technical references are located in [`docs/en/01-Combinadores/`](docs/en/01-Combinadores/README.md):
+Full documentation is available in English and Spanish:
+- **[English Documentation](docs/en/index.md)**
+- **[Documentación en Español](docs/es/index.md)**
 
-- **[00. Combinators Overview & Reference Table](docs/en/01-Combinadores/README.md)**
-- **[01. Token & Keyword Matching](docs/en/01-Combinadores/01-matching.md):** `MatchToken`, `MatchKeyword`, `MatchSymbol`, `MatchGroup`.
-- **[02. Structural Combinators](docs/en/01-Combinadores/02-structural.md):** `Seq`, `Alt`, `Opt`, `Enclosed`.
-- **[03. Repetition & Delimiters](docs/en/01-Combinadores/03-repetition.md):** `Many`, `Some`, `Sep`.
-- **[04. Rule References & Token Storage](docs/en/01-Combinadores/04-rules-and-storage.md):** `Ref`, `RuleItem`, `Save`, `Load`, `Tag`.
-- **[05. Lookahead & Control Flow](docs/en/01-Combinadores/05-lookahead-and-control.md):** `Peek`, `Until`, `If`, `ErrorCombinator`, `Pass`, `Tokenize`, `Query`.
-- **[06. Fluent Validation](docs/en/01-Combinadores/06-fluent-validation.md):** `Req`, `SimpleCombinator`.
-- **[07. Expression Parsing](docs/en/01-Combinadores/07-expressions.md):** `ChainL`, `ChainR`, `DualExpr`, `ArithmeticExpr`, `ConditionalExpr`.
+Detailed section map:
+- **01. Introduction / Introducción:** [EN](docs/en/01-Introduction/index.md) | [ES](docs/es/01-Introduccion/index.md)
+- **02. Combinators / Combinadores:** [EN](docs/en/02-Combinators/index.md) | [ES](docs/es/02-Combinadores/index.md)
+- **03. Usage Guide / Guía de Uso:** [EN](docs/en/03-Usage/index.md) | [ES](docs/es/03-Uso/index.md)
 
 ---
 
-## Unit Test Suite
+## Running the Test Suite
 
-Run the full combinator test suite with Python's built-in `unittest` runner:
+Run the full test suite using Python's built-in `unittest` discovery:
 
 ```bash
 python -m unittest discover -s tests
 ```
 
 ```text
-.............................................
 ----------------------------------------------------------------------
-Ran 45 tests in 2.002s
+Ran 134 tests in 7.6s
 
 OK
 ```
 
-The test suite systematically verifies:
-1. Expected result structures (values, lists, tuples, dictionaries).
-2. Combinator variations, arguments, and configuration options.
-3. Strict error handling, fail modes, and recovery paths.
+---
+
+## Community & Contact
+
+- Contact: **[kencv3002003@gmail.com](mailto:kencv3002003@gmail.com)**
+- Issues, bug reports, and pull requests are welcome on [GitHub](https://github.com/GrandKenzy/Gram).
 
 ---
 
-## 🤝 Community & Collaboration
-
-Interested in collaborating, reporting issues, or proposing new language features?
-- Contact: 📫 **[kencv3002003@gmail.com](mailto:kencv3002003@gmail.com)**
-- Contributions, issues, and discussions are welcome to continue advancing the framework.
-
----
-
-## ☕ Support & Donations
-
-Gram is developed to provide a modular, dependency-free compiler toolkit for the developer community. If you would like to support ongoing development:
-- PayPal / Transfer: 💖 **[kencv3002003@gmail.com](mailto:kencv3002003@gmail.com)**
-
----
-
-## 📄 License
+## License
 
 Gram is distributed under the **Free Use & Commercial Output License** (see [LICENSE](LICENSE)).
 
-- **Free of Charge:** You may freely use Gram for personal, educational, research, and commercial projects.
-- **Commercial Output Allowed:** Products built with Gram (custom languages, parsers, compilers, DSL tools) belong entirely to their creators and may be commercialized without restrictions or royalties.
-- **Core Immutability:** Gram core remains immutable to downstream redistribution; extensions and grammar enhancements should be authored via external modular rules or plugins.
-- **Non-Commercial Framework Resale:** The framework itself may not be rebranded, sublicensed, or resold as a standalone library package.
+- **Free of Charge:** You may use Gram for personal, educational, research, and commercial projects.
+- **Commercial Output Allowed:** Languages, parsers, compilers, and tools built with Gram belong to their creators and may be distributed or commercialized without royalties.
+- **Core Immutability:** Gram core may not be modified for downstream redistribution; extensions and grammar definitions should be authored as external modules.
+- **No Standalone Resale:** The framework itself may not be rebranded, sublicensed, or sold as a standalone library.
+
+---
+
+<p align="center">
+  <img src="badge/footer.jpeg" alt="Gram Framework" width="100%">
+</p>
