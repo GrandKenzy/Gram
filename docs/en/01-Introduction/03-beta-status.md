@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **Gram `2.0.0b1` is currently in Beta.**  
-> While the core lexical, syntactic, checkpointing, session, and diagnostic engines are actively used in real compiler frontends (such as Easy-C) and verified by an automated test suite of 134 unit and fuzz tests, minor API adjustments and behavioral refinements may still occur before the final `2.0.0` stable release.
+> While the core lexical, syntactic, checkpointing, session, and diagnostic engines are actively used in real compiler frontends (such as domain-specific languages and custom scripting engines) and verified by an automated test suite of 134 unit and fuzz tests, minor API adjustments and behavioral refinements may still occur before the final `2.0.0` stable release.
 
 ---
 

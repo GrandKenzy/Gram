@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **Gram `2.0.0b1` se encuentra actualmente en fase Beta.**  
-> Si bien los motores centrales de análisis léxico, análisis sintáctico, checkpoints, sesiones y diagnósticos son utilizados activamente en proyectos reales (como Easy-C) y están respaldados por una suite de 134 pruebas unitarias y de estrés, aún pueden ocurrir ajustes menores de API antes de la versión final estable `2.0.0`.
+> Si bien los motores centrales de análisis léxico, análisis sintáctico, checkpoints, sesiones y diagnósticos son utilizados activamente en proyectos reales (como lenguajes de dominio específico y motores de scripting personalizados) y están respaldados por una suite de 134 pruebas unitarias y de estrés, aún pueden ocurrir ajustes menores de API antes de la versión final estable `2.0.0`.
 
 ---
 

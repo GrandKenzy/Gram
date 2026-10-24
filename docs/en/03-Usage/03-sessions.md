@@ -2,7 +2,7 @@
 
 In **Gram**, lexical catalogs (`lexer.words.MAP_KEYWORDS`, `lexer.words.groups`, `lexer.tokens.MAP_SYMBOLS`) and runtime settings (`gram.config`) are global registries.
 
-When a compiler or tool needs to parse multiple languages or file formats within the same Python process—for example, a compiler that parses `.ec` source files (`;` comments, docstrings enabled), `.c` files (`//` comments, C keywords), and `.h` header contracts—**`gram.sessions.Session`** isolates each language's state and switches between them in place.
+When a compiler or tool needs to parse multiple languages or file formats within the same Python process—for example, a toolchain that parses a configuration DSL (`;` comments, docstrings enabled), `.c` source files (`//` comments, C keywords), and `.h` header contracts—**`gram.sessions.Session`** isolates each language's state and switches between them in place.
 
 ---
 
@@ -52,7 +52,7 @@ Defining a language session follows a strict 4-step initialization pattern, foll
 
 ## 3. Multi-Language Frontend Example
 
-The following complete, runnable example demonstrates two isolated language sessions—a C-style frontend (`//` comments, `int` keyword) and an Easy-C-style frontend (`;` comments, `fn` keyword)—coexisting in the same process:
+The following complete, runnable example demonstrates two isolated language sessions—a C-style frontend (`//` comments, `int` keyword) and a Script DSL frontend (`;` comments, `fn` keyword)—coexisting in the same process:
 
 ```python
 from gram import combinators as cmb
@@ -87,11 +87,11 @@ C_SESSION.migrate()
 
 
 # ==============================================================================
-# 2. DEFINE SESSION B: Easy-C Frontend (";" comments)
+# 2. DEFINE SESSION B: Script DSL Frontend (";" comments)
 # ==============================================================================
-EC_SESSION = sessions.Session("EasyC Frontend", "Many")
-EC_SESSION.clear_global()
-EC_SESSION.init()
+SCRIPT_SESSION = sessions.Session("Script Frontend", "Many")
+SCRIPT_SESSION.clear_global()
+SCRIPT_SESSION.init()
 
 config.LEXER_COMMENT_TOKEN = ";"
 config.LEXER_SUPPORT_DOCSTRINGS = True
@@ -99,7 +99,7 @@ config.LEXER_IGNORE_EMPTY_LINES = True
 
 lexer.words.add_keyword("fn", hex_color="#FF79C6", allow_override=True)
 
-class ECFuncDecl(cmb.RuleItem):
+class ScriptFuncDecl(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchKeyword("fn"),
         cmb.MatchToken(lexer.Token.IDENT),
@@ -111,11 +111,11 @@ class ECFuncDecl(cmb.RuleItem):
         ),
     )
 
-class ECProgram(cmb.RuleItem):
-    entrypoint = cmb.Alt(cmb.Ref(ECFuncDecl))
+class ScriptProgram(cmb.RuleItem):
+    entrypoint = cmb.Alt(cmb.Ref(ScriptFuncDecl))
 
-EC_SESSION.entrypoint = ECProgram
-EC_SESSION.migrate()
+SCRIPT_SESSION.entrypoint = ScriptProgram
+SCRIPT_SESSION.migrate()
 
 
 # ==============================================================================
@@ -128,18 +128,18 @@ c_tokens = C_SESSION.tokenize("int counter; // C comment", "sample.c")
 c_ast = C_SESSION.parse(c_tokens, "sample.c")
 print("C AST:", c_ast)
 
-# Switch to EC_SESSION and parse Easy-C code
-EC_SESSION.load()
-ec_tokens = EC_SESSION.tokenize("fn main() ; EasyC comment", "sample.ec")
-ec_ast = EC_SESSION.parse(ec_tokens, "sample.ec")
-print("EC AST:", ec_ast)
+# Switch to SCRIPT_SESSION and parse Script DSL code
+SCRIPT_SESSION.load()
+script_tokens = SCRIPT_SESSION.tokenize("fn main() ; Script comment", "sample.dsl")
+script_ast = SCRIPT_SESSION.parse(script_tokens, "sample.dsl")
+print("Script AST:", script_ast)
 ```
 
 Output:
 
 ```text
 C AST: [AstRef(nodes=3, name=CVarDecl)]
-EC AST: [AstRef(nodes=2, name=ECFuncDecl)]
+Script AST: [AstRef(nodes=2, name=ScriptFuncDecl)]
 ```
 
-Notice how in `C_SESSION`, `;` is tokenized as `Token.SEMICOLON` while `// C comment` is stripped as a comment; as soon as `EC_SESSION.load()` is called, `; EasyC comment` becomes the comment delimiter and `fn` is recognized as a `Token.KEYWORD`.
+Notice how in `C_SESSION`, `;` is tokenized as `Token.SEMICOLON` while `// C comment` is stripped as a comment; as soon as `SCRIPT_SESSION.load()` is called, `; Script comment` becomes the comment delimiter and `fn` is recognized as a `Token.KEYWORD`.

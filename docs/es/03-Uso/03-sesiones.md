@@ -2,7 +2,7 @@
 
 En **Gram**, los catálogos léxicos (`lexer.words.MAP_KEYWORDS`, `lexer.words.groups`, `lexer.tokens.MAP_SYMBOLS`) y las opciones de tiempo de ejecución (`gram.config`) son registros globales.
 
-Cuando un compilador o herramienta necesita parsear múltiples lenguajes o formatos de archivo dentro del mismo proceso de Python—por ejemplo, un compilador que procesa archivos fuente `.ec` (comentarios con `;`, docstrings activados), archivos `.c` (comentarios con `//`, palabras clave de C) y contratos de cabecera `.h`—**`gram.sessions.Session`** aisla el estado de cada lenguaje y permite alternar entre ellos in-situ.
+Cuando un compilador o herramienta necesita parsear múltiples lenguajes o formatos de archivo dentro del mismo proceso de Python—por ejemplo, un flujo de trabajo que procesa un DSL de configuración (comentarios con `;`, docstrings activados), archivos `.c` (comentarios con `//`, palabras clave de C) y contratos de cabecera `.h`—**`gram.sessions.Session`** aisla el estado de cada lenguaje y permite alternar entre ellos in-situ.
 
 ---
 
@@ -52,7 +52,7 @@ Definir una sesión de lenguaje sigue un patrón estricto de inicialización en 
 
 ## 3. Ejemplo de Frontend Multilenguaje
 
-El siguiente ejemplo completo y ejecutable demuestra dos sesiones de lenguaje aisladas—un frontend estilo C (comentarios `//`, palabra clave `int`) y un frontend estilo Easy-C (comentarios `;`, palabra clave `fn`)—coexistiendo en el mismo proceso:
+El siguiente ejemplo completo y ejecutable demuestra dos sesiones de lenguaje aisladas—un frontend estilo C (comentarios `//`, palabra clave `int`) y un frontend para un DSL de scripting (comentarios `;`, palabra clave `fn`)—coexistiendo en el mismo proceso:
 
 ```python
 from gram import combinators as cmb
@@ -87,11 +87,11 @@ C_SESSION.migrate()
 
 
 # ==============================================================================
-# 2. DEFINIR SESIÓN B: Frontend estilo Easy-C (comentarios ";")
+# 2. DEFINIR SESIÓN B: Frontend de Script DSL (comentarios ";")
 # ==============================================================================
-EC_SESSION = sessions.Session("EasyC Frontend", "Many")
-EC_SESSION.clear_global()
-EC_SESSION.init()
+SCRIPT_SESSION = sessions.Session("Script Frontend", "Many")
+SCRIPT_SESSION.clear_global()
+SCRIPT_SESSION.init()
 
 config.LEXER_COMMENT_TOKEN = ";"
 config.LEXER_SUPPORT_DOCSTRINGS = True
@@ -99,7 +99,7 @@ config.LEXER_IGNORE_EMPTY_LINES = True
 
 lexer.words.add_keyword("fn", hex_color="#FF79C6", allow_override=True)
 
-class ECFuncDecl(cmb.RuleItem):
+class ScriptFuncDecl(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchKeyword("fn"),
         cmb.MatchToken(lexer.Token.IDENT),
@@ -111,11 +111,11 @@ class ECFuncDecl(cmb.RuleItem):
         ),
     )
 
-class ECProgram(cmb.RuleItem):
-    entrypoint = cmb.Alt(cmb.Ref(ECFuncDecl))
+class ScriptProgram(cmb.RuleItem):
+    entrypoint = cmb.Alt(cmb.Ref(ScriptFuncDecl))
 
-EC_SESSION.entrypoint = ECProgram
-EC_SESSION.migrate()
+SCRIPT_SESSION.entrypoint = ScriptProgram
+SCRIPT_SESSION.migrate()
 
 
 # ==============================================================================
@@ -128,18 +128,18 @@ c_tokens = C_SESSION.tokenize("int counter; // C comment", "sample.c")
 c_ast = C_SESSION.parse(c_tokens, "sample.c")
 print("C AST:", c_ast)
 
-# Cambiar a EC_SESSION y parsear código Easy-C
-EC_SESSION.load()
-ec_tokens = EC_SESSION.tokenize("fn main() ; EasyC comment", "sample.ec")
-ec_ast = EC_SESSION.parse(ec_tokens, "sample.ec")
-print("EC AST:", ec_ast)
+# Cambiar a SCRIPT_SESSION y parsear código del Script DSL
+SCRIPT_SESSION.load()
+script_tokens = SCRIPT_SESSION.tokenize("fn main() ; Script comment", "sample.dsl")
+script_ast = SCRIPT_SESSION.parse(script_tokens, "sample.dsl")
+print("Script AST:", script_ast)
 ```
 
 Salida:
 
 ```text
 C AST: [AstRef(nodes=3, name=CVarDecl)]
-EC AST: [AstRef(nodes=2, name=ECFuncDecl)]
+Script AST: [AstRef(nodes=2, name=ScriptFuncDecl)]
 ```
 
-Observa cómo en `C_SESSION`, `;` se tokeniza como `Token.SEMICOLON` mientras que `// C comment` se descarta como comentario; tan pronto como se llama a `EC_SESSION.load()`, `; EasyC comment` pasa a ser el delimitador de comentarios y `fn` se reconoce como `Token.KEYWORD`.
+Observa cómo en `C_SESSION`, `;` se tokeniza como `Token.SEMICOLON` mientras que `// C comment` se descarta como comentario; tan pronto como se llama a `SCRIPT_SESSION.load()`, `; Script comment` pasa a ser el delimitador de comentarios y `fn` se reconoce como `Token.KEYWORD`.
