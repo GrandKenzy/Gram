@@ -7,14 +7,17 @@
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
-  <img src="https://img.shields.io/badge/version-2.0.0%20Beta-informational.svg" alt="Version 2.0.0 Beta">
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-45%20passed-success.svg" alt="Tests: 45 passed"></a>
+  <img src="https://img.shields.io/badge/version-2.0.0b1-informational.svg" alt="Version 2.0.0b1">
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-134%20passed-success.svg" alt="Tests: 134 passed"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Free%20Use%20%26%20Commercial%20Output-brightgreen.svg" alt="License"></a>
   <a href="https://github.com/GrandKenzy/Gram"><img src="https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg" alt="Zero External Dependencies"></a>
 </p>
 
-> **Gram v2.0.0 Beta Release:**  
+> **Gram v2.0.0 Beta Release (current: `2.0.0b1`):**  
 > Gram has evolved into **v2.0.0 Beta**, introducing unified AST **RayTracing** telemetry, immutable **TokenInfo** snapshots, the **Hookr** event observer pattern for LSP/IDE tools, a modernized **Pratt expression climbing engine**, VNMA vendor compatibility (`vnma_config.toml`), and an exhaustive test suite with comprehensive documentation.
+
+> [!WARNING]
+> **Breaking change in `2.0.0b1`:** `config.ERROR_EXIT_ON_ERROR` now defaults to **`True`**, so unsuppressed errors terminate the process instead of being collected. To keep the old behaviour set `config.ERROR_EXIT_ON_ERROR = False`. See the [CHANGELOG](CHANGELOG.md) for details and the other removed settings.
 
 ---
 

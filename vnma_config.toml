@@ -3,7 +3,7 @@
 [package]
 name = "gram-framework2.0.0Beta"
 packname = "gram"
-version = "2.0.0b"
+version = "2.0.0b1"
 type = "pure-python"
 
 [runtime]
