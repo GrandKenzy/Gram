@@ -27,6 +27,15 @@ class ErrorAction:
     SUPPRESS_RAISE = "suppress"
 
 
+class _FailureScope:
+    """Local candidate captured when an isolated failure scope exits."""
+
+    __slots__ = ('candidate',)
+
+    def __init__(self) -> None:
+        self.candidate: tuple[int, error.Error] | None = None
+
+
 class Diagnostics:
     """
     Framework-agnostic controller for hierarchical telemetry trees, reentrant
@@ -184,6 +193,24 @@ class Diagnostics:
             yield
         finally:
             self._context_depth = max(0, self._context_depth - 1)
+
+    @contextmanager
+    def failure_scope(self) -> Iterator[_FailureScope]:
+        """Isolate speculative failures, restoring the incoming candidate on exit.
+
+        The returned scope retains only its local candidate. Callers explicitly
+        stage or publish that candidate when their parse result requires it.
+        Signals and exceptions restore the incoming candidate without merging.
+        """
+        scope = _FailureScope()
+        saved = self._staged_failure
+        self._staged_failure = None
+        try:
+            with self.failure_context():
+                yield scope
+        finally:
+            scope.candidate = self._staged_failure
+            self._staged_failure = saved
 
 
 

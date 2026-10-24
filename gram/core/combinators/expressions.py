@@ -338,25 +338,37 @@ class BaseExpr(Combinator):
                 return None
             return ASTUnaryOp(op_tok, operand)
 
+        best_ref_failure = None
         for ref_comb in self._ref_values:
             chk = parser.savepoint("EXPR-RefAtom")
-            had_prior_staged = analyzer.staged_failure is not None
-
-            with analyzer.safe_mode():
-                ref_node = analyzer.visitor(ref_comb)
+            try:
+                with analyzer.failure_scope() as ref_scope:
+                    ref_node = analyzer.visitor(ref_comb)
+            except BaseException:
+                parser.restore(chk)
+                raise
 
             if ref_node is not None:
+                candidate = ref_scope.candidate
+                if candidate is not None and candidate[0] > parser.pos:
+                    analyzer.stage_failure(candidate[1], weight=candidate[0])
                 analyzer.discard_staged_failure(min_weight=parser.pos)
                 return ref_node
 
             parser.restore(chk)
-            if not had_prior_staged and analyzer.staged_weight == chk.pos:
-                analyzer.discard_staged_failure()
+            candidate = ref_scope.candidate
+            if candidate is not None and (
+                best_ref_failure is None or candidate[0] > best_ref_failure[0]
+            ):
+                best_ref_failure = candidate
 
         if curr.token in self._token_values and curr.token != Token.KEYWORD:
             tok = parser.consume()
             analyzer.discard_staged_failure(min_weight=parser.pos)
             return analyzer.delegate_return_node(tok)
+
+        if best_ref_failure is not None:
+            analyzer.stage_failure(best_ref_failure[1], weight=best_ref_failure[0])
 
         # 5. Mismatch: current token cannot act as an operand
         role_msg = (

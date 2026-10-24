@@ -65,10 +65,7 @@ class Alt(Combinator):
         analyzer.debug(f"Procesando ALT con {len(self.combinators)} alternativas")
 
         checkpoint = parser.savepoint("ALT-Analysis")
-        # [RayTracing/Diagnostics Isolation] Guardar el estado previo de _staged_failure
-        # para aislar las ramas especulativas y no contaminar combinadores (ej. Opt) en ramas posteriores.
-        saved_staged = analyzer._staged_failure
-        best_staged = saved_staged
+        best_staged = None
 
         try:
             for index, combinator in enumerate(self.combinators, start=1):
@@ -76,41 +73,49 @@ class Alt(Combinator):
                     f"Probando alternativa No. {index}: {combinator.type()}",
                     "normal",
                 )
-                # Aislar cada intento: restablecer el fallo preparado para que el intento anterior
-                # no deje residuos de mayor peso que hagan fallar erróneamente combinadores opcionales.
-                analyzer._staged_failure = saved_staged
-                try:
-                    with analyzer.safe_mode():
+                committed = False
+                with analyzer.failure_scope() as scope:
+                    try:
                         res = analyzer.visitor(combinator)
-                except BacktrackSignal:
-                    res = None
-                except CutFlowSignal:
-                    parser.restore(checkpoint)
-                    father.note(
-                        f"Corte (CutFlowSignal) activado en alternativa No. {index}; abortando backtracking.",
-                        "warn",
-                    )
-                    break
+                    except BacktrackSignal:
+                        res = None
+                    except CutFlowSignal as signal:
+                        candidate = signal._failure_candidate
+                        signal._failure_candidate = None
+                        if candidate is not None:
+                            analyzer.stage_failure(candidate[1], weight=candidate[0])
+                        res = None
+                        committed = True
 
                 if res is None:
                     father.note(f"Alternativa No. {index} rechazada", "normal")
-                    # Registrar el fallo que mayor profundidad de tokens alcanzó (mayor peso)
-                    # para ofrecer el mejor diagnóstico posible si todas las alternativas fallan.
-                    curr_staged = analyzer._staged_failure
-                    if curr_staged is not None:
+                    curr_staged = scope.candidate
+                    if committed:
+                        # Earlier rejected branches cannot explain a committed failure.
+                        best_staged = curr_staged
+                    elif curr_staged is not None:
                         if best_staged is None or curr_staged[0] > best_staged[0]:
                             best_staged = curr_staged
                     parser.restore(checkpoint)
+                    if committed:
+                        father.note(
+                            f"Corte (CutFlowSignal) activado en alternativa No. {index}; abortando backtracking.",
+                            "warn",
+                        )
+                        break
                     continue
 
                 father.note(f"Alternativa No. {index} aceptada", "success")
-                analyzer.discard_staged_failure(min_weight=parser.pos)
+                candidate = scope.candidate
+                if candidate is not None and candidate[0] > parser.pos:
+                    analyzer.stage_failure(candidate[1], weight=candidate[0])
                 return res
 
-            # Si todas las alternativas fueron rechazadas, restaurar el fallo más profundo
-            # para que el reporte de errores y los hooks de diagnóstico muestren la causa más cercana.
-            analyzer._staged_failure = best_staged
             father.note("Todas las alternativas fueron rechazadas", "error")
+            if best_staged is not None:
+                analyzer.report_error(best_staged[1], pos=best_staged[0])
+                return None
+
             curr_tok = parser.peek() if not parser.empty() else None
             tok_info = (
                 f" en línea {curr_tok.line}, columna {curr_tok.col} ({curr_tok.token.name})"
@@ -124,10 +129,7 @@ class Alt(Combinator):
                 "Verifique que la expresión coincida con alguna de las reglas permitidas.",
             )
 
-            if analyzer.safe_flag:
-                analyzer.stage_failure(fallback, weight=checkpoint.pos)
-            else:
-                analyzer.flush_failure(fallback=fallback)
+            analyzer.report_error(fallback, pos=checkpoint.pos)
 
             return None
         finally:

@@ -88,20 +88,23 @@ class If(Combinator):
             "ProcessingIf", "Procesando condicional If", set_target=True
         )
         checkpoint = parser.savepoint("IF-Analysis")
-        had_prior_staged = analyzer.staged_failure is not None
 
         try:
             # 1. Evaluate condition sequence speculatively
             conditions_passed = True
             cond_results: list[Any] = []
 
-            with analyzer.safe_mode():
-                for cond in self.conditions:
-                    res = analyzer.visitor(cond)
-                    if res is None:
-                        conditions_passed = False
-                        break
-                    cond_results.append(res)
+            try:
+                with analyzer.failure_scope() as condition_scope:
+                    for cond in self.conditions:
+                        res = analyzer.visitor(cond)
+                        if res is None:
+                            conditions_passed = False
+                            break
+                        cond_results.append(res)
+            except BaseException:
+                parser.restore(checkpoint)
+                raise
 
             # 2. Condition failed -> execute fail branch or report error
             if not conditions_passed:
@@ -113,8 +116,6 @@ class If(Combinator):
                         "Condición de If() no cumplida; evaluando rama 'fail'.",
                         "advice",
                     )
-                    if not had_prior_staged:
-                        analyzer.discard_staged_failure()
                     return analyzer.visitor(self.fail)
 
                 curr_tok = parser.peek() if not parser.empty() else None
@@ -129,10 +130,11 @@ class If(Combinator):
                     f"Condición de If() no cumplida{tok_info}.",
                     "Verifique la expresión condicional o defina una rama 'fail'.",
                 )
-                if analyzer.safe_flag:
-                    analyzer.report_error(fallback, pos=failed_pos)
+                candidate = condition_scope.candidate
+                if candidate is not None:
+                    analyzer.report_error(candidate[1], pos=candidate[0])
                 else:
-                    analyzer.flush_failure(fallback=fallback)
+                    analyzer.report_error(fallback, pos=failed_pos)
                 return None
 
             # 3. Conditions succeeded -> execute ok branch
@@ -143,6 +145,9 @@ class If(Combinator):
                     return analyzer.visitor(self.ok)
                 return cond_results
 
+            candidate = condition_scope.candidate
+            if candidate is not None and candidate[0] > parser.pos:
+                analyzer.stage_failure(candidate[1], weight=candidate[0])
             analyzer.discard_staged_failure(min_weight=parser.pos)
             if self.ok is not None:
                 ok_res = analyzer.visitor(self.ok)

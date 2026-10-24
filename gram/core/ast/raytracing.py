@@ -56,19 +56,51 @@ class Trace:
         self.levels.clear()
 
 
+class TraceRecord:
+    """
+    Detailed evaluation record of a single combinator: nesting depth, the
+    cursor span it covered and how it finished.
+    """
+
+    __slots__ = ("combinator", "depth", "start", "end", "outcome", "exception_type")
+
+    def __init__(self, combinator: Combinator, depth: int, start: int) -> None:
+        self.combinator = combinator
+        self.depth = depth
+        self.start = start
+        self.end: int | None = None
+        self.outcome: str = "PENDING"
+        self.exception_type: str | None = None
+
+    def format(self) -> str:
+        """Return a single indented line describing this record."""
+        indent = "    " * max(1, self.depth)
+        name = (
+            f"{self.combinator.type()}({self.combinator.rule_name})"
+            if isinstance(self.combinator, Ref)
+            else self.combinator.type()
+        )
+        extra = f" {self.exception_type}" if self.exception_type else ""
+        return f"{indent}->{name} [{self.start}:{self.end}] {self.outcome}{extra}"
+
+
 class RayTracing:
     """
     Syntactic raytracer recording execution paths, alternative branches,
     and state rollbacks triggered during parser backtracking.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, mode: str = "basic") -> None:
+        self.mode = mode
         self.trace: Trace = Trace()
         self.paths: list[str] = []
         self._checkpoints: dict[int, tuple[Trace, list[str]]] = {}
         self._trace_stack: list[Trace] = []
         self._path_stack: list[list[str]] = []
         self.branches: list[Trace] = []
+        self.records: list[TraceRecord] = []
+        self.backtracks: list[int] = []
+        self.furthest: int | None = None
 
     @property
     def branchs(self) -> list[Trace]:
@@ -127,5 +159,64 @@ class RayTracing:
         """Return the formatted arrow-delimited path sequence."""
         return "->".join(self.paths)
 
+    # ------------------------------------------------------------------
+    # Detailed mode
+    # ------------------------------------------------------------------
+    def begin(
+        self, combinator: Combinator, depth: int = 1, position: int = 0
+    ) -> TraceRecord:
+        """
+        Open a detailed record for `combinator` and mirror it in the active
+        trace so that `stringify()` stays consistent with basic mode.
+        """
+        self.trace.add(combinator, level=depth)
+        record = TraceRecord(combinator, depth, position)
+        self.records.append(record)
+        return record
 
-__all__ = ["Trace", "RayTracing"]
+    def end(
+        self,
+        record: TraceRecord,
+        position: int | None = None,
+        outcome: str = "SUCCESS",
+        exception_type: str | None = None,
+    ) -> None:
+        """Close `record` with the final cursor position and its outcome."""
+        record.end = position
+        record.outcome = outcome
+        record.exception_type = exception_type
+
+    def observe_position(self, pos: Any = None) -> None:
+        """
+        Register the furthest cursor position abandoned by a parser rollback.
+        """
+        if not isinstance(pos, int):
+            return
+        self.backtracks.append(pos)
+        if self.furthest is None or pos > self.furthest:
+            self.furthest = pos
+
+    def detailed(self) -> str:
+        """Render every recorded combinator with its span and outcome."""
+        if not self.records:
+            return "PROGRAM\n    (empty)"
+        lines = ["PROGRAM"]
+        for rec in self.records:
+            lines.append(rec.format())
+        if self.backtracks:
+            lines.append(
+                f"backtracks={len(self.backtracks)} furthest={self.furthest}"
+            )
+        return "\n".join(lines)
+
+    def close(self) -> None:
+        """
+        Release parser snapshots taken for rollback, preserving traces,
+        records and branches so results stay readable after analysis.
+        """
+        self._checkpoints.clear()
+        self._trace_stack.clear()
+        self._path_stack.clear()
+
+
+__all__ = ["Trace", "TraceRecord", "RayTracing"]

@@ -44,18 +44,14 @@ class Not(Combinator):
             "ProcessingNot", "Procesando lookahead negativo Not", set_target=True
         )
         checkpoint = parser.savepoint("NOT-Analysis")
-        had_prior_staged = analyzer.staged_failure is not None
-
         try:
-            with analyzer.safe_mode():
-                res = analyzer.visitor(self.combinator)
-
-            parser.restore(checkpoint)
+            try:
+                with analyzer.failure_scope():
+                    res = analyzer.visitor(self.combinator)
+            finally:
+                parser.restore(checkpoint)
 
             if res is None:
-                # Expected mismatch inside Not(): discard any internal staged error
-                if not had_prior_staged:
-                    analyzer.discard_staged_failure()
                 father.note(
                     f"Not({self.combinator!r}) confirmado (no hubo coincidencia).",
                     "success",

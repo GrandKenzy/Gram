@@ -47,6 +47,21 @@ class Some(Combinator):
         Returns:
             list[Any] | None: Non-empty list of matched results, or `None` on failure.
         """
+        with analyzer.failure_scope() as scope:
+            results, publish_failure = self._parse_iterations(analyzer)
+
+        if scope.candidate is not None:
+            weight, err = scope.candidate
+            if publish_failure and not analyzer.safe_flag:
+                with analyzer.failure_scope():
+                    analyzer.stage_failure(err, weight=weight)
+                    analyzer.flush_failure()
+            else:
+                analyzer.stage_failure(err, weight=weight)
+        return results
+
+    def _parse_iterations(self, analyzer: ASTAnalyzer) -> tuple[list[Any] | None, bool]:
+        """Collect iterations without using a surrounding branch's failure candidate."""
         parser = analyzer.parser
         father = parser.node(
             "ProcessingSome", "Procesando secuencia Some", set_target=True
@@ -55,19 +70,19 @@ class Some(Combinator):
 
         initial_checkpoint = parser.savepoint("SOME-Analysis")
         results: list[Any] = []
+        publish_failure = False
 
         try:
             while not parser.empty():
                 checkpoint = parser.savepoint("SOME-Iteration")
-                had_prior_staged = analyzer.staged_failure is not None
-
                 try:
-                    with analyzer.safe_mode():
+                    with analyzer.failure_scope() as attempt:
                         res = analyzer.visitor(self.combinator)
                 except SkipFlowSignal:
                     if parser.pos == checkpoint.pos:
                         parser.restore(checkpoint)
                         break
+                    analyzer.discard_staged_failure(min_weight=parser.pos)
                     continue
                 except BreakFlowSignal:
                     parser.restore(checkpoint)
@@ -75,15 +90,17 @@ class Some(Combinator):
 
                 if res is None:
                     parser.restore(checkpoint)
-                    if results:
-                        if analyzer.staged_weight > checkpoint.pos:
-                            if not analyzer.safe_flag:
-                                analyzer.flush_failure()
-                        elif not had_prior_staged and analyzer.staged_weight == checkpoint.pos:
-                            analyzer.discard_staged_failure()
+                    if attempt.candidate is not None:
+                        weight, err = attempt.candidate
+                        if not results or weight > checkpoint.pos:
+                            analyzer.stage_failure(err, weight=weight)
+                            publish_failure = bool(results)
                     break
 
                 results.append(res)
+                if attempt.candidate is not None and attempt.candidate[0] > parser.pos:
+                    weight, err = attempt.candidate
+                    analyzer.stage_failure(err, weight=weight)
                 analyzer.discard_staged_failure(min_weight=parser.pos)
                 if parser.pos == checkpoint.pos:
                     break
@@ -108,15 +125,14 @@ class Some(Combinator):
                     "Verifique que la expresión cumpla con al menos una repetición válida.",
                 )
 
-                if analyzer.safe_flag:
-                    analyzer.stage_failure(fallback, weight=initial_checkpoint.pos)
-                else:
-                    analyzer.flush_failure(fallback=fallback)
+                analyzer.stage_failure(fallback, weight=initial_checkpoint.pos)
 
-                return None
+                return None, True
 
             father.note(f"SOME completado: {len(results)} coincidencias", "success")
-            return results
+            # A prior accepted iteration may own a deeper partial failure even
+            # when the final iteration is a clean mismatch at its starting token.
+            return results, publish_failure or analyzer.staged_weight > parser.pos
         finally:
             parser.down()
 

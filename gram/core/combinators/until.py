@@ -57,18 +57,22 @@ class Until(Combinator):
         )
         initial_checkpoint = parser.savepoint("UNTIL-Analysis")
         collected: list[Any] = []
-        had_prior_staged = analyzer.staged_failure is not None
 
         try:
             while not parser.is_eof():
                 chk = parser.savepoint("UNTIL-Step")
-                with analyzer.safe_mode():
-                    target_res = analyzer.visitor(self.target)
+                try:
+                    with analyzer.failure_scope() as target_scope:
+                        target_res = analyzer.visitor(self.target)
+                except BaseException:
+                    parser.restore(chk)
+                    raise
 
                 if target_res is not None:
-                    if not had_prior_staged:
-                        analyzer.discard_staged_failure()
                     if self.consume_target:
+                        candidate = target_scope.candidate
+                        if candidate is not None and candidate[0] > parser.pos:
+                            analyzer.stage_failure(candidate[1], weight=candidate[0])
                         if isinstance(target_res, list):
                             collected.extend(target_res)
                         else:
@@ -84,8 +88,6 @@ class Until(Combinator):
 
                 # Target did not match at current position: rewind target probe and consume 1 token
                 parser.restore(chk)
-                if not had_prior_staged:
-                    analyzer.discard_staged_failure()
 
                 if self.max_tokens is not None and len(collected) >= self.max_tokens:
                     break

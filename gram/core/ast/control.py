@@ -21,6 +21,7 @@ from gram.core.ast.nodes import (
     LiteralSymbol,
 )
 from gram.core.combinators import Alt, Ref, RuleItem
+from gram.core.combinators.signals import CutFlowSignal
 from gram.core.lexer import Token, TokenType
 
 if TYPE_CHECKING:
@@ -67,6 +68,21 @@ class ASTState(utilities.Diagnostics):
         """Enter a reentrant speculative parsing context (`failure_context`)."""
         with self.failure_context():
             yield
+
+    @contextmanager
+    def failure_scope(self) -> Iterator[utilities._FailureScope]:
+        """Keep a committed failure on its cut signal while restoring the scope."""
+        try:
+            with super().failure_scope() as scope:
+                yield scope
+        except CutFlowSignal as signal:
+            candidate = scope.candidate
+            carried = signal._failure_candidate
+            if candidate is not None and (
+                carried is None or candidate[0] > carried[0]
+            ):
+                signal._failure_candidate = candidate
+            raise
 
     def report_error(
         self, err: errors.Error, *, pos: int | None = None

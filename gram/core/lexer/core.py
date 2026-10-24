@@ -92,8 +92,8 @@ class Lexer(LexerState):
                     tokens_list.extend(indent_tokens)
 
                 # 2. Scan characters across the current line
-                line_len = len(self.currline)
-                while self.col < line_len:
+                # A multiline literal can move the cursor to a different line.
+                while self.col < len(self.currline):
                     char = self.peek()
 
                     if char in " \r\t":
@@ -104,7 +104,7 @@ class Lexer(LexerState):
                         if config.LEXER_SAVE_COMMENTS:
                             self.comments.append(self.process_comment())
                         else:
-                            self.col = line_len
+                            self.col = len(self.currline)
                         break
 
                     token = visitors.visit(self, char)

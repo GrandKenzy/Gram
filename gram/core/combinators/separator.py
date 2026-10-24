@@ -143,21 +143,31 @@ class Separator(Combinator):
         """Attempt to match the current token position against any candidate in `self.values`."""
         parser = analyzer.parser
         saved = parser.savepoint("SEP-Value")
+        best_failure = None
 
         for idx, val_comb in enumerate(self.values):
             if idx > 0:
                 parser.restore(saved)
             try:
-                with analyzer.safe_mode():
+                with analyzer.failure_scope() as attempt:
                     res = analyzer.visitor(val_comb)
             except errors.Error:
                 res = None
 
             if res is not None:
-                analyzer.discard_staged_failure(min_weight=parser.pos)
+                if attempt.candidate is not None and attempt.candidate[0] > parser.pos:
+                    weight, err = attempt.candidate
+                    analyzer.stage_failure(err, weight=weight)
                 return res
+            if attempt.candidate is not None and (
+                best_failure is None or attempt.candidate[0] > best_failure[0]
+            ):
+                best_failure = attempt.candidate
 
         parser.restore(saved)
+        if best_failure is not None:
+            weight, err = best_failure
+            analyzer.stage_failure(err, weight=weight)
         return None
 
     def parse(self, analyzer: ASTAnalyzer) -> ArrayNode | None:
@@ -171,6 +181,21 @@ class Separator(Combinator):
             ArrayNode | None: `ArrayNode` containing matched elements and trailing flag,
             or `None` if fewer than `self.min` elements were matched.
         """
+        with analyzer.failure_scope() as scope:
+            result, publish_failure = self._parse_items(analyzer)
+
+        if scope.candidate is not None:
+            weight, err = scope.candidate
+            if publish_failure and not analyzer.safe_flag:
+                with analyzer.failure_scope():
+                    analyzer.stage_failure(err, weight=weight)
+                    analyzer.flush_failure()
+            else:
+                analyzer.stage_failure(err, weight=weight)
+        return result
+
+    def _parse_items(self, analyzer: ASTAnalyzer) -> tuple[ArrayNode | None, bool]:
+        """Match a list while keeping candidate and delimiter attempts isolated."""
         parser = analyzer.parser
         father = parser.node(
             "ProcessingSeparator", "Procesando separador", set_target=True
@@ -180,12 +205,17 @@ class Separator(Combinator):
         initial_checkpoint = parser.savepoint("SEP-Analysis")
         items: list[Any] = []
         trailing_sep = False
+        publish_failure = False
 
         try:
             # 1. Attempt to match the first value
-            first_val = self._match_val(analyzer)
+            with analyzer.failure_scope() as first_attempt:
+                first_val = self._match_val(analyzer)
             if first_val is None:
                 parser.restore(initial_checkpoint)
+                if first_attempt.candidate is not None:
+                    weight, err = first_attempt.candidate
+                    analyzer.stage_failure(err, weight=weight)
                 if self.min > 0:
                     curr_tok = parser.peek() if not parser.empty() else None
                     tok_info = (
@@ -199,15 +229,16 @@ class Separator(Combinator):
                         f"Separator requería al menos {self.min} elemento(s), pero no se encontró ninguno{tok_info}.",
                         "Proporcione al menos la cantidad mínima de elementos separados requerida.",
                     )
-                    if analyzer.safe_flag:
-                        analyzer.stage_failure(fallback, weight=initial_checkpoint.pos)
-                    else:
-                        analyzer.flush_failure(fallback=fallback)
-                    return None
+                    analyzer.stage_failure(fallback, weight=initial_checkpoint.pos)
+                    return None, True
 
-                return ArrayNode([], trailing=False)
+                analyzer.discard_staged_failure(min_weight=parser.pos)
+                return ArrayNode([], trailing=False), False
 
             items.append(first_val)
+            if first_attempt.candidate is not None and first_attempt.candidate[0] > parser.pos:
+                weight, err = first_attempt.candidate
+                analyzer.stage_failure(err, weight=weight)
 
             # 2. Match subsequent delimiter + value pairs
             while True:
@@ -218,7 +249,7 @@ class Separator(Combinator):
 
                 sep_checkpoint = parser.savepoint("SEP-Separator")
                 try:
-                    with analyzer.safe_mode():
+                    with analyzer.failure_scope() as sep_attempt:
                         sep_res = analyzer.visitor(self.sep)
                 except (SkipFlowSignal, BreakFlowSignal):
                     parser.restore(sep_checkpoint)
@@ -228,29 +259,51 @@ class Separator(Combinator):
 
                 if sep_res is None:
                     parser.restore(sep_checkpoint)
+                    if sep_attempt.candidate is not None:
+                        weight, err = sep_attempt.candidate
+                        analyzer.stage_failure(err, weight=weight)
                     break
 
                 if parser.empty():
                     if self.allow_trailing:
                         trailing_sep = True
+                        if sep_attempt.candidate is not None and sep_attempt.candidate[0] > parser.pos:
+                            weight, err = sep_attempt.candidate
+                            analyzer.stage_failure(err, weight=weight)
                         break
                     parser.restore(sep_checkpoint)
+                    if sep_attempt.candidate is not None:
+                        weight, err = sep_attempt.candidate
+                        analyzer.stage_failure(err, weight=weight)
                     break
 
                 val_checkpoint = parser.savepoint("SEP-NextValue")
-                val_res = self._match_val(analyzer)
+                with analyzer.failure_scope() as val_attempt:
+                    val_res = self._match_val(analyzer)
 
                 if val_res is not None:
                     items.append(val_res)
                     trailing_sep = False
+                    for candidate in (sep_attempt.candidate, val_attempt.candidate):
+                        if candidate is not None and candidate[0] > parser.pos:
+                            weight, err = candidate
+                            analyzer.stage_failure(err, weight=weight)
+                    analyzer.discard_staged_failure(min_weight=parser.pos)
                 else:
                     if self.allow_trailing:
                         parser.restore(val_checkpoint)
                         trailing_sep = True
+                        for candidate in (sep_attempt.candidate, val_attempt.candidate):
+                            if candidate is not None and candidate[0] > parser.pos:
+                                weight, err = candidate
+                                analyzer.stage_failure(err, weight=weight)
                         break
                     parser.restore(sep_checkpoint)
-                    if analyzer.staged_weight > val_checkpoint.pos and not analyzer.safe_flag:
-                        analyzer.flush_failure()
+                    for candidate in (sep_attempt.candidate, val_attempt.candidate):
+                        if candidate is not None:
+                            weight, err = candidate
+                            analyzer.stage_failure(err, weight=weight)
+                            publish_failure |= weight > val_checkpoint.pos
                     break
 
             if len(items) < self.min:
@@ -261,17 +314,15 @@ class Separator(Combinator):
                     f"Se requerían al menos {self.min} elementos en Separator, pero se obtuvieron {len(items)}.",
                     "Asegúrese de completar la lista de elementos separados.",
                 )
-                if analyzer.safe_flag:
-                    analyzer.stage_failure(fallback, weight=initial_checkpoint.pos)
-                else:
-                    analyzer.flush_failure(fallback=fallback)
-                return None
+                analyzer.stage_failure(fallback, weight=initial_checkpoint.pos)
+                return None, True
 
             father.note(
                 f"Separator completado: {len(items)} elemento(s), trailing={trailing_sep}",
                 "success",
             )
-            return ArrayNode(items, trailing=trailing_sep)
+            analyzer.discard_staged_failure(min_weight=parser.pos)
+            return ArrayNode(items, trailing=trailing_sep), publish_failure
         finally:
             parser.down()
 

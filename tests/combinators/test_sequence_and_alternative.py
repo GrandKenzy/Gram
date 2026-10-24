@@ -8,6 +8,14 @@ from gram.core.ast.nodes import ASTKeyword, ASTNode, Identifier, LiteralNumber
 from gram.core.combinators.alternative import Alt
 from gram.core.combinators.match import MatchKeyword, MatchToken
 from gram.core.combinators.sequence import Seq
+from gram.core.combinators.signals import (
+    AbortFlowSignal,
+    BacktrackSignal,
+    BreakFlowSignal,
+    CutFlowSignal,
+    SkipFlowSignal,
+)
+from gram.core.combinators.skip import Skip
 from gram.core.lexer.tokens import Token
 from tests.combinators.base import CombinatorTestCase
 
@@ -60,6 +68,40 @@ class TestSequenceAndAlternative(CombinatorTestCase):
             Seq()
         self.assertEqual(ctx.exception.name, "EmptySequence")
 
+    def test_seq_skip_completes_with_accumulated_results(self) -> None:
+        seq = Seq(
+            MatchToken(Token.NUMBER),
+            Skip(SkipFlowSignal),
+            MatchToken(Token.NUMBER),
+        )
+
+        result, analyzer = self.parse_with_analyzer(seq, "1 2")
+
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], LiteralNumber)
+        self.assertEqual(result[0].token.value, 1)
+        self.assertEqual(analyzer.parser.pos, 1)
+
+    def test_seq_propagates_signals_owned_by_outer_combinators(self) -> None:
+        for signal in (
+            AbortFlowSignal,
+            BacktrackSignal,
+            BreakFlowSignal,
+            CutFlowSignal,
+        ):
+            with self.subTest(signal=signal.__name__):
+                analyzer = self.create_analyzer("1 2")
+                seq = Seq(
+                    MatchToken(Token.NUMBER),
+                    Skip(signal),
+                    MatchToken(Token.NUMBER),
+                )
+
+                with self.assertRaises(signal):
+                    analyzer.visitor(seq)
+
+                self.assertEqual(analyzer.parser.pos, 1)
+
     # =========================================================================
     # 2. Alt (Alternative)
     # =========================================================================
@@ -107,3 +149,17 @@ class TestSequenceAndAlternative(CombinatorTestCase):
         with self.assertRaises(errors.GrammarError) as ctx:
             Alt()
         self.assertEqual(ctx.exception.name, "EmptyAlternatives")
+
+    def test_alt_backtracks_when_sequence_requests_another_branch(self) -> None:
+        alt = Alt(
+            Seq(MatchKeyword("int"), Skip(BacktrackSignal)),
+            Seq(MatchKeyword("int"), MatchToken(Token.IDENT)),
+        )
+
+        result, analyzer = self.parse_with_analyzer(alt, "int value")
+
+        self.assertEqual(len(result), 2)
+        self.assertIsInstance(result[0], ASTKeyword)
+        self.assertIsInstance(result[1], Identifier)
+        self.assertEqual(result[1].token.value, "value")
+        self.assertEqual(analyzer.parser.pos, 2)

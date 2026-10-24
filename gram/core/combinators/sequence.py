@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.signals import ControlFlowSignal
+from gram.core.combinators.signals import SkipFlowSignal
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
@@ -79,7 +79,7 @@ class Seq(Combinator):
                 )
                 try:
                     response = analyzer.visitor(combinator)
-                except ControlFlowSignal:
+                except SkipFlowSignal:
                     father.note(
                         f"Señal de corte temprano recibida en el elemento {index} de SEQ.",
                         "advice",

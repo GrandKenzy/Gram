@@ -37,6 +37,8 @@ class ParseState(Diagnostics):
         self.storage: dict[str, TokenType] = {}
         self.tk_tags: dict[int, frozenset[str]] = {}
         self._token_overrides: dict[int, TokenType] = {}
+        # Cursor position that the most recent `restore()` abandoned.
+        self._restore_from_pos: int = 0
         super().__init__(
             file or 'parser-log',
             'PARSER',
@@ -55,12 +57,15 @@ class ParseState(Diagnostics):
         self.storage = dict(checkpoint.storage)
         self.tk_tags = dict(checkpoint.tk_tags)
 
-        # Revert any in-place token replacements made after the checkpoint
+        # Revert indices first replaced after the checkpoint, then recover the
+        # exact values of indices that were already replaced when it was saved.
         saved_overrides = dict(checkpoint.token_overrides)
-        for idx, orig_tok in list(self._token_overrides.items()):
+        for idx, orig_tok in self._token_overrides.items():
             if idx not in saved_overrides:
                 self.tokens[idx] = orig_tok
-                del self._token_overrides[idx]
+        for idx, saved_token in checkpoint.token_values:
+            self.tokens[idx] = saved_token
+        self._token_overrides = saved_overrides
 
     def report_error(self, err: error.Error) -> error.Error:
         """
@@ -70,10 +75,14 @@ class ParseState(Diagnostics):
             err (error.Error): The error instance to record.
 
         Returns:
-            error.Error: The recorded error instance.
+            error.Error: The supplied error instance, even when a hook omits it.
         """
-        err = self.record_failure(err)
-        if config.ERROR_EXIT_ON_ERROR:
+        recorded = self.record_failure(err)
+        if (
+            recorded is not None
+            and not getattr(err, '_suppress_raise', False)
+            and config.ERROR_EXIT_ON_ERROR
+        ):
             err.raise_error()
         return err
 
@@ -352,6 +361,7 @@ class ParseState(Diagnostics):
             tk_tags=tuple(self.tk_tags.items()),
             token_overrides=tuple(self._token_overrides.items()),
             name=name,
+            token_values=tuple((idx, self.tokens[idx]) for idx in self._token_overrides),
         )
         self.success(
             f'Savepoint created: pos={cp.pos}, virtual={cp.vpos}, target={cp.target}'
@@ -370,6 +380,7 @@ class ParseState(Diagnostics):
         """
         Restore the parser state and diagnostic target stack to a given `Checkpoint`.
         """
+        self._restore_from_pos = self.pos
         self.load(checkpoint)
         if checkpoint.target is not None:
             self.advice(

@@ -37,11 +37,13 @@ _DEFAULTS: dict[str, Any] = {
     'AST_ADD_INFO': True,
     'AST_ADD_ERROR': True,
     # Error Handling
-    'ERROR_EXIT_ON_ERROR': False,
+    'ERROR_EXIT_ON_ERROR': True,
     'ERROR_GENERATE_LOGFILE': False,
     'ERROR_HIDE_CONSOLE': False,
     # Info & Logging
+    'INFO_INIT': False,
     'INFO_GENERATE_LOGFILE': False,
+    'INFO_GENERATE_LOGFILE_ON_ERROR': False,
     'INFO_SHOW_TYPES': ['Advice', 'Error', 'Normal', 'Success', 'Warn'],
     'INFO_SHOW_PRIORITY': 3,
     'LOG_HIDE_CONSOLE': True,
@@ -88,23 +90,17 @@ INFO_SHOW_TYPES = ['Advice', 'Error', 'Normal', 'Success', 'Warn']
 INFO_SHOW_PRIORITY = 3
 
 # ==============================================================================
-# 6. REGLAS Y TRABAJO INTERNO
-# ==============================================================================
-RULE_SET_WORK_INT: int = 10000
-
-# ==============================================================================
-# 7. PLUGINS Y SEGURIDAD
+# 6. PLUGINS Y SEGURIDAD
 # ==============================================================================
 PLUGINS_ALLOW_ALL_PLUGINS: bool = False
 PLUGIN_ALLOW_INSTALL_DEPENDENCIES: bool = False
 PLUGIN_DEFINE_COMMANDS: bool = True
 PLUGIN_ALLOW_PYTHON_INSTALL_LIBS: bool = False
-DATA_DIR: Path | str | None = Path('./data')
 TEMP_DIR: Path | str | None = Path('./data/temp')
 CACHE_DIR: Path | str | None = Path('./data/.cache')
 
 # ==============================================================================
-# 8. ENTORNO VIRTUAL (VENV)
+# 7. ENTORNO VIRTUAL (VENV)
 # ==============================================================================
 ENVIRONMENT_DIR: Path | str | None = Path('./environment/env')
 ENVIRONMENT_AUTO_CREATE: bool = True
@@ -394,7 +390,6 @@ __all__ = [
     # AST
     "AST_ADD_INFO",
     "CACHE_DIR",
-    "DATA_DIR",
     "ENVIRONMENT_AUTO_CREATE",
     "ENVIRONMENT_BASE_REQUIREMENTS",
     # Entorno
@@ -403,8 +398,10 @@ __all__ = [
     "ERROR_EXIT_ON_ERROR",
     "ERROR_GENERATE_LOGFILE",
     "ERROR_HIDE_CONSOLE",
-    "INFO_FLATTEN_OUTPUT",
     "INFO_GENERATE_LOGFILE",
+    "INFO_GENERATE_LOGFILE_ON_ERROR",
+    "INFO_SHOW_TYPES",
+    "INFO_SHOW_PRIORITY",
     # Info & Logs
     "INFO_INIT",
     "LEXER_ADD_ERROR",
@@ -424,8 +421,6 @@ __all__ = [
     "PLUGIN_ALLOW_INSTALL_DEPENDENCIES",
     "PLUGIN_ALLOW_PYTHON_INSTALL_LIBS",
     "PLUGIN_DEFINE_COMMANDS",
-    # Reglas
-    "RULE_SET_WORK_INT",
     "TEMP_DIR",
     "load",
     # Funciones de utilidad

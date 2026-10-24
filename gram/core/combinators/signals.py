@@ -7,7 +7,10 @@ termination, and fatal parsing aborts.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from gram.utilities.error import Error
 
 
 class ControlFlowSignal(Exception):
@@ -58,6 +61,7 @@ class CutFlowSignal(ControlFlowSignal):
         self, message: str = "Commit branch / Cut backtracking", payload: Any = None
     ) -> None:
         super().__init__(message, payload)
+        self._failure_candidate: tuple[int, Error] | None = None
 
 
 class BacktrackSignal(ControlFlowSignal):

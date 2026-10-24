@@ -35,7 +35,11 @@ class ASTAnalyzer(ASTState):
         entrypoint: type[RuleItem],
         logfile: str | None = None,
         mode: Literal["Many", "Some"] = "Many",
+        *,
+        trace: Literal["off", "basic", "detailed"] = "basic",
     ) -> None:
+        if trace not in ('off', 'basic', 'detailed'):
+            raise ValueError(f'Unknown tracing mode: {trace!r}')
         super().__init__(logfile)
         self.parser: Parser = parser
         self.entrypoint: type[RuleItem] = entrypoint
@@ -43,22 +47,50 @@ class ASTAnalyzer(ASTState):
         self.current_level: int = 0
         self.mode: Literal["Many", "Some"] = mode
         self.stack_errors: list[str] = []
+        self.trace_mode = trace
+        self._active = False
 
         self.debug(
             f"Analizador AST Inicializado. Entrada={self.entrypoint.name} grámaticas"
         )
         
-        self.raytracing = RayTracing()
-        self.parser.hookr.add(self.dispatch_raytracing_process)
+        self.raytracing = RayTracing(mode=trace)
+        self._activate()
+
+    def _activate(self) -> None:
+        """Make this analyzer the sole observer of its parser."""
+        previous = self.parser.analyzer_ast_instance
+        if previous is not self:
+            if previous is not None:
+                previous.close()
+            self.parser.analyzer_ast_instance = self
+        if not self._active:
+            if self.trace_mode != 'off':
+                self.parser.hookr.add(self.dispatch_raytracing_process)
+            self._active = True
+
+    def close(self) -> None:
+        """Detach observation and release temporary snapshots, preserving results."""
+        if self._active:
+            if self.trace_mode != 'off':
+                self.parser.hookr.remove(self.dispatch_raytracing_process)
+            self._active = False
+        close = getattr(self.raytracing, 'close', None)
+        if close is not None:
+            close()
 
     def dispatch_raytracing_process(self, state: str, checkpoint: Any = None) -> None:
         if state == 'save':
             self.raytracing.lift(checkpoint)
         elif state == 'restore':
+            if self.trace_mode == 'detailed':
+                self.raytracing.observe_position(self.parser._restore_from_pos)
             self.raytracing.unreach(checkpoint)
 
     def visitor(self, combinator: Combinator) -> Any:
         """Dispatch `combinator` to the AST `Visitor` function."""
+        if not self._active:
+            self._activate()
         return Visitor(self, combinator)
 
     def visit_many(self, entry: Combinator) -> list[Any]:
@@ -126,6 +158,14 @@ class ASTAnalyzer(ASTState):
         return results
 
     def process(self) -> (list[ASTNode] | None):
+        """Run an analysis and detach its observer on every exit path."""
+        self._activate()
+        try:
+            return self._process()
+        finally:
+            self.close()
+
+    def _process(self) -> (list[ASTNode] | None):
         """
         Validate the grammar entrypoint and execute top-level AST generation
         using `visit_many` or `visit_some`.

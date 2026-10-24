@@ -208,42 +208,35 @@ class LexerState(Diagnostics):
     def is_comment_start(self, char: str, col_override: int | None = None) -> bool:
         """Return True if `char` at the current column starts a line comment."""
         pos = self.col if col_override is None else col_override
+        return self._comment_length(char, pos) > 0
+
+    def _comment_length(self, char: str, pos: int) -> int:
+        """Return the length of the complete comment marker at `pos`, or zero."""
         comment_config = self.comment_token
         line_str = self.currline
-
-        if isinstance(comment_config, str):
-            if len(comment_config) == 1:
-                return char == comment_config
-            return line_str[pos : pos + len(comment_config)] == comment_config
-
-        if isinstance(comment_config, (tuple, list, set)):
-            for tok in comment_config:
-                if isinstance(tok, str):
-                    if (len(tok) == 1 and char == tok) or (
-                        line_str[pos : pos + len(tok)] == tok
-                    ):
-                        return True
-                elif isinstance(tok, Token) and MAP_SYMBOLS.get(char) == tok:
-                    return True
-            return False
-
-        if isinstance(comment_config, Token):
-            return MAP_SYMBOLS.get(char) == comment_config
-        return False
+        markers = (
+            comment_config
+            if isinstance(comment_config, (tuple, list, set))
+            else (comment_config,)
+        )
+        for marker in markers:
+            if isinstance(marker, str):
+                if marker and line_str.startswith(marker, pos):
+                    return len(marker)
+            elif isinstance(marker, Token):
+                symbol = MAP_SYMBOLS.get(marker)
+                if isinstance(symbol, str) and line_str.startswith(symbol, pos):
+                    return len(symbol)
+                # Preserve support for single-character aliases of the token.
+                if MAP_SYMBOLS.get(char) == marker:
+                    return 1
+        return 0
 
     def process_comment(self) -> TokenType:
         """Consume the remainder of the current physical line as a `Token.COMMENT`."""
         start = self.col
         line_str = self.currline
-        comment_len = 1
-
-        if isinstance(self.comment_token, str):
-            comment_len = len(self.comment_token)
-        elif isinstance(self.comment_token, (tuple, list, set)):
-            for tok in self.comment_token:
-                if isinstance(tok, str) and line_str[self.col :].startswith(tok):
-                    comment_len = len(tok)
-                    break
+        comment_len = self._comment_length(self.peek(), self.col) or 1
 
         self.col += comment_len
         content = line_str[self.col :]

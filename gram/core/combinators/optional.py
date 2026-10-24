@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
-from gram.core.combinators.signals import ControlFlowSignal
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
@@ -68,24 +67,30 @@ class Opt(Combinator):
         father.note(f"Iniciando evaluación opcional para: {self.combinator!r}", "normal")
 
         checkpoint = parser.savepoint(name="OptCheckpoint")
-        had_prior_staged = analyzer.staged_failure is not None
-
         try:
-            with analyzer.safe_mode():
-                response = analyzer.visitor(self.combinator)
+            with analyzer.failure_scope() as scope:
+                try:
+                    response = analyzer.visitor(self.combinator)
+                except errors.Error as err:
+                    father.note(
+                        f"Error de Gram capturado durante evaluación opcional ({err.name}): {err}",
+                        "error",
+                    )
+                    analyzer.report_error(err, pos=parser.pos)
+                    response = None
 
+            candidate = scope.candidate
             if response is None:
                 parser.restore(checkpoint)
 
                 # Deep partial failure inside Opt (e.g., `int a = ` missing value after `=`)
-                if analyzer.staged_weight > checkpoint.pos:
+                if candidate is not None and candidate[0] > checkpoint.pos:
                     father.note(
                         f"Fallo parcial profundo dentro de Opt({self.combinator!r}) "
-                        f"en pos={analyzer.staged_weight}.",
+                        f"en pos={candidate[0]}.",
                         "error",
                     )
-                    if not analyzer.safe_flag:
-                        analyzer.flush_failure()
+                    analyzer.report_error(candidate[1], pos=candidate[0])
                     return None
 
                 # Clean omission at starting position (0 tokens consumed)
@@ -93,32 +98,16 @@ class Opt(Combinator):
                     f"El combinador opcional {self.combinator!r} fue omitido limpiamente.",
                     "advice",
                 )
-                if not had_prior_staged and analyzer.staged_weight == checkpoint.pos:
-                    analyzer.discard_staged_failure()
                 return []
 
             father.note(
                 f"Secuencia opcional {self.combinator!r} evaluada exitosamente.",
                 "success",
             )
-            analyzer.discard_staged_failure(min_weight=parser.pos)
+            if candidate is not None and candidate[0] > parser.pos:
+                analyzer.stage_failure(candidate[1], weight=candidate[0])
             return response
 
-        except ControlFlowSignal:
-            raise
-        except errors.Error as err:
-            father.note(
-                f"Error de Gram capturado durante evaluación opcional ({err.name}): {err}",
-                "error",
-            )
-            failed_pos = parser.pos
-            parser.restore(checkpoint)
-            analyzer.report_error(err, pos=failed_pos)
-            if failed_pos > checkpoint.pos:
-                if not analyzer.safe_flag:
-                    analyzer.flush_failure()
-                return None
-            return []
         finally:
             parser.down()
 

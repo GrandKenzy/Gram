@@ -29,6 +29,8 @@ class Checkpoint:
         bracket_depth (int): Open bracket delimiter nesting depth.
         targets (tuple[Node, ...]): Snapshot of the active diagnostic node stack.
         name (str): Descriptive identifier for the checkpoint.
+        token_values (tuple[tuple[int, Any], ...]): Current tokens at replaced
+            indices, without copying the rest of the token stream.
     """
     pos: int
     vpos: int
@@ -38,6 +40,7 @@ class Checkpoint:
     tk_tags: tuple[tuple[int, frozenset[str]], ...] = ()
     token_overrides: tuple[tuple[int, Any], ...] = ()
     name: str = 'checkpoint'
+    token_values: tuple[tuple[int, Any], ...] = ()
 
     @property
     def target(self) -> Node | None:

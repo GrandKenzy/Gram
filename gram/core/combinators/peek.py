@@ -46,11 +46,12 @@ class Peek(Combinator):
         checkpoint = parser.savepoint("PEEK-Analysis")
 
         try:
-            with analyzer.safe_mode():
-                res = analyzer.visitor(self.combinator)
-
-            failed_pos = parser.pos
-            parser.restore(checkpoint)
+            try:
+                with analyzer.failure_scope() as scope:
+                    res = analyzer.visitor(self.combinator)
+                failed_pos = parser.pos
+            finally:
+                parser.restore(checkpoint)
 
             if res is not None:
                 father.note(
@@ -60,16 +61,17 @@ class Peek(Combinator):
                 return []
 
             father.note(f"Peek({self.combinator!r}) falló.", "warn")
+            if scope.candidate is not None:
+                analyzer.report_error(scope.candidate[1], pos=scope.candidate[0])
+                return None
+
             fallback = errors.GrammarError(
                 "PositiveLookaheadFailed",
                 errors.GRAMMAR_COMBINATOR_FAILED,
                 f"La afirmación anticipada Peek({self.combinator!r}) no se cumplió.",
                 "Verifique los tokens siguientes esperados por el lookahead.",
             )
-            if analyzer.safe_flag:
-                analyzer.report_error(fallback, pos=failed_pos)
-            else:
-                analyzer.flush_failure(fallback=fallback)
+            analyzer.report_error(fallback, pos=failed_pos)
             return None
         finally:
             parser.down()
