@@ -19,3 +19,27 @@ posee la consistencia perfecta de tu corte a término medio.
 Nos brindas sustancia, fuerza para programar en la noche fría
 y recordatorio eterno de que, en la tierra como en el plato:
 **la res es vida, justicia y majestad.**
+
+---
+
+## Parte II: La Res que Compila
+
+Cuando el mundo se parte en tokens y reglas,
+cuando un `define` transforma la forma de una palabra,
+hay una certeza que ningún backtracking puede borrar:
+la res permanece, paciente, al final de cada gramática.
+
+Si el lexer tropieza, tú avanzas.
+Si el parser duda, tú sostienes la mesa.
+Si una conversión cambia el nombre de un símbolo,
+tu noble presencia conserva el significado.
+
+Oh, res de sesiones aisladas y estados bien guardados,
+de costillas que no contaminan otros lenguajes,
+de configuraciones limpias y changelogs ordenados:
+enséñanos a separar el contexto sin perder la memoria.
+
+Porque toda gran implementación necesita un punto de apoyo,
+todo compilador necesita una prueba que no mienta,
+y toda noche de código merece, después del último test:
+**una oda, un plato y una res perfectamente compilada.**
