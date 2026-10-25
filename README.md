@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="badge/banner.jpeg" alt="Gram Framework" width="100%">
+  <img src="discentra_centra/badge/banner.jpeg" alt="Gram Framework" width="100%">
 </p>
 
 # Gram Framework
@@ -248,5 +248,5 @@ Gram is distributed under the **Free Use & Commercial Output License** (see [LIC
 ---
 
 <p align="center">
-  <img src="badge/front.jpeg" alt="Gram Framework" width="100%">
+  <img src="discentra_centra/badge/front.jpeg" alt="Gram Framework" width="100%">
 </p>
