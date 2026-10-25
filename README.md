@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
-  <img src="https://img.shields.io/badge/version-2.0.0b1-informational.svg" alt="Version 2.0.0b1">
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-134%20passed-success.svg" alt="Tests: 134 passed"></a>
+  <img src="https://img.shields.io/badge/version-2.0.0b2-informational.svg" alt="Version 2.0.0b2">
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-179%20passed-success.svg" alt="Tests: 179 passed"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Free%20Use%20%26%20Commercial%20Output-brightgreen.svg" alt="License"></a>
   <a href="https://github.com/GrandKenzy/Gram"><img src="https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg" alt="Zero External Dependencies"></a>
 </p>
@@ -30,12 +30,13 @@ What is actually implemented in the repository:
 - **Lexer (`gram.core.lexer`):** Configurable line/multiline tokenizer supporting keywords (`Keyword`), semantic keyword groups (`WordGroup`), custom operator symbols (`MAP_SYMBOLS`, `insert_symbol`, `disabled_symbol`), indentation tracking (`Token.INDENT` / `Token.DEDENT`), strings, docstrings, numbers, and configurable single- or multi-character line comments.
 - **Transactional Parser State (`gram.core.parser`):** Token stream cursor (`Parser`, `ParseState`) with immutable `Checkpoint` snapshots (`savepoint` and `restore`) that roll back the cursor, virtual lookahead cursor (`vpos`), bracket depth, `storage` dictionary, `tk_tags` token tags, and in-place token replacements.
 - **Combinator Library (`gram.core.combinators`):**
-  - **Matching:** `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSymbol` (`MatchSeqSymbol`), `generador_expr`.
-  - **Structural:** `Seq` (`Sequence`), `Alt`, `Opt`, `Enclosed`, plus `+` (`Seq`) and `|` (`Alt`) operator overloads.
+  - **Matching:** `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSeqSymbol`, `generador_expr`.
+  - **Structural:** `Seq`, `Alt`, `Opt`, `Enclosed`, plus `+` (`Seq`) and `|` (`Alt`) operator overloads.
   - **Repetition & Delimited Lists:** `Many`, `Some`, `Until`, `UntilIndent`, `Separator` (produces `ArrayNode`).
   - **Rules, Atoms & State:** `RuleItem`, `Ref`, `Item`, `Literal`, `Save`, `Load`.
   - **Lookahead, Signals & Tagging:** `Peek`, `Not`, `If`, `Skip` (with `SkipFlowSignal`, `BreakFlowSignal`, `BacktrackSignal`, `CutFlowSignal`, `AbortFlowSignal`), `Tag`, `Tokenize`, `ErrorCombinator`.
   - **Fluent Token Constraints:** `Req` (case, substring, length, numeric bounds, digit counts, and value transformations).
+  - **Preprocessing & Expectations:** `Preprocess`, `Convert`, and `Expected` for callback validation, logical identifier conversions, and strict zero-width assertions.
   - **Pratt Expression Engine:** `ArithmeticExpr`, `ConditionalExpr`, and `DualExpr` producing `ASTBinaryOp` and `ASTUnaryOp` nodes.
 - **AST & Tracing (`gram.core.ast`):** `ASTAnalyzer` validates the root entrypoint rule (`Alt` of `Ref` branches), evaluates combinators through `Visitor`, and records execution traces in `RayTracing` (`trace="off" | "basic" | "detailed"`).
 - **Isolated Language Sessions (`gram.sessions`):** `Session` snapshots, migrates, and restores global `config`, `MAP_KEYWORDS`, `WordGroup` registries, and `MAP_SYMBOLS` so multiple language definitions can coexist in the same process.
@@ -78,7 +79,7 @@ Clone the repository and add its root directory to `PYTHONPATH` (or work directl
 git clone https://github.com/GrandKenzy/Gram.git
 cd Gram
 python -m gram
-# Output: Gram Framework v2.0.0b1
+# Output: Gram Framework v2.0.0b2
 ```
 
 ### 2. With VNMA (Vendor Manager)
@@ -91,8 +92,8 @@ name = "my-compiler"
 version = "0.1.0"
 
 [dependencies]
-# From GitHub (pinned to the v2.0.0b1 beta tag or tracking main):
-gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.0.0b1" }
+# From GitHub (pinned to the v2.0.0b2 beta tag or tracking main):
+gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.0.0b2" }
 # gramv2.0.0b = { git = "https://github.com/GrandKenzy/Gram.git", branch = "main" }
 
 # Or from a local directory for real-time editable changes:
@@ -221,7 +222,7 @@ python -m unittest discover -s tests
 
 ```text
 ----------------------------------------------------------------------
-Ran 134 tests in 7.6s
+Ran 179 tests in 17.4s
 
 OK
 ```

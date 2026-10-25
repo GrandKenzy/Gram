@@ -75,10 +75,6 @@ class TokenStream:
         self._pos += 1
         return token
 
-    def next(self) -> TokenType:
-        """Alias for `advance()`."""
-        return self.advance()
-
     def check(self, *expected: Token | TokenType | str) -> bool:
         """Return True if the current token matches any of `expected` without advancing."""
         curr = self.current()

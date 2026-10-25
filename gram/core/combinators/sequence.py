@@ -106,7 +106,7 @@ class Seq(Combinator):
                         f"Secuencia sintáctica incompleta{tok_info}.",
                         f"El elemento No. {index} ({combinator!r}) no coincidió con la secuencia esperada.",
                     )
-                    if analyzer.safe_flag:
+                    if analyzer.in_failure_context:
                         analyzer.report_error(fallback, pos=failed_pos)
                     else:
                         analyzer.flush_failure(fallback=fallback)
@@ -136,6 +136,4 @@ class Seq(Combinator):
         return f"Seq({items})"
 
 
-Sequence = Seq
-
-__all__ = ["Seq", "Sequence"]
+__all__ = ["Seq"]

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from gram import config, errors
+from gram.core.lexer.flags import CHAR, SIMPLE_QUOTE
 from gram.core.lexer.tokens import Token, TokenType
 
 if TYPE_CHECKING:
@@ -33,28 +34,35 @@ def process(
     lexer: LexerState,
     char: str,
     node: Any = None,
+    *,
+    prefix: str = "",
+    start_override: int | None = None,
 ) -> TokenType:
     """
     Dispatch string scanning to either `process_docstring` (if triple quotes
     are detected and enabled) or `process_string`.
     """
-    start = lexer.col
+    start = lexer.col if start_override is None else start_override
     start_line = lexer.line
     quote = char
 
     lexer.debug(f"Inicio de literal de cadena con delimitador {quote!r}")
 
-    if (
-        config.LEXER_SUPPORT_DOCSTRINGS
-        and lexer.currline[lexer.col : lexer.col + 3] == quote * 3
-    ):
-        if lexer._target is not None:
-            lexer._target.name = "VISITOR-DOCSTRING"
-        lexer.success("Triple comilla detectada; procesando docstring multilínea")
-        return process_docstring(lexer, quote, start, start_line)
+    multiline = lexer.multiline_match()
+    if multiline is not None:
+        opening, closing = multiline
+        result = lexer.process_multiline(
+            opening,
+            closing,
+            token=Token.STRING,
+            description=prefix,
+            decode_escapes=True,
+        )
+        result.col = start
+        return result
 
     lexer.success("Procesando cadena estándar")
-    return process_string(lexer, quote, start, start_line)
+    return process_string(lexer, quote, start, start_line, prefix=prefix)
 
 
 def process_string(
@@ -63,6 +71,8 @@ def process_string(
     start: int,
     start_line: int,
     node: Any = None,
+    *,
+    prefix: str = "",
 ) -> TokenType:
     """Scan a single-line string literal delimited by `quote`."""
     lexer.advance()  # Consume opening quote
@@ -93,7 +103,17 @@ def process_string(
         if char == quote:
             value = "".join(chars)
             lexer.success(f"Cadena cerrada con éxito: {value!r}")
-            return TokenType(Token.STRING, value, start_line, start)
+            flags = SIMPLE_QUOTE
+            if len(value) == 1:
+                flags |= CHAR
+            return TokenType(
+                Token.STRING,
+                value,
+                start_line,
+                start,
+                description=prefix,
+                flags=flags,
+            )
 
         chars.append(char)
 
@@ -129,7 +149,7 @@ def process_docstring(
             lexer.col += 3
             value = "".join(chars)
             lexer.success(f"Docstring completado ({len(value)} caracteres)")
-            return TokenType(Token.DOCSTRING, value, start_line, start)
+            return TokenType(Token.STRING, value, start_line, start)
 
         if lexer.col >= line_len:
             chars.append("\n")

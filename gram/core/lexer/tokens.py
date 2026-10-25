@@ -11,6 +11,7 @@ from enum import Enum, auto
 from typing import Any
 
 from gram import errors
+from gram.core.lexer.flags import TokenFlags
 
 
 class Token(Enum):
@@ -34,11 +35,9 @@ class Token(Enum):
     # 2. LITERALS
     # ==============================================================
     STRING = auto()
-    CHAR = auto()
     NUMBER = auto()
     BOOL = auto()
     NULL = auto()
-    DOCSTRING = auto()
 
     # ==============================================================
     # 3. ARITHMETIC OPERATORS
@@ -218,7 +217,7 @@ class TokenType:
     value from the source code, and 1-based line / 0-based column coordinates.
     """
 
-    __slots__ = ("col", "description", "line", "token", "value")
+    __slots__ = ("col", "description", "flags", "line", "token", "value")
 
     def __init__(
         self,
@@ -227,6 +226,7 @@ class TokenType:
         line: int = 0,
         col: int = 0,
         description: str = "",
+        flags: TokenFlags | int = TokenFlags.NONE,
     ) -> None:
         """Initialize a concrete lexeme token with its type, value, and coordinates."""
         self.token: Token | CustomToken = token
@@ -234,6 +234,7 @@ class TokenType:
         self.line: int = max(0, line) + 1
         self.col: int = max(0, col)
         self.description: str = description
+        self.flags: TokenFlags = TokenFlags(flags)
 
     def long(self) -> int:
         """Return the ending column index of this token (`col + len(str(value))`)."""
@@ -287,7 +288,7 @@ class TokenType:
     def __repr__(self) -> str:
         return (
             f"TokenType(token={self.token}, value={self.value!r}, "
-            f"line={self.line}, col={self.col})"
+            f"line={self.line}, col={self.col}, flags={self.flags!r})"
         )
 
     def __str__(self) -> str:

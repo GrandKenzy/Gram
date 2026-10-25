@@ -95,8 +95,8 @@ class TestLookaheadAndControl(CombinatorTestCase):
         self.assertIsNotNone(res_check)
 
         # Variant C: Assert tag not exists
-        tag_unexists = Tag.not_exists("unknown_tag")
-        res_un = a1.visitor(tag_unexists)
+        tag_missing = Tag.not_exists("unknown_tag")
+        res_un = a1.visitor(tag_missing)
         self.assertIsNotNone(res_un)
 
         # Variant D: Remove tag

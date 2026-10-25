@@ -4,9 +4,9 @@ Structural combinators compose child combinators into ordered sequences, priorit
 
 ---
 
-## 1. `Seq` / `Sequence`
+## 1. `Seq`
 
-`Seq` (aliased as `Sequence`) evaluates child combinators in linear order. You can also compose sequences with the `+` operator (`comb1 + comb2`).
+`Seq` evaluates child combinators in linear order. You can also compose sequences with the `+` operator (`comb1 + comb2`).
 
 ### Constructor
 ```python

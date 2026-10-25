@@ -1,5 +1,5 @@
 """
-Tests for Sequence (Seq) and Alternative (Alt) Structural Combinators.
+Tests for Seq and Alternative (Alt) Structural Combinators.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class TestSequenceAndAlternative(CombinatorTestCase):
     """
 
     # =========================================================================
-    # 1. Seq (Sequence)
+    # 1. Seq
     # =========================================================================
 
     def test_seq_shape_and_variants(self) -> None:

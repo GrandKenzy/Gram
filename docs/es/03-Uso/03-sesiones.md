@@ -46,7 +46,7 @@ Definir una sesión de lenguaje sigue un patrón estricto de inicialización en 
 | `session.migrate()` | Configuración (Paso 4) | Guarda en `self` los `MAP_KEYWORDS`, `WordGroup`s, `config` y `MAP_SYMBOLS` de la sesión, y restaura la instantánea previa de `config` y `MAP_SYMBOLS` capturada por `init()`. |
 | `session.load()` | Ejecución | Aplica las palabras clave, grupos, símbolos y `config` guardados de esta sesión a los registros globales. (Debe haberse llamado a `migrate()` previamente, o lanzará `RuntimeError`.) |
 | `session.tokenize(source, name)` | Ejecución | Ejecuta `Lexer(source, name).process()` bajo el estado de la sesión activa y retorna `list[TokenType]`. |
-| `session.parse(tokens, name, entrypoint=None)` | Ejecución | Ejecuta `Parser(tokens, name).parse(entry, self.mode)` usando `entrypoint` o `self.entrypoint`. |
+| `session.parse(tokens, name, entrypoint=None, conversion_state=None)` | Ejecución | Ejecuta el parser usando `entrypoint` o `self.entrypoint`; el estado opcional permite compartir conversiones explícitamente entre archivos. |
 
 ---
 
@@ -143,3 +143,22 @@ Script AST: [AstRef(nodes=2, name=ScriptFuncDecl)]
 ```
 
 Observa cómo en `C_SESSION`, `;` se tokeniza como `Token.SEMICOLON` mientras que `// C comment` se descarta como comentario; tan pronto como se llama a `SCRIPT_SESSION.load()`, `; Script comment` pasa a ser el delimitador de comentarios y `fn` se reconoce como `Token.KEYWORD`.
+
+### Compartir conversiones entre archivos
+
+Cada llamada a `session.parse()` comienza con conversiones aisladas si no se proporciona un estado. Para conservar adiciones de un archivo y usarlas en otro, cree un estado explícito:
+
+```python
+state = C_SESSION.new_conversion_state()
+C_SESSION.parse(header_tokens, "header.h", conversion_state=state)
+C_SESSION.parse(source_tokens, "main.c", conversion_state=state)
+```
+
+El estado puede copiarse con `state.clone()` o limpiarse con `state.clear()`. El estado externo solo se actualiza cuando el parseo termina correctamente.
+
+### Registro de delimitadores multilínea
+
+El registro `MULTLINE` (`add_multline()` / `remove_multline()`) es global y no
+forma parte de las instantáneas de `Session`. Registre los delimitadores antes
+de crear el `Lexer` de un archivo y elimínelos o restáurelos explícitamente si
+otro lenguaje no debe verlos. Cada `Lexer` copia el registro al construirse.

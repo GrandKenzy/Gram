@@ -261,13 +261,6 @@ class CodeError:
         """
         return "S" if self.safe else "U"
 
-    def is_standard(self) -> str:
-        """
-        ES: Alias de la propiedad type.
-        EN: Alias for the type property.
-        """
-        return self.type
-
     def stringify(self) -> str:
         """
         ES: Formatea el error de manera legible, e.g., S-002A · ParserError.

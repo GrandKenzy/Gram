@@ -87,11 +87,7 @@ class UntilIndent(Combinator):
         Determine the active indentation level at the current parser cursor
         by scanning backwards for the most recent INDENT or DEDENT token.
         """
-        for i in range(parser.pos - 1, -1, -1):
-            tok = parser.tokens[i]
-            if tok.token in (Token.INDENT, Token.DEDENT):
-                return int(tok.value) if tok.value is not None else 0
-        return 0
+        return parser.current_indent_level()
 
     def _matches_condition(self, tok: TokenType, initial_level: int) -> bool:
         """Evaluate if candidate token `tok` fulfills the indentation stopping condition."""

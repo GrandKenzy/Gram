@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from gram import errors
 from gram.core.ast.nodes import ASTNode, ArrayNode
 from gram.core.combinators.base import Combinator, RuleItem
-from gram.core.combinators.match import MatchSymbol, MatchToken
+from gram.core.combinators.match import MatchSeqSymbol, MatchToken
 from gram.core.combinators.reference import Ref
 from gram.core.combinators.signals import BreakFlowSignal, SkipFlowSignal
 from gram.core.lexer.tokens import MAP_SYMBOLS, Token
@@ -35,7 +35,7 @@ def _normalize_sep(sep: Combinator | Token | str) -> Combinator:
             return MatchToken(tok_enum)
         if sep in MAP_SYMBOLS:
             return MatchToken(MAP_SYMBOLS[sep])
-        return MatchSymbol(sep)
+        return MatchSeqSymbol(sep)
 
     errors.GrammarError(
         "UnsupportedSeparatorDelimiter",
@@ -186,7 +186,7 @@ class Separator(Combinator):
 
         if scope.candidate is not None:
             weight, err = scope.candidate
-            if publish_failure and not analyzer.safe_flag:
+            if publish_failure and not analyzer.in_failure_context:
                 with analyzer.failure_scope():
                     analyzer.stage_failure(err, weight=weight)
                     analyzer.flush_failure()

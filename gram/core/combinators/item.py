@@ -104,7 +104,7 @@ class Item(Combinator):
                         f"Fallo en el componente {idx} de Item({match_comb!r}){tok_info}.",
                         "Asegúrese de que todos los elementos de la secuencia Item coincidan.",
                     )
-                    if analyzer.safe_flag:
+                    if analyzer.in_failure_context:
                         analyzer.report_error(fallback, pos=failed_pos)
                     else:
                         analyzer.flush_failure(fallback=fallback)

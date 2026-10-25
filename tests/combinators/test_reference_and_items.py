@@ -6,11 +6,13 @@ from __future__ import annotations
 from gram import errors
 from gram.core.ast.nodes import ASTNode, ASTRef, Identifier
 from gram.core.combinators.base import RuleItem
+from gram.core.combinators.alternative import Alt
 from gram.core.combinators.item import Item, ItemNode, Literal, LiteralNode
 from gram.core.combinators.load import Load
 from gram.core.combinators.match import MatchToken
 from gram.core.combinators.reference import Ref
 from gram.core.combinators.save import Save
+from gram.core.combinators.sequence import Seq
 from gram.core.lexer.tokens import Token, TokenType
 from tests.combinators.base import CombinatorTestCase
 
@@ -143,3 +145,54 @@ class TestReferenceAndItems(CombinatorTestCase):
         res, analyzer = self.parse_with_analyzer(load_missing, "test")
         self.assertIsNone(res)
         self.assertTrue(any(e.name == "StorageKeyNotFound" for e in analyzer._errors))
+    def test_save_and_load_can_use_isolated_external_storage(self) -> None:
+        typedefs: dict[str, TokenType] = {}
+        analyzer = self.create_analyzer("MyType MyType")
+
+        saved = analyzer.visitor(
+            Save("typedef", MatchToken(Token.IDENT), storage=typedefs)
+        )
+        self.assertIsNotNone(saved)
+        self.assertEqual(analyzer.parser.storage, {})
+        self.assertEqual(typedefs["typedef"].value, "MyType")
+
+        loaded = analyzer.visitor(
+            Load(
+                "typedef",
+                mode="match",
+                matcher=MatchToken(Token.IDENT),
+                storage=typedefs,
+            )
+        )
+        self.assertIsNotNone(loaded)
+        self.assertEqual(analyzer.parser.pos, 2)
+
+    def test_external_storage_rolls_back_with_speculative_branch(self) -> None:
+        typedefs: dict[str, TokenType] = {}
+        analyzer = self.create_analyzer("MyType")
+
+        result = analyzer.visitor(
+            Alt(
+                Seq(
+                    Save("typedef", MatchToken(Token.IDENT), storage=typedefs),
+                    MatchToken(Token.NUMBER),
+                ),
+                MatchToken(Token.IDENT),
+            )
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.token.value, "MyType")
+        self.assertEqual(typedefs, {})
+
+    def test_external_storage_is_shared_by_save_and_load_but_not_parser_global(self) -> None:
+        typedefs: dict[str, TokenType] = {}
+        analyzer = self.create_analyzer("TypeName")
+        analyzer.visitor(Save("T", MatchToken(Token.IDENT), storage=typedefs))
+
+        other = self.create_analyzer("TypeName")
+        loaded = other.visitor(Load("T", mode="get", storage=typedefs))
+
+        self.assertIsInstance(loaded, TokenType)
+        self.assertEqual(loaded.value, "TypeName")
+        self.assertEqual(other.parser.storage, {})

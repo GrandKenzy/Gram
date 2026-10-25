@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from gram import config
 from gram.core.lexer.visitors import numbers, strings, symbols, words
 
 if TYPE_CHECKING:
@@ -31,10 +32,30 @@ def visit(lexer: LexerState, char: str) -> TokenType:
     Returns:
         TokenType: Lexed token emitted by the selected visitor.
     """
-    if char in "\"'":
+    if config.LEXER_SUPPORT_PREFIXED_STRINGS and char in "LuU" and (
+        lexer.peek(1) in "\"'"
+        or (char == "u" and lexer.peek(1) == "8" and lexer.peek(2) in "\"'")
+    ):
+        prefix_length = 2 if char == "u" and lexer.peek(1) == "8" else 1
+        prefix = lexer.currline[lexer.col : lexer.col + prefix_length]
+        start = lexer.col
+        lexer.advance(prefix_length)
+        quote = lexer.peek()
+        visitor_name = "VISITOR-PREFIXED-STRING"
+        handler = lambda active_lexer, _char: strings.process(
+            active_lexer,
+            quote,
+            prefix=prefix,
+            start_override=start,
+        )
+    elif char in "\"'":
         visitor_name = "VISITOR-STRING"
         handler = strings.process
-    elif char.isdigit():
+    elif char.isdigit() or (
+        config.LEXER_SUPPORT_LEADING_DOT_NUMBERS
+        and char == "."
+        and lexer.peek(1).isdigit()
+    ):
         visitor_name = "VISITOR-NUMBER"
         handler = numbers.process
     elif char.isalpha() or char == "_":

@@ -9,11 +9,13 @@ Exports the core syntactic analysis classes and state management infrastructure:
 from __future__ import annotations
 
 from gram.core.parser.checkpoint import Checkpoint
+from gram.core.parser.conversions import ConversionState
 from gram.core.parser.control import ParseState
 from gram.core.parser.core import Parser
 
 __all__ = [
     'Checkpoint',
+    'ConversionState',
     'ParseState',
     'Parser',
 ]

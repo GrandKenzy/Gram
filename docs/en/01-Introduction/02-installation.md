@@ -11,13 +11,13 @@ Because Gram does not rely on PyPI packaging metadata (`pyproject.toml` / `setup
 **[VNMA](https://github.com/GrandKenzy/vnma)** vendors dependencies directly into a local `vendor/` directory inside your project, providing hermetic `sys.path` isolation, lockfile reproducibility (`vnma.lock`), and automatic IDE path configuration for VS Code and PyCharm without duplicating full Python virtual environments.
 
 > [!NOTE]
-> Gram includes a native `vnma_config.toml` at the root of its repository (`name = "gram-framework2.0.0Beta"`, `packname = "gram"`, `modules = ["gram"]`). When installed or linked via VNMA, you can import `gram` directly (`import gram` or `from gram import lexer, parser, combinators`) from any module in your project.
+> Gram includes a native `vnma_config.toml` at the root of its repository (`name = "gram-framework2.0.0b2"`, `packname = "gram"`, `modules = ["gram"]`). When installed or linked via VNMA, you can import `gram` directly (`import gram` or `from gram import lexer, parser, combinators`) from any module in your project.
 >
 > Any questions, CLI usage details, or troubleshooting regarding **VNMA** itself belong to the official VNMA documentation: **[https://github.com/GrandKenzy/vnma](https://github.com/GrandKenzy/vnma)**.
 
 ### A. Configuring `vnma.toml` in Your Project
 
-In your project's root `vnma.toml`, declare Gram under `[dependencies]`. You can install Gram from a remote GitHub branch, pin it to an immutable Git release tag (such as `v2.0.0b1`), or link a local clone for real-time editable development:
+In your project's root `vnma.toml`, declare Gram under `[dependencies]`. You can install Gram from a remote GitHub branch, pin it to an immutable Git release tag (such as `v2.0.0b2`), or link a local clone for real-time editable development:
 
 ```toml
 [project]
@@ -26,8 +26,8 @@ version = "0.1.0"
 
 [dependencies]
 
-# Option 1: From GitHub (pinned to the v2.0.0b1 beta tag - recommended for reproducible builds)
-gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.0.0b1" }
+# Option 1: From GitHub (pinned to the v2.0.0b2 beta tag - recommended for reproducible builds)
+gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.0.0b2" }
 
 # Option 2: From GitHub (tracking the main branch)
 # gramv2.0.0b = { git = "https://github.com/GrandKenzy/Gram.git", branch = "main" }
@@ -54,8 +54,8 @@ vnma install
 Or use `vnma` CLI commands directly:
 
 ```bash
-# Install directly from the GitHub repository (main branch or v2.0.0b1 tag):
-vnma install git+https://github.com/GrandKenzy/Gram.git@v2.0.0b1
+# Install directly from the GitHub repository (main branch or v2.0.0b2 tag):
+vnma install git+https://github.com/GrandKenzy/Gram.git@v2.0.0b2
 
 # Or create a zero-copy live development link to a local Gram clone:
 vnma link "~/Desktop/Gram"
@@ -83,14 +83,14 @@ cd Gram
 # List available release tags:
 git tag -l
 
-# Checkout the v2.0.0b1 beta release tag:
-git checkout v2.0.0b1
+# Checkout the v2.0.0b2 beta release tag:
+git checkout v2.0.0b2
 ```
 
-Alternatively, clone the `v2.0.0b1` tag directly in a single step:
+Alternatively, clone the `v2.0.0b2` tag directly in a single step:
 
 ```bash
-git clone --branch v2.0.0b1 --depth 1 https://github.com/GrandKenzy/Gram.git
+git clone --branch v2.0.0b2 --depth 1 https://github.com/GrandKenzy/Gram.git
 ```
 
 ### B. Expose `gram` on `PYTHONPATH`
@@ -114,12 +114,12 @@ python3 -m gram
 Running `python -m gram` (or checking `gram.version()` in Python) prints the installed version:
 
 ```text
-Gram Framework v2.0.0b1
+Gram Framework v2.0.0b2
 ```
 
 ```python
 import gram
 
-print(gram.__version__)       # "2.0.0b1"
-print(gram.__version_info__)  # (2, 0, 0, 'beta', 1)
+print(gram.__version__)       # "2.0.0b2"
+print(gram.__version_info__)  # (2, 0, 0, 'beta', 2)
 ```

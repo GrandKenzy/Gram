@@ -11,7 +11,6 @@ Every matching combinator delegates its consumed `TokenType` through `ASTState.d
 | `Token.IDENT` | `Identifier` |
 | `Token.NUMBER` | `LiteralNumber` |
 | `Token.STRING` | `LiteralString` |
-| `Token.DOCSTRING` (when `config.LEXER_SUPPORT_DOCSTRINGS` is `True`) | `LiteralString` |
 | `Token.KEYWORD` | `ASTKeyword` |
 | Any other `Token` or `CustomToken` | `LiteralSymbol` |
 
@@ -111,9 +110,9 @@ match_numeric_only = MatchGroup("types", values=["int"], behavior_values="allow"
 
 ---
 
-## 4. `MatchSeqSymbol` / `MatchSymbol`
+## 4. `MatchSeqSymbol`
 
-`MatchSymbol` is an alias for `MatchSeqSymbol` (`MatchSymbol = MatchSeqSymbol`). It validates `str(tok.value)` against a compiled regular expression (`fullmatch`) and optionally relabels the token's `.token` attribute with a `CustomToken` before delegating to the AST.
+`MatchSeqSymbol` validates `str(tok.value)` against a compiled regular expression (`fullmatch`) and optionally relabels the token's `.token` attribute with a `CustomToken` before delegating to the AST.
 
 ### Constructor
 ```python
@@ -141,9 +140,9 @@ MatchSeqSymbol(
 
 ### Example
 ```python
-from gram.core.combinators import MatchSeqSymbol, MatchSymbol
+from gram.core.combinators import MatchSeqSymbol
 
-match_colon = MatchSymbol(pattern=":", is_pattern=False)
+match_colon = MatchSeqSymbol(pattern=":", is_pattern=False)
 
 match_comparison = MatchSeqSymbol(
     symbols=["==", "!=", "<=", ">="],
@@ -167,9 +166,9 @@ generador_expr(*parts: str | list[str | int] | tuple[str | int, str | int]) -> s
 
 ### Example
 ```python
-from gram.core.combinators import MatchSymbol, generador_expr
+from gram.core.combinators import MatchSeqSymbol, generador_expr
 
 # Produces '#[A-Fa-f0-9]'
 hex_digit = generador_expr("#", ["A", "F"], ["a", "f"], [0, 9])
-hex_matcher = MatchSymbol(pattern=hex_digit, case_sensitive=True)
+hex_matcher = MatchSeqSymbol(pattern=hex_digit, case_sensitive=True)
 ```

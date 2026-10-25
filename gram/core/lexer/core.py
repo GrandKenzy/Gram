@@ -78,7 +78,11 @@ class Lexer(LexerState):
                 # Check if the line only contains a comment before mutating indentation
                 stripped = self.currline.lstrip(" ")
                 first_col = len(self.currline) - len(stripped)
-                if stripped and self.is_comment_start(stripped[0], col_override=first_col):
+                if (
+                    stripped
+                    and self.is_comment_start(stripped[0], col_override=first_col)
+                    and not self.is_block_comment_start(first_col)
+                ):
                     self.col = first_col
                     if config.LEXER_SAVE_COMMENTS:
                         self.comments.append(self.process_comment())
@@ -100,11 +104,33 @@ class Lexer(LexerState):
                         self.advance()
                         continue
 
-                    if self.is_comment_start(char):
-                        if config.LEXER_SAVE_COMMENTS:
-                            self.comments.append(self.process_comment())
+                    multiline = self.multiline_match()
+                    if multiline is not None:
+                        opening, closing = multiline
+                        is_block_comment = (
+                            opening == self.block_comment_token
+                            and getattr(config, "LEXER_SUPPORT_BLOCK_COMMENTS", True)
+                        )
+                        token = self.process_multiline(
+                            opening,
+                            closing,
+                            token=Token.COMMENT if is_block_comment else Token.STRING,
+                            decode_escapes=not is_block_comment,
+                        )
+                        if is_block_comment:
+                            if config.LEXER_SAVE_COMMENTS:
+                                self.comments.append(token)
                         else:
-                            self.col = len(self.currline)
+                            tokens_list.append(token)
+                        continue
+
+                    if self.is_comment_start(char):
+                        is_block_comment = self.is_block_comment_start()
+                        comment = self.process_comment()
+                        if config.LEXER_SAVE_COMMENTS:
+                            self.comments.append(comment)
+                        if is_block_comment:
+                            continue
                         break
 
                     token = visitors.visit(self, char)
@@ -121,7 +147,7 @@ class Lexer(LexerState):
                 self.col = 0
 
             # 4. Flush remaining open indentation blocks before EOF
-            while len(self.indents) > 1:
+            while getattr(config, "SUPPORT_INDENT", True) and len(self.indents) > 1:
                 self.indents.pop()
                 tokens_list.append(
                     TokenType(Token.DEDENT, self.indents[-1], self.line, self.col)

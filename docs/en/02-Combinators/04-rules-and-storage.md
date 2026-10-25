@@ -130,7 +130,8 @@ match_any_non_keyword = Literal()
 
 ## 5. `Save`
 
-Stores the `TokenType` currently at `parser.pos` into the checkpoint-safe dictionary `parser.storage[name]`.
+Stores the `TokenType` currently at `parser.pos` into the checkpoint-safe
+dictionary `parser.storage[name]` or into an optional caller-owned mapping.
 
 ### Constructor
 ```python
@@ -139,27 +140,45 @@ Save(
     matcher: Combinator | None = None,
     *,
     consume: bool = True,
+    storage: MutableMapping[str, TokenType] | None = None,
 )
 ```
 
+When `storage` is omitted, `Save` uses `parser.storage`. When a mapping is
+provided, the token is stored there and that mapping is included in parser
+checkpoint tracking.
+
 ### Consumption Modes
-1. **`matcher=None` (zero-width capture):** Stores `parser.peek()` in `parser.storage[name]` without advancing `parser.pos` and returns the stored `TokenType`.
-2. **`matcher` provided, `consume=True` (default):** Evaluates `matcher` (advancing `parser.pos`), stores the original token in `parser.storage[name]`, and returns `matcher`'s AST result. If `matcher` fails, restores the checkpoint, reports `SaveMatcherFailed`, and returns `None`.
-3. **`matcher` provided, `consume=False` (validated lookahead capture):** Evaluates `matcher`, then restores the checkpoint so `parser.pos` does not advance, stores the token in `parser.storage[name]`, and returns the `TokenType`.
+1. **`matcher=None` (zero-width capture):** Stores `parser.peek()` in the selected storage without advancing `parser.pos` and returns the stored `TokenType`.
+2. **`matcher` provided, `consume=True` (default):** Evaluates `matcher` (advancing `parser.pos`), stores the original token in the selected storage, and returns `matcher`'s AST result. If `matcher` fails, restores the checkpoint, reports `SaveMatcherFailed`, and returns `None`.
+3. **`matcher` provided, `consume=False` (validated lookahead capture):** Evaluates `matcher`, then restores the checkpoint so `parser.pos` does not advance, stores the token in the selected storage, and returns the `TokenType`.
 
 ### Example
 ```python
-from gram.core.combinators import MatchToken, Save
+from gram.core.combinators import Load, MatchToken, Save
 from gram.core.lexer import Token
 
 save_open_tag = Save("open_tag", MatchToken(Token.IDENT), consume=True)
+
+typedef_storage = {}
+save_typedef = Save(
+    "current_type",
+    MatchToken(Token.IDENT),
+    storage=typedef_storage,
+)
+load_typedef = Load(
+    "current_type",
+    mode="get",
+    storage=typedef_storage,
+)
 ```
 
 ---
 
 ## 6. `Load`
 
-Reads, compares, or swaps a `TokenType` previously saved in `parser.storage[name]`.
+Reads, compares, or swaps a `TokenType` previously saved in
+`parser.storage[name]` or in an explicitly supplied external mapping.
 
 ### Constructor
 ```python
@@ -167,22 +186,27 @@ Load(
     name: str,
     mode: Literal["get", "match", "unmatch", "replace", "change"] = "get",
     matcher: Combinator | None = None,
+    *,
+    storage: Mapping[str, TokenType] | None = None,
 )
 ```
+
+Pass the same mapping to `Save` and `Load` to share typedefs or dynamic types
+without placing them in the parser's default storage.
 
 ### Modes & Token Consumption
 > **Important:** In modes `"match"`, `"unmatch"`, `"replace"`, and `"change"`, `Load` only advances `parser.pos` if a `matcher` combinator is passed. When `matcher=None`, those modes operate at `parser.pos` without consuming the token.
 
 | Mode | Behavior | Return Value (`matcher=None`) | Return Value (`matcher` provided) |
 | :--- | :--- | :--- | :--- |
-| `"get"` | Returns `parser.storage[name]` without inspecting or moving the cursor. | Stored `TokenType` | Stored `TokenType` (`matcher` ignored) |
+| `"get"` | Returns the saved token from the selected storage without inspecting or moving the cursor. | Stored `TokenType` | Stored `TokenType` (`matcher` ignored) |
 | `"match"` | Requires `current.token == saved.token` and `current.value == saved.value` (else reports `LoadMatchFailed`). | `current` (`TokenType`), cursor unchanged | Result of `matcher` (consumes token) |
 | `"unmatch"` | Requires `current` to differ in type or value from `saved` (else reports `LoadUnmatchFailed`). | `current` (`TokenType`), cursor unchanged | Result of `matcher` (consumes token) |
 | `"replace"` | Replaces `parser.tokens[parser.pos]` in-place with `saved` (tracked for checkpoint rollback). | `saved` (`TokenType`), cursor unchanged | Result of `matcher` on the replaced token |
-| `"change"` | Swaps `parser.tokens[parser.pos]` and `parser.storage[name]`. | `saved` (`TokenType`), cursor unchanged | Result of `matcher` on the swapped-in token |
+| `"change"` | Swaps `parser.tokens[parser.pos]` and the token saved in the selected storage. | `saved` (`TokenType`), cursor unchanged | Result of `matcher` on the swapped-in token |
 
 ### Diagnostics
-- `StorageKeyNotFound` (`GrammarError`) if `name` is not in `parser.storage`.
+- `StorageKeyNotFound` (`GrammarError`) if `name` is not in the selected storage.
 - `LoadUnexpectedEOF` (`ParserError`) if `mode != "get"` and the stream is empty.
 - `LoadMatcherFailed` (`GrammarError`) if `matcher` fails (restoring the checkpoint, including any `"replace"` or `"change"` mutation).
 

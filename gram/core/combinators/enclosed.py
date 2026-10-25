@@ -155,7 +155,7 @@ class Enclosed(Combinator):
                             f"El contenido dentro de '{self.open_token.name}...{self.close_token.name}' no coincidió.",
                             "Revise la sintaxis de los elementos internos entre los delimitadores.",
                         )
-                        if analyzer.safe_flag:
+                        if analyzer.in_failure_context:
                             analyzer.report_error(fallback, pos=failed_pos)
                         else:
                             analyzer.flush_failure(fallback=fallback)
@@ -190,7 +190,7 @@ class Enclosed(Combinator):
                         f"(abierto en línea {open_tok.line}, columna {open_tok.col}), pero se alcanzó EOF.",
                         f"Cierre el bloque abierto con '{self.close_token.name}'.",
                     )
-                    if analyzer.safe_flag:
+                    if analyzer.in_failure_context:
                         analyzer.report_error(eof_err, pos=failed_pos)
                     else:
                         analyzer.stage_failure(eof_err, weight=failed_pos)
@@ -209,11 +209,11 @@ class Enclosed(Combinator):
                             f"'{close_tok.token.name}' ({close_tok.value!r}) en línea {close_tok.line}, columna {close_tok.col}.",
                             f"Asegúrese de cerrar correctamente con '{self.close_token.name}'.",
                         )
-                        if analyzer.safe_flag:
-                            analyzer.report_error(mismatch_err, pos=failed_pos)
-                        else:
-                            analyzer.stage_failure(mismatch_err, weight=failed_pos)
-                            analyzer.flush_failure(fallback=mismatch_err)
+                    if analyzer.in_failure_context:
+                        analyzer.report_error(mismatch_err, pos=failed_pos)
+                    else:
+                        analyzer.stage_failure(mismatch_err, weight=failed_pos)
+                        analyzer.flush_failure(fallback=mismatch_err)
                     return None
 
                 parser.consume()

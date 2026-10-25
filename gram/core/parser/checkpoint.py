@@ -38,6 +38,8 @@ class Checkpoint:
     targets: tuple[Node, ...] = ()
     storage: tuple[tuple[str, Any], ...] = ()
     tk_tags: tuple[tuple[int, frozenset[str]], ...] = ()
+    conversions: tuple[tuple[str, Any], ...] = ()
+    external_storages: tuple[tuple[int, tuple[tuple[str, Any], ...]], ...] = ()
     token_overrides: tuple[tuple[int, Any], ...] = ()
     name: str = 'checkpoint'
     token_values: tuple[tuple[int, Any], ...] = ()

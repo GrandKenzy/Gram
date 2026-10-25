@@ -87,7 +87,7 @@ class TestDiagnosticFuzz(CombinatorTestCase):
                     try:
                         with analyzer.failure_scope() as scope:
                             self.assertIsNone(analyzer.staged_failure)
-                            self.assertTrue(analyzer.safe_flag)
+                            self.assertTrue(analyzer.in_failure_context)
                             for position in range(4):
                                 if position == child_position and level + 1 < len(plans):
                                     exercise(level + 1)
@@ -106,7 +106,7 @@ class TestDiagnosticFuzz(CombinatorTestCase):
                 with Diagnostics.hook_errors(lambda sender, error: published.append(error)):
                     exercise(0)
                 self.assertIs(analyzer._staged_failure, prior)
-                self.assertFalse(analyzer.safe_flag)
+                self.assertFalse(analyzer.in_failure_context)
                 self.assertEqual(analyzer._errors, [])
                 self.assertEqual(published, [])
 
@@ -170,7 +170,7 @@ class TestDiagnosticFuzz(CombinatorTestCase):
                 self.assertEqual(published, [expected])
                 self.assertIsNone(analyzer.staged_failure)
                 self.assertEqual(analyzer.parser.pos, 0)
-                self.assertFalse(analyzer.safe_flag)
+                self.assertFalse(analyzer.in_failure_context)
                 self.assertEqual(analyzer.parser._targets, [])
                 cases += 1
 
@@ -219,7 +219,7 @@ class TestDiagnosticFuzz(CombinatorTestCase):
                         self.assertEqual(analyzer._errors, [], label)
                         self.assertEqual(published, [], label)
                     self.assertEqual(fallback.calls, int(signal_type is BacktrackSignal), label)
-                    self.assertFalse(analyzer.safe_flag, label)
+                    self.assertFalse(analyzer.in_failure_context, label)
                     self.assertEqual(analyzer.parser._targets, [], label)
                     cases += 1
 

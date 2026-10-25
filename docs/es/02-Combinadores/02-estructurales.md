@@ -4,9 +4,9 @@ Los combinadores estructurales componen combinadores secundarios (hijos) en secu
 
 ---
 
-## 1. `Seq` / `Sequence`
+## 1. `Seq`
 
-`Seq` (con alias `Sequence`) evalúa los combinadores secundarios en orden lineal. También puedes componer secuencias usando el operador `+` (`comb1 + comb2`).
+`Seq` evalúa los combinadores secundarios en orden lineal. También puedes componer secuencias usando el operador `+` (`comb1 + comb2`).
 
 ### Constructor
 ```python

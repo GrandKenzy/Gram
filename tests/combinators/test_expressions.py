@@ -4,8 +4,10 @@ Tests for Pratt Expression Combinators (DualExpr, ArithmeticExpr, ConditionalExp
 from __future__ import annotations
 
 from gram import errors
-from gram.core.ast.nodes import ASTNode, Identifier, LiteralNumber
+from gram.core.ast.nodes import ASTNode, ASTRef, Identifier, LiteralNumber
 from gram.core.combinators.base import RuleItem
+from gram.core.combinators.sequence import Seq
+from gram.core.combinators.match import MatchToken
 from gram.core.combinators.expressions import (
     ASTBinaryOp,
     ASTUnaryOp,
@@ -21,6 +23,17 @@ from tests.combinators.base import CombinatorTestCase
 class UnnamedNonNodeable(RuleItem):
     nodeable = False
     entrypoint = None
+
+
+class ParenthesizedNumber(RuleItem):
+    """Specialized atom used to guard Ref-before-native-grouping behavior."""
+
+    nodeable = True
+    entrypoint = Seq(
+        MatchToken(Token.LPAREN),
+        MatchToken(Token.NUMBER),
+        MatchToken(Token.RPAREN),
+    )
 
 
 class TestExpressionCombinators(CombinatorTestCase):
@@ -96,6 +109,18 @@ class TestExpressionCombinators(CombinatorTestCase):
         self.assertEqual(res.operator.token, Token.GREATER_EQUAL)
         self.assertIsInstance(res.left, ASTBinaryOp)
         self.assertEqual(res.left.operator.token, Token.PLUS)
+
+    def test_specialized_ref_can_override_native_parentheses(self) -> None:
+        class RefFirstDualExpr(DualExpr):
+            refs_before_grouping = True
+
+        expr = RefFirstDualExpr(Ref(ParenthesizedNumber), Token.NUMBER)
+
+        result, analyzer = self.parse_with_analyzer(expr, "(42)")
+
+        self.assertIsInstance(result, ASTRef)
+        self.assertEqual(result.name, "ParenthesizedNumber")
+        self.assertEqual(analyzer.parser.pos, 3)
 
     # =========================================================================
     # 4. Errors

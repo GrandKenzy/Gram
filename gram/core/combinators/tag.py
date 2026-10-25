@@ -70,9 +70,6 @@ class Tag(Combinator):
         """Create a `Tag` combinator that asserts `tag` does NOT exist on the current token."""
         return cls(tag, mode="not_exists")
 
-    # Alias for antonym of exists
-    unexists = not_exists
-
     def parse(self, analyzer: ASTAnalyzer) -> TokenType | None:
         """
         Execute the tag operation (`add`, `remove`, `exists`, or `not_exists`)

@@ -1,6 +1,6 @@
 # Keywords y Configuración Léxica
 
-Antes de tokenizar código fuente con el `Lexer`, puedes configurar la forma en que Gram reconoce comentarios, cadenas multilínea (docstrings), líneas en blanco, palabras clave del lenguaje (`Keyword`), grupos semánticos de palabras clave (`WordGroup`) y símbolos u operadores multicarácter personalizados.
+Antes de tokenizar código fuente con el `Lexer`, puedes configurar la forma en que Gram reconoce comentarios, literales multilínea, líneas en blanco, palabras clave del lenguaje (`Keyword`), grupos semánticos de palabras clave (`WordGroup`) y símbolos u operadores multicarácter personalizados.
 
 Todas las operaciones de palabras clave y grupos residen en `gram.core.lexer.words` (accesible mediante `from gram import lexer; lexer.words`).
 
@@ -12,11 +12,74 @@ El `Lexer` consulta varias variables globales de configuración en `gram.config`
 
 | Configuración | Valor por Defecto | Efecto sobre el `Lexer` |
 | :--- | :--- | :--- |
-| `config.LEXER_COMMENT_TOKEN` | `';'` | Prefijo de comentario de una sola línea (ej.: `'//'`, `'#'`, `';'`). Cualquier texto desde este prefijo hasta el final de la línea se descarta fuera de literales de cadena. |
-| `config.LEXER_SUPPORT_DOCSTRINGS` | `True` | Si es `True`, las cadenas entre comillas triples (`"""..."""` o `'''...'''`) emiten `Token.DOCSTRING` (que `ASTState.delegate_return_node` convierte en `LiteralString`). |
+| `config.LEXER_COMMENT_TOKEN` | `'#'` | Prefijo de comentario de una sola línea (ej.: `'//'`, `'#'`, `';'`). Cualquier texto desde este prefijo hasta el final de la línea se descarta fuera de literales de cadena. |
+| `config.LEXER_BLOCK_COMMENT_TOKEN` | `None` | Delimitador de apertura de comentarios de bloque. Con `LEXER_SUPPORT_BLOCK_COMMENTS=True`, se cierra con `*/`. |
+| `config.LEXER_SUPPORT_BLOCK_COMMENTS` | `True` | Activa o desactiva los comentarios de bloque configurados mediante `LEXER_BLOCK_COMMENT_TOKEN`. |
+| `config.LEXER_SUPPORT_DOCSTRINGS` | `True` | Habilita los delimitadores multilínea predeterminados (`"""..."""` y `'''...'''`). Se emiten como `Token.STRING`. |
+| `config.LEXER_SUPPORT_PREFIXED_STRINGS` | `True` | Reconoce prefijos C como `L"texto"`, `u"texto"`, `U"texto"` y `u8"texto"`. |
+| `config.LEXER_SUPPORT_LEADING_DOT_NUMBERS` | `True` | Reconoce números que empiezan por punto, como `.5`. Si es `False`, se emiten `Token.DOT` y `Token.NUMBER`. |
+| `config.TOKEN_BOOL_TRUE` / `config.TOKEN_BOOL_FALSE` | `'true'` / `'false'` | Define las grafías que se convierten en `Token.BOOL`. |
+| `config.TOKEN_NULL` | `'null'` | Define la grafía que se convierte en `Token.NULL`. |
+| `config.SUPPORT_INDENT` | `True` | Si es `False`, no se generan `Token.INDENT` ni `Token.DEDENT`. |
+| `config.SUPPORT_TRIPLE_DOT` | `True` | Controla si `...` se reconoce como `Token.THREE_DOTS` o como tres tokens `Token.DOT`. |
 | `config.LEXER_IGNORE_EMPTY_LINES` | `True` | Si es `True`, las líneas en blanco o con solo comentarios se omiten sin emitir tokens redundantes `Token.NEWLINE` ni perturbar el cálculo de `INDENT`/`DEDENT`. |
 | `config.LEXER_ADD_INFO` | `False` | Si es `True`, emite notas de telemetría léxica a `LexerState`. |
 | `config.LEXER_ADD_ERROR` | `False` | Si es `True`, registra notas de fallo léxico en la pila de diagnóstico del lexer. |
+
+### Delimitadores multilínea
+
+Las cadenas multilínea y los comentarios de bloque usan el mismo registro de
+delimitadores. Se puede añadir una variante para el proceso actual y retirarla
+cuando ya no sea necesaria:
+
+```python
+from gram.core.lexer import Lexer, add_multline, list_multline, remove_multline, words
+
+# Lexer requiere al menos una palabra clave registrada.
+words.add_keyword("placeholder", allow_override=True)
+add_multline("<<<", ">>>")
+print(list_multline())
+# {'"""': '"""', "'''": "'''", '<<<': '>>>'}
+
+tokens = Lexer("<<<contenido\nmultilínea>>>").process()
+remove_multline("<<<")
+```
+
+Todos los delimitadores no asociados a comentarios se emiten como
+`Token.STRING`. Para comentarios de bloque C se puede mantener la configuración
+compatible `LEXER_BLOCK_COMMENT_TOKEN = "/*"`; internamente se procesa con el
+mismo escáner multilínea. `add_multline()` modifica el registro global para
+nuevas instancias; cada `Lexer` copia el registro al construirse, por lo que un
+lexer ya creado no cambia si después se registra o elimina un delimitador.
+
+| API | Descripción |
+| :--- | :--- |
+| `MULTLINE` | Diccionario global `apertura -> cierre` con los delimitadores registrados. |
+| `add_multline(opening, closing)` | Añade o reemplaza un par de delimitadores. |
+| `remove_multline(opening)` | Elimina una apertura y devuelve su cierre, o `None` si no existía. |
+| `list_multline()` | Devuelve una copia independiente del registro actual. |
+
+### Flags de cadenas
+
+Todas las cadenas entre comillas se emiten como `Token.STRING`. El atributo
+`TokenType.flags` usa `gram.core.lexer.flags`:
+
+```python
+from gram.core.lexer import flags
+
+token.flags & flags.SIMPLE_QUOTE  # cualquier cadena simple
+token.flags & flags.CHAR          # cadena cuyo valor tiene un carácter
+```
+
+Por ejemplo, `'x'` tiene `flags.CHAR | flags.SIMPLE_QUOTE`, mientras que
+`"texto"` solo tiene `flags.SIMPLE_QUOTE`. Ya no existe un `Token.CHAR`
+separado.
+
+| Flag | Significado |
+| :--- | :--- |
+| `flags.NONE` | El token no tiene flags léxicas especiales. |
+| `flags.SIMPLE_QUOTE` | El valor procede de una cadena entre comillas simples o dobles de una línea. |
+| `flags.CHAR` | El valor de la cadena tiene exactamente un carácter. |
 
 ---
 

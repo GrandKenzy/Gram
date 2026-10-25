@@ -6,11 +6,13 @@ to `ParseState` and delegates grammatical evaluation to `ASTAnalyzer`.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal
 
 from gram import errors
 from gram.core.ast import ASTAnalyzer
 from gram.core.parser.control import ParseState
+from gram.core.parser.conversions import ConversionTarget
 
 from dataclasses import dataclass
 
@@ -27,15 +29,18 @@ class TokenInfo:
     token_pos: int
 
 
-# Backward-compatible alias
-TokenInf = TokenInfo
-
 class Parser(ParseState):
     """
     Main syntactic parser managing token stream state and triggering AST analysis.
     """
 
-    def __init__(self, tokens: list[TokenType], log_file: str | None = None) -> None:
+    def __init__(
+        self,
+        tokens: list[TokenType],
+        log_file: str | None = None,
+        *,
+        conversions: Mapping[str, ConversionTarget] | None = None,
+    ) -> None:
         """
         Initialize the parser with a list of lexed tokens.
 
@@ -43,7 +48,7 @@ class Parser(ParseState):
             tokens (list[TokenType]): Sequence of tokens produced by the lexer.
             log_file (str | None): Optional log file path for diagnostic telemetry.
         """
-        super().__init__(log_file)
+        super().__init__(log_file, conversions=conversions)
         self.tokens = tokens
         self.analyzer_ast_instance: ASTAnalyzer | None = None
 
@@ -96,4 +101,4 @@ class Parser(ParseState):
         )
 
 
-__all__ = ['Parser', 'TokenInfo', 'TokenInf']
+__all__ = ['Parser', 'TokenInfo']

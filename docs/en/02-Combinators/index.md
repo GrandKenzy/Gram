@@ -13,12 +13,13 @@ Combinators integrate with:
 
 | Category | Combinators | Purpose |
 | :--- | :--- | :--- |
-| **[01. Matching](./01-matching.md)** | `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSymbol` / `MatchSeqSymbol`, `generador_expr` | Consume a single token by `Token` type, keyword string, `WordGroup`, or regex pattern. |
-| **[02. Structural](./02-structural.md)** | `Seq` (`Sequence`), `Alt`, `Opt`, `Enclosed` | Ordered sequences (`+`), prioritized alternatives (`\|`), optional clauses ($0..1$), and bracket-delimited blocks. |
+| **[01. Matching](./01-matching.md)** | `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSeqSymbol`, `generador_expr` | Consume a single token by `Token` type, keyword string, `WordGroup`, or regex pattern. |
+| **[02. Structural](./02-structural.md)** | `Seq`, `Alt`, `Opt`, `Enclosed` | Ordered sequences (`+`), prioritized alternatives (`\|`), optional clauses ($0..1$), and bracket-delimited blocks. |
 | **[03. Repetition](./03-repetition.md)** | `Many`, `Some`, `Until`, `UntilIndent`, `Separator` | $0..n$ and $1..n$ loops, token scanning up to a target combinator or indentation level, and delimited lists (`ArrayNode`). |
 | **[04. Rules & Storage](./04-rules-and-storage.md)** | `RuleItem`, `Ref`, `Item`, `Literal`, `Save`, `Load` | Declarative production rules, rule references (`ASTRef`), atomic token sequences (`ItemNode`), primitive literals (`LiteralNode`), and `parser.storage` operations. |
 | **[05. Lookahead & Control](./05-lookahead-and-control.md)** | `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator` | Zero-width positive/negative lookahead, conditional branching, control-flow signals, token position tagging (`parser.tk_tags`), composite tokens, and error capture. |
 | **[06. Fluent Validation](./06-fluent-validation.md)** | `Req` | Chained token value validations and in-place transformations on a cloned token before AST delegation. |
+| **[08. Preprocessing and Expectations](./08-preprocessing-and-expectations.md)** | `Preprocess`, `Convert`, `Expected` | Custom validations, logical identifier conversions, and strict flow assertions. |
 | **[07. Pratt Expressions](./07-expressions.md)** | `ArithmeticExpr`, `ConditionalExpr`, `DualExpr` | Top-Down Operator Precedence (Pratt) expression parsing for prefix unary (`ASTUnaryOp`) and infix binary (`ASTBinaryOp`) operators. |
 
 ---

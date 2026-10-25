@@ -10,7 +10,7 @@ Whereas **[02. Combinators](../02-Combinators/index.md)** serves as a catalog of
 
 | Guide | Topics Covered |
 | :--- | :--- |
-| **[01. Keywords & Lexicon Setup](./01-keywords-and-lexicon.md)** | Initializing `Keyword` entries (`words.add_keyword`), grouping keywords into semantic `WordGroup` sets (`words.add_group`), customizing operator symbols (`tokens.insert_symbol`, `tokens.disabled_symbol`), and configuring `Lexer` behavior via `gram.config`. |
+| **[01. Keywords & Lexicon Setup](./01-keywords-and-lexicon.md)** | Initializing `Keyword` entries (`words.add_keyword`), grouping keywords into semantic `WordGroup` sets (`words.add_group`), customizing operator symbols (`tokens.insert_symbol`, `tokens.disabled_symbol`), multiline delimiters, string flags, and configuring `Lexer` behavior via `gram.config`. |
 | **[02. RuleItem & `nodeable`](./02-ruleitem-and-nodeable.md)** | Authoring production rules with `RuleItem`, automatic rule ID management (`AutoCode`, `SetCode`), root entrypoint validation (`Alt(Ref(...))`), and how `nodeable = True` vs. `nodeable = False` controls `ASTRef` wrapping vs. child node inlining. |
 | **[03. Language Sessions](./03-sessions.md)** | Isolating and switching between multiple language frontends in the same process using `gram.sessions.Session` (`clear_global`, `init`, `migrate`, `load`, `tokenize`, `parse`). |
 | **[04. Diagnostics & Error System](./04-diagnostics-and-errors.md)** | Using `gram.utilities.Diagnostics` for hierarchical compiler telemetry (`node`, `down`, `debug`, `warn`, `error`, `StackInfo`), raising OSGDC errors (`gram.errors`, `StackError`), and intercepting failures with `Diagnostics.hook_errors` and `ErrorAction`. |

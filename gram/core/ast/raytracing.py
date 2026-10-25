@@ -102,11 +102,6 @@ class RayTracing:
         self.backtracks: list[int] = []
         self.furthest: int | None = None
 
-    @property
-    def branchs(self) -> list[Trace]:
-        """Backward-compatible alias for `branches`."""
-        return self.branches
-
     def generate_branch(self) -> None:
         """Begin a new branch trace or record the initial active trace."""
         if not self.branches:

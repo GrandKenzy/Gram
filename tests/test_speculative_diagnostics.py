@@ -59,7 +59,7 @@ class TestSpeculativeDiagnostics(CombinatorTestCase):
 
         with analyzer.failure_scope() as outer:
             self.assertIsNone(analyzer.staged_failure)
-            self.assertTrue(analyzer.safe_flag)
+            self.assertTrue(analyzer.in_failure_context)
             analyzer.report_error(outer_error, pos=2)
             outer_candidate = analyzer._staged_failure
             with self.assertRaisesRegex(RuntimeError, 'scope failure'):
@@ -72,7 +72,7 @@ class TestSpeculativeDiagnostics(CombinatorTestCase):
         self.assertEqual(inner.candidate, (3, inner_error))
         self.assertEqual(outer.candidate, (2, outer_error))
         self.assertIs(analyzer._staged_failure, prior)
-        self.assertFalse(analyzer.safe_flag)
+        self.assertFalse(analyzer.in_failure_context)
         self.assertEqual(analyzer._errors, [])
 
     def test_alt_short_success_preserves_prior_after_deeper_rejected_branch(self):
@@ -172,7 +172,7 @@ class TestSpeculativeDiagnostics(CombinatorTestCase):
         self.assertIs(signal.payload, payload)
         self.assertEqual(signal._failure_candidate, (2, committed))
         self.assertIs(analyzer._staged_failure, prior)
-        self.assertFalse(analyzer.safe_flag)
+        self.assertFalse(analyzer.in_failure_context)
         self.assertEqual(analyzer.parser.pos, 0)
         self.assertEqual(analyzer._errors, [])
 
@@ -340,7 +340,7 @@ class TestSpeculativeDiagnostics(CombinatorTestCase):
                     with self.assertRaises(type(exception)):
                         analyzer.visitor(wrapper(child))
                     self.assertIs(analyzer._staged_failure, prior)
-                    self.assertFalse(analyzer.safe_flag)
+                    self.assertFalse(analyzer.in_failure_context)
                     self.assertEqual(analyzer._errors, [])
                     self.assertEqual(analyzer.parser._targets, [])
                     if wrapper in (Peek, Not):

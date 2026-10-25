@@ -1,6 +1,6 @@
 # Keywords & Lexicon Setup
 
-Before tokenizing source code with `Lexer`, you configure how Gram recognizes comments, docstrings, blank lines, language keywords (`Keyword`), semantic keyword groups (`WordGroup`), and custom multi-character symbols.
+Before tokenizing source code with `Lexer`, you configure how Gram recognizes comments, multiline literals, blank lines, language keywords (`Keyword`), semantic keyword groups (`WordGroup`), and custom multi-character symbols.
 
 All keyword and group operations live in `gram.core.lexer.words` (accessible via `from gram import lexer; lexer.words`).
 
@@ -12,11 +12,71 @@ The `Lexer` reads several global flags from `gram.config`:
 
 | Setting | Default | Effect on `Lexer` |
 | :--- | :--- | :--- |
-| `config.LEXER_COMMENT_TOKEN` | `';'` | Single-line comment prefix (e.g., `'//'`, `'#'`, `';'`). Any text from this prefix to the end of the line is discarded outside string literals. |
-| `config.LEXER_SUPPORT_DOCSTRINGS` | `True` | When `True`, triple-quoted strings (`"""..."""` or `'''...'''`) emit `Token.DOCSTRING` (which `ASTState.delegate_return_node` converts into `LiteralString`). |
+| `config.LEXER_COMMENT_TOKEN` | `'#'` | Single-line comment prefix (e.g., `'//'`, `'#'`, `';'`). Any text from this prefix to the end of the line is discarded outside string literals. |
+| `config.LEXER_BLOCK_COMMENT_TOKEN` | `None` | Opening delimiter for block comments. When `LEXER_SUPPORT_BLOCK_COMMENTS=True`, it closes with `*/`. |
+| `config.LEXER_SUPPORT_BLOCK_COMMENTS` | `True` | Enables or disables block comments configured through `LEXER_BLOCK_COMMENT_TOKEN`. |
+| `config.LEXER_SUPPORT_DOCSTRINGS` | `True` | Enables the default multiline delimiters (`"""..."""` and `'''...'''`). They emit `Token.STRING`. |
+| `config.LEXER_SUPPORT_PREFIXED_STRINGS` | `True` | Recognizes C prefixes such as `L"text"`, `u"text"`, `U"text"`, and `u8"text"`. |
+| `config.LEXER_SUPPORT_LEADING_DOT_NUMBERS` | `True` | Recognizes numbers beginning with a dot, such as `.5`. If `False`, the lexer emits `Token.DOT` and `Token.NUMBER`. |
+| `config.TOKEN_BOOL_TRUE` / `config.TOKEN_BOOL_FALSE` | `'true'` / `'false'` | Defines the spellings converted to `Token.BOOL`. |
+| `config.TOKEN_NULL` | `'null'` | Defines the spelling converted to `Token.NULL`. |
+| `config.SUPPORT_INDENT` | `True` | When `False`, the lexer emits neither `Token.INDENT` nor `Token.DEDENT`. |
+| `config.SUPPORT_TRIPLE_DOT` | `True` | Controls whether `...` is recognized as `Token.THREE_DOTS` or as three `Token.DOT` tokens. |
 | `config.LEXER_IGNORE_EMPTY_LINES` | `True` | When `True`, blank or comment-only lines are skipped without emitting redundant `Token.NEWLINE` tokens or perturbing `INDENT`/`DEDENT` calculation. |
 | `config.LEXER_ADD_INFO` | `False` | When `True`, emits lexical telemetry notes to `LexerState`. |
 | `config.LEXER_ADD_ERROR` | `False` | When `True`, records lexical failure notes in the lexer diagnostic stack. |
+
+### Multiline delimiters
+
+Multiline strings and block comments use the same delimiter registry. Add a
+variant for the current process and remove it when it is no longer needed:
+
+```python
+from gram.core.lexer import Lexer, add_multline, list_multline, remove_multline, words
+
+# Lexer requires at least one registered keyword.
+words.add_keyword("placeholder", allow_override=True)
+add_multline("<<<", ">>>")
+print(list_multline())
+# {'"""': '"""', "'''": "'''", '<<<': '>>>'}
+
+tokens = Lexer("<<<multiline\ncontent>>>").process()
+remove_multline("<<<")
+```
+
+Delimiters not associated with comments emit `Token.STRING`. For C block
+comments, keep the compatible `LEXER_BLOCK_COMMENT_TOKEN = "/*"` setting; the
+same multiline scanner handles it internally. `add_multline()` changes the
+global registry for new instances; each `Lexer` copies the registry when it is
+created, so an existing lexer is unaffected by later registrations or removals.
+
+| API | Description |
+| :--- | :--- |
+| `MULTLINE` | Global `opening -> closing` dictionary containing registered delimiters. |
+| `add_multline(opening, closing)` | Adds or replaces a delimiter pair. |
+| `remove_multline(opening)` | Removes an opening delimiter and returns its closing delimiter, or `None` if absent. |
+| `list_multline()` | Returns an independent copy of the current registry. |
+
+### String flags
+
+All quoted strings emit `Token.STRING`. The `TokenType.flags` attribute uses
+`gram.core.lexer.flags`:
+
+```python
+from gram.core.lexer import flags
+
+token.flags & flags.SIMPLE_QUOTE  # any simple quoted string
+token.flags & flags.CHAR          # string whose value has one character
+```
+
+For example, `'x'` has `flags.CHAR | flags.SIMPLE_QUOTE`, while `"text"` only
+has `flags.SIMPLE_QUOTE`. There is no separate `Token.CHAR` anymore.
+
+| Flag | Meaning |
+| :--- | :--- |
+| `flags.NONE` | The token has no special lexical flags. |
+| `flags.SIMPLE_QUOTE` | The value comes from a single-line string delimited by single or double quotes. |
+| `flags.CHAR` | The string value contains exactly one character. |
 
 ---
 

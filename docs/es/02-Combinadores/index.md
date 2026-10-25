@@ -13,12 +13,13 @@ Los combinadores se integran con:
 
 | Categoría | Combinadores | Propósito |
 | :--- | :--- | :--- |
-| **[01. Coincidencia](./01-matching.md)** | `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSymbol` / `MatchSeqSymbol`, `generador_expr` | Consumen un único token por tipo de `Token`, palabra clave, grupo léxico (`WordGroup`) o patrón regex. |
-| **[02. Estructurales](./02-estructurales.md)** | `Seq` (`Sequence`), `Alt`, `Opt`, `Enclosed` | Secuencias ordenadas (`+`), alternativas priorizadas (`\|`), cláusulas opcionales ($0..1$) y bloques delimitados por paréntesis, corchetes o llaves. |
+| **[01. Coincidencia](./01-matching.md)** | `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSeqSymbol`, `generador_expr` | Consumen un único token por tipo de `Token`, palabra clave, grupo léxico (`WordGroup`) o patrón regex. |
+| **[02. Estructurales](./02-estructurales.md)** | `Seq`, `Alt`, `Opt`, `Enclosed` | Secuencias ordenadas (`+`), alternativas priorizadas (`\|`), cláusulas opcionales ($0..1$) y bloques delimitados por paréntesis, corchetes o llaves. |
 | **[03. Repetición](./03-repeticion.md)** | `Many`, `Some`, `Until`, `UntilIndent`, `Separator` | Bucles $0..n$ y $1..n$, escaneo de tokens hasta un combinador objetivo o nivel de indentación, y listas delimitadas (`ArrayNode`). |
 | **[04. Reglas y Almacenamiento](./04-reglas-y-almacenamiento.md)** | `RuleItem`, `Ref`, `Item`, `Literal`, `Save`, `Load` | Reglas de producción declarativas, referencias a reglas (`ASTRef`), secuencias atómicas (`ItemNode`), literales primitivos (`LiteralNode`) y operaciones en `parser.storage`. |
 | **[05. Lookahead y Control](./05-lookahead-y-control.md)** | `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator` | Lookahead positivo/negativo de ancho cero, bifurcaciones condicionales, señales de control de flujo, etiquetado de tokens (`parser.tk_tags`), tokens compuestos y captura de errores. |
 | **[06. Validación Fluida](./06-validacion-fluida.md)** | `Req` | Validación encadenada y transformaciones en sitio sobre una copia del token antes de la delegación al AST. |
+| **[08. Preprocesamiento y expectativas](./08-preprocesamiento-y-expectativas.md)** | `Preprocess`, `Convert`, `Expected` | Validaciones personalizadas, conversiones lógicas de identificadores y aserciones estrictas sobre el flujo. |
 | **[07. Expresiones Pratt](./07-expresiones.md)** | `ArithmeticExpr`, `ConditionalExpr`, `DualExpr` | Análisis de expresiones Top-Down Operator Precedence (Pratt) para operadores prefijos unarios (`ASTUnaryOp`) e infijos binarios (`ASTBinaryOp`). |
 
 ---

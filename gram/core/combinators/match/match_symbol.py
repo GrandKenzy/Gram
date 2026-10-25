@@ -184,10 +184,4 @@ class MatchSeqSymbol(Combinator):
         return f"MatchSeqSymbol({self.pattern!r})"
 
 
-MatchSymbol = MatchSeqSymbol
-
-__all__ = [
-    "MatchSeqSymbol",
-    "MatchSymbol",
-    "generador_expr",
-]
+__all__ = ["MatchSeqSymbol", "generador_expr"]

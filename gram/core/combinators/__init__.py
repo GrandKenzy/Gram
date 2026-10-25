@@ -10,8 +10,10 @@ from . import (
     alternative,
     base,
     conditional,
+    convert,
     enclosed,
     error_combinator,
+    expected,
     expressions,
     item,
     load,
@@ -20,6 +22,7 @@ from . import (
     negation,
     optional,
     peek,
+    preprocess,
     reference,
     req,
     save,
@@ -43,9 +46,17 @@ from .base import (
     SetCode,
 )
 from .conditional import If
+from .convert import Convert
 from .enclosed import Enclosed
 from .error_combinator import ErrorCombinator
-from .expressions import ArithmeticExpr, ConditionalExpr, DualExpr
+from .expected import Expected
+from .expressions import (
+    ArithmeticExpr,
+    ConditionalExpr,
+    DualExpr,
+    bind_left,
+    bind_right,
+)
 from .item import Item, ItemNode, Literal, LiteralNode
 from .load import Load
 from .many import Many
@@ -53,18 +64,18 @@ from .match import (
     MatchGroup,
     MatchKeyword,
     MatchSeqSymbol,
-    MatchSymbol,
     MatchToken,
     generador_expr,
 )
 from .negation import Not
 from .optional import Opt
 from .peek import Peek
+from .preprocess import Preprocess
 from .reference import Ref
 from .req import Req
 from .save import Save
 from .separator import ArrayNode, Separator
-from .sequence import Seq, Sequence
+from .sequence import Seq
 from .signals import (
     AbortFlowSignal,
     BacktrackSignal,
@@ -97,10 +108,14 @@ __all__ = [
     "ConditionalExpr",
     "ControlFlowSignal",
     "CutFlowSignal",
+    "Convert",
     "DualExpr",
+    "bind_left",
+    "bind_right",
     "Enclosed",
     # Advanced Control, Lookahead & Validation Combinators
     "ErrorCombinator",
+    "Expected",
     "GrammarType",
     "If",
     "Item",
@@ -113,11 +128,11 @@ __all__ = [
     "MatchGroup",
     "MatchKeyword",
     "MatchSeqSymbol",
-    "MatchSymbol",
     "MatchToken",
     "Not",
     "Opt",
     "Peek",
+    "Preprocess",
     "Ref",
     "Req",
     "RuleItem",
@@ -126,7 +141,6 @@ __all__ = [
     "Save",
     "Separator",
     "Seq",
-    "Sequence",
     "SetCode",
     "Skip",
     "SkipFlowSignal",
@@ -139,8 +153,10 @@ __all__ = [
     "alternative",
     "base",
     "conditional",
+    "convert",
     "enclosed",
     "error_combinator",
+    "expected",
     "expressions",
     "generador_expr",
     "item",
@@ -150,6 +166,7 @@ __all__ = [
     "negation",
     "optional",
     "peek",
+    "preprocess",
     "reference",
     "req",
     "save",

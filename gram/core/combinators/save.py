@@ -2,16 +2,18 @@
 Save Combinator (`gram.core.combinators.save`) [BETA].
 ======================================================
 BETA FEATURE: Captures and stores the current `TokenType` under the parser
-cursor into `parser.storage`. When a `matcher` combinator is provided and
-`consume=True` (the default), delegates token consumption and AST node
-construction directly to the `matcher`.
+cursor into `parser.storage` or an optional caller-owned storage mapping. When
+a `matcher` combinator is provided and `consume=True` (the default), delegates
+token consumption and AST node construction directly to the `matcher`.
 """
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.lexer import TokenType
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
@@ -40,6 +42,7 @@ class Save(Combinator):
         matcher: Combinator | None = None,
         *,
         consume: bool = True,
+        storage: MutableMapping[str, TokenType] | None = None,
     ) -> None:
         """
         Initialize the `Save` combinator [BETA].
@@ -50,11 +53,15 @@ class Save(Combinator):
                 default consume) the current token.
             consume (bool): Defaults to `True`. Only takes effect when `matcher`
                 is provided; if `False`, rewinds the cursor after `matcher` succeeds.
+            storage (MutableMapping | None): Optional isolated destination. If
+                omitted, uses `parser.storage`; when provided, the mapping is
+                tracked by parser checkpoints.
         """
         super().__init__()
         self.name: str = name
         self.matcher: Combinator | None = matcher
         self.consume: bool = consume
+        self.storage: MutableMapping[str, TokenType] | None = storage
 
     def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
@@ -62,6 +69,9 @@ class Save(Combinator):
         validation and consumption to `self.matcher` when present.
         """
         parser = analyzer.parser
+        destination = parser.storage if self.storage is None else self.storage
+        if self.storage is not None:
+            parser.track_external_storage(destination)
         should_consume = self.matcher is not None and self.consume
         father = parser.node(
             "ProcessingSave",
@@ -113,14 +123,14 @@ class Save(Combinator):
 
                 if not self.consume:
                     parser.restore(chk)
-                    parser.storage[self.name] = current
+                    destination[self.name] = current
                     father.note(
                         f"Token '{current.value}' validado y guardado en storage['{self.name}'] sin consumir.",
                         "success",
                     )
                     return current
 
-                parser.storage[self.name] = current
+                destination[self.name] = current
                 analyzer.discard_staged_failure(min_weight=parser.pos)
                 father.note(
                     f"Token '{current.value}' guardado en storage['{self.name}'] y consumido por {self.matcher!r}.",
@@ -129,7 +139,7 @@ class Save(Combinator):
                 return matched_node
 
             # Case 2: No matcher provided -> zero-width capture (never consumes)
-            parser.storage[self.name] = current
+            destination[self.name] = current
             father.note(
                 f"Token '{current.value}' almacenado en storage['{self.name}'] (sin matcher, sin consumir).",
                 "success",
@@ -144,6 +154,8 @@ class Save(Combinator):
             parts.append(f"matcher={self.matcher!r}")
         if not self.consume:
             parts.append("consume=False")
+        if self.storage is not None:
+            parts.append("storage=external")
         return f"Save({', '.join(parts)})"
 
 

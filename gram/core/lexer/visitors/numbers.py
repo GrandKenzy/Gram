@@ -1,12 +1,14 @@
 """
 Numeric Literal Lexical Visitor (`gram.core.lexer.visitors.numbers`).
 =====================================================================
-Processes decimal integers, floating-point numbers, scientific notation
-(`e`/`E`), and prefixed radix literals (`0x` hex, `0b` binary, `0o` octal)
-with support for underscore (`_`) digit separators.
+Processes decimal, hexadecimal, binary and octal literals, including C-style
+floating-point forms and integer/floating suffixes. Unsuffixed literals keep
+their historical int/float values; suffixed literals preserve their spelling
+so a later semantic phase can inspect the suffix without reparsing source.
 """
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from gram import errors
@@ -15,62 +17,69 @@ from gram.core.lexer.tokens import Token, TokenType
 if TYPE_CHECKING:
     from gram.core.lexer.control import LexerState
 
-_HEX_CHARS: frozenset[str] = frozenset("0123456789abcdefABCDEF_")
-_BIN_CHARS: frozenset[str] = frozenset("01_")
-_OCT_CHARS: frozenset[str] = frozenset("01234567_")
 
-_BASE_SPECS: dict[str, tuple[int, frozenset[str], str, str]] = {
-    "x": (16, _HEX_CHARS, "hexadecimal", "0-9, A-F"),
-    "b": (2, _BIN_CHARS, "binario", "0 y 1"),
-    "o": (8, _OCT_CHARS, "octal", "0 a 7"),
-}
+_DECIMAL_FLOAT_RE = re.compile(
+    r"(?:"
+    r"(?:[0-9][0-9_]*\.[0-9_]*)"
+    r"|\.[0-9][0-9_]*"
+    r"|[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*"
+    r")(?:[eE][+-]?[0-9][0-9_]*)?"
+    r"(?:[fFlL])?"
+)
+_HEX_FLOAT_RE = re.compile(
+    r"0[xX](?:"
+    r"(?:[0-9A-Fa-f_]+\.[0-9A-Fa-f_]*|\.[0-9A-Fa-f_]+)"
+    r"[pP][+-]?[0-9][0-9_]*"
+    r"|[0-9A-Fa-f_]+[pP][+-]?[0-9][0-9_]*"
+    r")(?:[fFlL])?"
+)
+_HEX_INTEGER_RE = re.compile(r"0[xX][0-9A-Fa-f_]+(?:[uUlL]*)")
+_RADIX_RE = re.compile(r"(?:0[bB][01_]+|0[oO][0-7_]+)(?:[uUlL]*)")
+_DECIMAL_INTEGER_RE = re.compile(r"[0-9][0-9_]*(?:[uUlL]*)")
 
 
-def _parse_prefixed_base(
+def _invalid_number(
     lexer: LexerState,
-    prefix_key: str,
+    raw_value: str,
     start: int,
     start_line: int,
+    message: str,
 ) -> TokenType:
-    """Scan and parse a prefixed integer literal (`0x`, `0b`, or `0o`)."""
-    base, allowed_chars, label, range_hint = _BASE_SPECS[prefix_key]
-    lexer.advance(2)  # Consume '0' and radix prefix
-    digits_start = lexer.col
-    line_len = len(lexer.currline)
-
-    while lexer.col < line_len and lexer.peek() in allowed_chars:
-        lexer.advance()
-
-    raw_slice = lexer.currline[start : lexer.col]
-    clean_val = raw_slice.replace("_", "")
-
-    if lexer.col == digits_start or len(clean_val) <= 2:
-        lexer.error(f"Prefijo {label} sin dígitos")
-        lexer.report_error(
-            errors.LexerError(
-                "IncompleteRadixNumber",
-                errors.LEXER_INVALID_NUMBER,
-                f"Literal {label} incompleto ({raw_slice!r}) en línea {start_line + 1}, columna {start}.",
-                f"Se esperaba al menos un dígito {label} ({range_hint}) tras el prefijo '0{prefix_key}'.",
-            )
+    lexer.error(message)
+    lexer.report_error(
+        errors.LexerError(
+            "MalformedNumericLiteral",
+            errors.LEXER_INVALID_NUMBER,
+            f"Literal numérico inválido ({raw_value!r}) en línea {start_line + 1}, columna {start}.",
+            "Verifique la base, el exponente y los sufijos del literal.",
         )
-        return TokenType(Token.ERROR, raw_slice, start_line, start)
+    )
+    return TokenType(Token.ERROR, raw_value, start_line, start)
 
-    try:
-        parsed = int(clean_val, base)
-        lexer.success(f"Número {label} procesado: {parsed!r}")
-        return TokenType(Token.NUMBER, parsed, start_line, start)
-    except ValueError:
-        lexer.error(f"Literal {label} inválido: {raw_slice!r}")
-        lexer.report_error(
-            errors.LexerError(
-                "InvalidRadixNumber",
-                errors.LEXER_INVALID_NUMBER,
-                f"Literal {label} inválido ({raw_slice!r}) en línea {start_line + 1}, columna {start}.",
-                f"Verifique que los dígitos correspondan al rango {range_hint}.",
-            )
-        )
-        return TokenType(Token.ERROR, raw_slice, start_line, start)
+
+def _convert_number(raw_value: str) -> int | float | str:
+    """Convert a literal while retaining suffix spelling for later phases."""
+    clean_value = raw_value.replace("_", "")
+    suffix_match = re.search(r"[uUlLfF]+$", clean_value)
+    suffix = suffix_match.group(0) if suffix_match else ""
+    body = clean_value[:-len(suffix)] if suffix else clean_value
+
+    # Suffixes are part of the C token. Keep the complete spelling so the
+    # semantic phase can distinguish `1U`, `1UL`, `1.0f`, and `1.0L`.
+    if suffix:
+        return raw_value
+
+    if body.lower().startswith("0x") and ("." in body or "p" in body.lower()):
+        return float.fromhex(body)
+    if "." in body or "e" in body.lower():
+        return float(body)
+    if body.lower().startswith("0x"):
+        return int(body, 16)
+    if body.lower().startswith("0b"):
+        return int(body, 2)
+    if body.lower().startswith("0o"):
+        return int(body, 8)
+    return int(body, 10)
 
 
 def process(
@@ -78,100 +87,48 @@ def process(
     char: str,
     node: Any = None,
 ) -> TokenType:
-    """
-    Scan and convert a numeric literal (`int` or `float`) starting at the
-    current lexer cursor.
-    """
+    """Scan one C-compatible numeric literal at the current cursor."""
     start = lexer.col
     start_line = lexer.line
     line_str = lexer.currline
-    line_len = len(line_str)
+    remainder = line_str[start:]
 
-    lexer.debug(f"Inicio de número en línea {start_line + 1}, columna {start}")
-
-    # 1. Check for radix prefixes: 0x, 0b, 0o
-    if char == "0" and lexer.col + 1 < line_len:
-        next_lower = line_str[lexer.col + 1].lower()
-        if next_lower in _BASE_SPECS:
-            return _parse_prefixed_base(lexer, next_lower, start, start_line)
-
-    # 2. Standard decimal integer / floating-point scanning
-    lexer.advance()
-
-    while lexer.col < line_len:
-        curr = lexer.peek()
-        if curr.isdigit() or curr == "_":
-            lexer.advance()
-        else:
-            break
-
-    # Fractional part (avoid consuming range/ellipsis operators '..' or '...')
-    if (
-        lexer.col + 1 < line_len
-        and lexer.peek() == "."
-        and line_str[lexer.col + 1].isdigit()
-    ):
-        lexer.advance()  # Consume '.'
-        while lexer.col < line_len:
-            curr = lexer.peek()
-            if curr.isdigit() or curr == "_":
-                lexer.advance()
-            else:
-                break
-
-    # Scientific notation exponent ('e' or 'E')
-    if lexer.col < line_len and lexer.peek() in "eE":
-        exponent_start = lexer.col
-        lexer.advance()
-
-        if lexer.col < line_len and lexer.peek() in "+-":
-            lexer.advance()
-
-        digits_start = lexer.col
-        while lexer.col < line_len:
-            curr = lexer.peek()
-            if curr.isdigit() or curr == "_":
-                lexer.advance()
-            else:
-                break
-
-        if digits_start == lexer.col:
-            raw_err = line_str[start : lexer.col]
-            lexer.error("Exponente sin dígitos válidos")
-            lexer.report_error(
-                errors.LexerError(
-                    "InvalidExponentNumber",
-                    errors.LEXER_INVALID_NUMBER,
-                    f"Exponente inválido en línea {start_line + 1}, columna {exponent_start}.",
-                    "Un exponente en notación científica debe contener al menos un dígito.",
-                )
-            )
-            return TokenType(Token.ERROR, raw_err, start_line, start)
-
-    raw_value = line_str[start : lexer.col]
-    clean_value = raw_value.replace("_", "")
-
-    try:
-        if "." in clean_value or "e" in clean_value.lower():
-            parsed_number: int | float = float(clean_value)
-        else:
-            parsed_number = int(clean_value)
-    except ValueError:
-        lexer.error(f"Fallo al convertir {raw_value!r} a número")
-        lexer.report_error(
-            errors.LexerError(
-                "MalformedNumericLiteral",
-                errors.LEXER_INVALID_NUMBER,
-                f"Literal numérico inválido ({raw_value!r}) en línea {start_line + 1}, columna {start}.",
-                "Verifique el uso de separadores '_' y puntos decimales.",
-            )
+    # Hexadecimal floating point must be checked before radix integers.
+    match = _HEX_FLOAT_RE.match(remainder)
+    if match is None:
+        match = _HEX_INTEGER_RE.match(remainder)
+    if match is None:
+        match = _RADIX_RE.match(remainder)
+    if match is None:
+        match = _DECIMAL_FLOAT_RE.match(remainder)
+    if match is None:
+        match = _DECIMAL_INTEGER_RE.match(remainder)
+    if match is None:
+        return _invalid_number(
+            lexer,
+            remainder[:1] or char,
+            start,
+            start_line,
+            "No se pudo reconocer el literal numérico.",
         )
-        return TokenType(Token.ERROR, raw_value, start_line, start)
 
-    lexer.success(
-        f"Número procesado: {parsed_number!r} ({type(parsed_number).__name__})"
-    )
-    return TokenType(Token.NUMBER, parsed_number, start_line, start)
+    raw_value = match.group(0)
+    lexer.advance(len(raw_value))
+
+    # A hexadecimal floating point literal requires a binary exponent.
+    try:
+        parsed = _convert_number(raw_value)
+    except ValueError:
+        return _invalid_number(
+            lexer,
+            raw_value,
+            start,
+            start_line,
+            "No se pudo convertir el literal numérico.",
+        )
+
+    lexer.success(f"Número procesado: {parsed!r}")
+    return TokenType(Token.NUMBER, parsed, start_line, start)
 
 
 __all__ = ["process"]

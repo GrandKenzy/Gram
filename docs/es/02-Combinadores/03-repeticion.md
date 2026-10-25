@@ -154,7 +154,7 @@ Separator(
   - Instancias de `Ref` que producen un `ASTRef` (`name` no está vacío, lo cual es automático cuando `rule.nodeable = True`). Pasar un `Ref` con `name=None` y `nodeable=False` lanza `UnnamedRefInSeparator` (`GrammarError`).
   - Cualquier otra instancia de `Combinator`.
   - Cadenas no reconocidas lanzan `InvalidSeparatorTokenName`; tipos no soportados lanzan `UnsupportedSeparatorValue`.
-- **Normalización de `sep`:** Acepta un `Combinator`, un miembro del enum `Token` o un `str` (resuelto vía `Token.from_string`, `MAP_SYMBOLS` o `MatchSymbol`). Tipos no soportados lanzan `UnsupportedSeparatorDelimiter`.
+- **Normalización de `sep`:** Acepta un `Combinator`, un miembro del enum `Token` o un `str` (resuelto vía `Token.from_string`, `MAP_SYMBOLS` o `MatchSeqSymbol`). Tipos no soportados lanzan `UnsupportedSeparatorDelimiter`.
 - `min`: Mínimo de elementos requeridos (por defecto `0`).
 - `max`: Límite superior opcional de elementos coincidentes (`None` para ilimitado).
 - `allow_trailing`: Si es `True` (por defecto), permite un separador al final tras el último elemento coincidente sin requerir otro elemento.

@@ -24,6 +24,15 @@ from typing import Any
 _DEFAULTS: dict[str, Any] = {
     # Lexer
     'LEXER_COMMENT_TOKEN': '#',
+    'LEXER_BLOCK_COMMENT_TOKEN': None,
+    'LEXER_SUPPORT_BLOCK_COMMENTS': True,
+    'SUPPORT_TRIPLE_DOT': True,
+    'LEXER_SUPPORT_PREFIXED_STRINGS': True,
+    'LEXER_SUPPORT_LEADING_DOT_NUMBERS': True,
+    'TOKEN_BOOL_TRUE': 'true',
+    'TOKEN_BOOL_FALSE': 'false',
+    'TOKEN_NULL': 'null',
+    'SUPPORT_INDENT': True,
     'LEXER_IGNORE_EMPTY_LINES': True,
     'LEXER_IGNORE_NEWLINES': True,
     'LEXER_SAVE_COMMENTS': True,
@@ -53,6 +62,15 @@ _DEFAULTS: dict[str, Any] = {
 # 1. ANALIZADOR LÉXICO (LEXER)
 # ==============================================================================
 LEXER_COMMENT_TOKEN: str = '#'
+LEXER_BLOCK_COMMENT_TOKEN: str | None = None
+LEXER_SUPPORT_BLOCK_COMMENTS: bool = True
+SUPPORT_TRIPLE_DOT: bool = True
+LEXER_SUPPORT_PREFIXED_STRINGS: bool = True
+LEXER_SUPPORT_LEADING_DOT_NUMBERS: bool = True
+TOKEN_BOOL_TRUE: str = 'true'
+TOKEN_BOOL_FALSE: str = 'false'
+TOKEN_NULL: str = 'null'
+SUPPORT_INDENT: bool = True
 LEXER_IGNORE_EMPTY_LINES: bool = True
 LEXER_IGNORE_NEWLINES: bool = True
 LEXER_SAVE_COMMENTS: bool = True
@@ -408,6 +426,15 @@ __all__ = [
     "LEXER_ADD_INFO",
     # Lexer
     "LEXER_COMMENT_TOKEN",
+    "LEXER_BLOCK_COMMENT_TOKEN",
+    "LEXER_SUPPORT_BLOCK_COMMENTS",
+    "SUPPORT_TRIPLE_DOT",
+    "LEXER_SUPPORT_PREFIXED_STRINGS",
+    "LEXER_SUPPORT_LEADING_DOT_NUMBERS",
+    "TOKEN_BOOL_TRUE",
+    "TOKEN_BOOL_FALSE",
+    "TOKEN_NULL",
+    "SUPPORT_INDENT",
     "LEXER_IGNORE_EMPTY_LINES",
     "LEXER_IGNORE_NEWLINES",
     "LEXER_SAVE_COMMENTS",

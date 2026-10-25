@@ -9,17 +9,32 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from gram import config
 from gram.core.lexer import words
 from gram.core.lexer.tokens import Token, TokenType
 
 if TYPE_CHECKING:
     from gram.core.lexer.control import LexerState
 
-BOOLS: dict[str, bool] = {
-    "true": True,
-    "false": False,
-}
+def _boolean_literals() -> dict[str, bool]:
+    """Return configured boolean spellings without hardcoded language words."""
+    values: dict[str, bool] = {}
+    true_name = getattr(config, "TOKEN_BOOL_TRUE", None)
+    false_name = getattr(config, "TOKEN_BOOL_FALSE", None)
+    if isinstance(true_name, str) and true_name:
+        values[true_name.lower()] = True
+    if isinstance(false_name, str) and false_name:
+        values[false_name.lower()] = False
+    return values
 
+
+def _null_literal() -> str | None:
+    value = getattr(config, "TOKEN_NULL", None)
+    return value.lower() if isinstance(value, str) and value else None
+
+
+# Compatibility views; process() reads config dynamically.
+BOOLS: dict[str, bool] = {"true": True, "false": False}
 NULLS: frozenset[str] = frozenset({"null"})
 
 
@@ -51,13 +66,14 @@ def process(
     lower = value.lower()
 
     # 1. Boolean literals
-    if lower in BOOLS:
-        parsed_bool = BOOLS[lower]
+    bools = _boolean_literals()
+    if lower in bools:
+        parsed_bool = bools[lower]
         lexer.success(f"Booleano reconocido: {value!r} -> {parsed_bool}")
         return TokenType(Token.BOOL, parsed_bool, start_line, start)
 
     # 2. Null literal
-    if lower in NULLS:
+    if lower == _null_literal():
         lexer.success(f"Literal nulo reconocido: {value!r}")
         return TokenType(Token.NULL, None, start_line, start)
 

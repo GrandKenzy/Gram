@@ -8,7 +8,7 @@ Exposes the top-level subpackages and metadata:
 - `parser` (`gram.core.parser`): `Parser`, `ParseState`, `Checkpoint`, `TokenInfo`.
 - `ast` (`gram.core.ast`): `ASTAnalyzer`, `ASTState`, `ASTNode`, `ASTRef`, `ArrayNode`, `RayTracing`.
 - `combinators` (`gram.core.combinators`): `Seq`, `Alt`, `Opt`, `Many`, `Some`, `Separator`, `Enclosed`,
-  `Until`, `UntilIndent`, `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSymbol`, `Ref`, `RuleItem`,
+  `Until`, `UntilIndent`, `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSeqSymbol`, `Ref`, `RuleItem`,
   `Item`, `Literal`, `Save`, `Load`, `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator`,
   `Req`, `ArithmeticExpr`, `ConditionalExpr`, `DualExpr`.
 - `rules` (`gram.core.rules`): `AutoCode`, `SetCode`, `CodeManager`.
@@ -23,8 +23,8 @@ from gram.core.process import (
     process,
 )
 
-__version__ = "2.0.0b1"
-__version_info__ = (2, 0, 0, "beta", 1)
+__version__ = "2.0.0b2"
+__version_info__ = (2, 0, 0, "beta", 2)
 
 
 def version() -> str:

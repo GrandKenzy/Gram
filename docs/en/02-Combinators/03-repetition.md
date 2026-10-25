@@ -154,7 +154,7 @@ Separator(
   - `Ref` instances that produce an `ASTRef` (`name` is non-empty, which is automatic when `rule.nodeable = True`). Passing a `Ref` with `name=None` and `nodeable=False` raises `UnnamedRefInSeparator` (`GrammarError`).
   - Any other `Combinator` instance.
   - Unrecognized strings raise `InvalidSeparatorTokenName`; unsupported types raise `UnsupportedSeparatorValue`.
-- **`sep` normalization:** Accepts a `Combinator`, a `Token` enum member, or a `str` (resolved via `Token.from_string`, `MAP_SYMBOLS`, or `MatchSymbol`). Unsupported types raise `UnsupportedSeparatorDelimiter`.
+- **`sep` normalization:** Accepts a `Combinator`, a `Token` enum member, or a `str` (resolved via `Token.from_string`, `MAP_SYMBOLS`, or `MatchSeqSymbol`). Unsupported types raise `UnsupportedSeparatorDelimiter`.
 - `min`: Minimum required elements (defaults to `0`).
 - `max`: Optional cap on matched elements (`None` for unbounded).
 - `allow_trailing`: When `True` (default), allows a trailing separator after the last matched element without requiring another element.

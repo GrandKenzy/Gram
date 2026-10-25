@@ -24,10 +24,6 @@ class Hookr:
         for call in list(self.callables):
             call(*args, **kwargs)
 
-    def trigger(self, *args: Any, **kwargs: Any) -> None:
-        """Alias for `ran` following standard event dispatcher conventions."""
-        self.ran(*args, **kwargs)
-
     def add(self, call: Callable[..., Any]) -> None:
         """Register a new callback handler if not already present."""
         if call not in self.callables:

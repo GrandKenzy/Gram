@@ -16,7 +16,6 @@ from gram.core.combinators.match import (
     MatchGroup,
     MatchKeyword,
     MatchSeqSymbol,
-    MatchSymbol,
     MatchToken,
     generador_expr,
 )
@@ -141,19 +140,19 @@ class TestMatchCombinators(CombinatorTestCase):
         self.assertTrue(any(e.name == "WordGroupNotFound" for e in analyzer._errors))
 
     # =========================================================================
-    # 4. MatchSymbol and generador_expr
+    # 4. MatchSeqSymbol and generador_expr
     # =========================================================================
 
     def test_match_symbol_shape_and_variants(self) -> None:
-        """1. Result shape & 2. Variants: MatchSymbol."""
+        """1. Result shape & 2. Variants: MatchSeqSymbol."""
         # Variant A: Exact regex pattern
-        sym = MatchSymbol(pattern=r":")
+        sym = MatchSeqSymbol(pattern=r":")
         res, analyzer = self.parse_with_analyzer(sym, ":")
         self.assertIsInstance(res, LiteralSymbol)
         self.assertEqual(res.token.value, ":")
 
         # Variant B: Relabeling with CustomToken
-        sym_custom = MatchSymbol(pattern=r"==", custom_token_name="EQ_OP")
+        sym_custom = MatchSeqSymbol(pattern=r"==", custom_token_name="EQ_OP")
         res2, _ = self.parse_with_analyzer(sym_custom, "==")
         self.assertIsInstance(res2, LiteralSymbol)
         self.assertEqual(res2.token.value, "==")
@@ -161,7 +160,7 @@ class TestMatchCombinators(CombinatorTestCase):
         # Variant C: generador_expr utility
         pat = generador_expr("#", ["A", "F"], [0, 9])
         self.assertTrue(pat.endswith("[A-F0-9]"))
-        sym_gen = MatchSymbol(pattern=pat)
+        sym_gen = MatchSeqSymbol(pattern=pat)
         res3, _ = self.parse_with_analyzer(sym_gen, "#A0")
         self.assertIsNone(res3)
 
@@ -177,7 +176,7 @@ class TestMatchCombinators(CombinatorTestCase):
 
     def test_match_seq_symbol_shape_and_variants(self) -> None:
         """1. Result shape & 2. Variants: MatchSeqSymbol."""
-        # MatchSymbol / MatchSeqSymbol with symbols list
+        # MatchSeqSymbol with symbols list
         seq_sym = MatchSeqSymbol(symbols=["+", "="])
         res, analyzer = self.parse_with_analyzer(seq_sym, "+")
         self.assertIsInstance(res, LiteralSymbol)

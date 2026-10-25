@@ -232,7 +232,7 @@ class TestRepetitionDiagnostics(CombinatorTestCase):
                         analyzer.visitor(owner(StageThenRaise(self.prior_error(), exception)))
 
                     self.assertIs(analyzer._staged_failure, incoming)
-                    self.assertFalse(analyzer.safe_flag)
+                    self.assertFalse(analyzer.in_failure_context)
                     self.assertEqual(analyzer._errors, [])
 
     def test_separator_delimiter_break_discards_local_failure(self):

@@ -137,7 +137,7 @@ INF:
 
 Cuando se invoca `err.raise_error()` (o `parser.report_error(err)` / `analyzer.report_error(err)` fuera de `safe_mode()`):
 1. A menos que `config.ERROR_HIDE_CONSOLE` sea `True`, la caja del error se imprime en stdout.
-2. Si `config.ERROR_EXIT_ON_ERROR` es `True` (**el valor por defecto en `2.0.0b1`**), Gram ejecuta `sys.exit(1)`.
+2. Si `config.ERROR_EXIT_ON_ERROR` es `True` (**el valor por defecto en `2.0.0b2`**), Gram ejecuta `sys.exit(1)`.
 3. Si `config.ERROR_EXIT_ON_ERROR` es `False`, Gram lanza `err` como una excepción ordinaria de Python.
 
 Para rastrear errores en el registro global `StackError` (`gram.utilities.error.StackError`) y volcarlos en `./log/error.log`:

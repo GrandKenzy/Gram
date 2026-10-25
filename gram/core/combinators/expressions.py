@@ -185,6 +185,7 @@ class BaseExpr(Combinator):
     header_class: bool = True
     binary_ops: MutableMapping[Token, tuple[int, int]] = DUAL_BINARY_OPS
     unary_ops: MutableMapping[Token, int] = DUAL_UNARY_OPS
+    refs_before_grouping: bool = False
 
     def __init__(self, *values: ValueSpec | Iterable[ValueSpec]) -> None:
         """
@@ -286,6 +287,17 @@ class BaseExpr(Combinator):
         if curr is None:
             return None
 
+        best_ref_failure = None
+
+        # Some frontends have specialized atoms that also start with `(`,
+        # notably C casts and compound literals. They opt in explicitly so
+        # the generic Gram expression parser keeps its original behavior.
+        if self.refs_before_grouping and curr.token == Token.LPAREN:
+            best_ref_failure = self._try_ref_atoms(analyzer)
+            if best_ref_failure[0] is not None:
+                return best_ref_failure[0]
+            best_ref_failure = best_ref_failure[1]
+
         # 1. Native strict parentheses grouping: ( expr )
         if curr.token == Token.LPAREN:
             open_tok = parser.consume()
@@ -338,29 +350,10 @@ class BaseExpr(Combinator):
                 return None
             return ASTUnaryOp(op_tok, operand)
 
-        best_ref_failure = None
-        for ref_comb in self._ref_values:
-            chk = parser.savepoint("EXPR-RefAtom")
-            try:
-                with analyzer.failure_scope() as ref_scope:
-                    ref_node = analyzer.visitor(ref_comb)
-            except BaseException:
-                parser.restore(chk)
-                raise
-
+        if not self.refs_before_grouping or curr.token != Token.LPAREN:
+            ref_node, best_ref_failure = self._try_ref_atoms(analyzer)
             if ref_node is not None:
-                candidate = ref_scope.candidate
-                if candidate is not None and candidate[0] > parser.pos:
-                    analyzer.stage_failure(candidate[1], weight=candidate[0])
-                analyzer.discard_staged_failure(min_weight=parser.pos)
                 return ref_node
-
-            parser.restore(chk)
-            candidate = ref_scope.candidate
-            if candidate is not None and (
-                best_ref_failure is None or candidate[0] > best_ref_failure[0]
-            ):
-                best_ref_failure = candidate
 
         if curr.token in self._token_values and curr.token != Token.KEYWORD:
             tok = parser.consume()
@@ -387,6 +380,38 @@ class BaseExpr(Combinator):
             pos=parser.pos,
         )
         return None
+
+    def _try_ref_atoms(
+        self,
+        analyzer: ASTAnalyzer,
+    ) -> tuple[ASTNode | None, Any]:
+        """Try specialized atom refs and return `(node, deepest_failure)`."""
+        parser = analyzer.parser
+        best_ref_failure = None
+        for ref_comb in self._ref_values:
+            chk = parser.savepoint("EXPR-RefAtom")
+            try:
+                with analyzer.failure_scope() as ref_scope:
+                    ref_node = analyzer.visitor(ref_comb)
+            except BaseException:
+                parser.restore(chk)
+                raise
+
+            if ref_node is not None:
+                candidate = ref_scope.candidate
+                if candidate is not None and candidate[0] > parser.pos:
+                    analyzer.stage_failure(candidate[1], weight=candidate[0])
+                analyzer.discard_staged_failure(min_weight=parser.pos)
+                return ref_node, best_ref_failure
+
+            parser.restore(chk)
+            candidate = ref_scope.candidate
+            if candidate is not None and (
+                best_ref_failure is None or candidate[0] > best_ref_failure[0]
+            ):
+                best_ref_failure = candidate
+
+        return None, best_ref_failure
 
     def _parse_expr(
         self,
@@ -455,13 +480,13 @@ class BaseExpr(Combinator):
 
             if root is None:
                 parser.restore(checkpoint)
-                if not analyzer.safe_flag:
+                if not analyzer.in_failure_context:
                     analyzer.flush_failure()
                 return None
 
             if not self._validate_root(analyzer, root, checkpoint.pos):
                 parser.restore(checkpoint)
-                if not analyzer.safe_flag:
+                if not analyzer.in_failure_context:
                     analyzer.flush_failure()
                 return None
 

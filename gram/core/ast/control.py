@@ -53,16 +53,6 @@ class ASTState(utilities.Diagnostics):
             config.INFO_GENERATE_LOGFILE_ON_ERROR,
         )
 
-    @property
-    def safe_flag(self) -> bool:
-        """Return True if the AST analyzer is currently in a speculative `failure_context`."""
-        return self.in_failure_context
-
-    @safe_flag.setter
-    def safe_flag(self, value: bool) -> None:
-        """Backward-compatible setter for `safe_flag`."""
-        self._context_depth = max(1, self._context_depth) if value else 0
-
     @contextmanager
     def safe_mode(self) -> Iterator[None]:
         """Enter a reentrant speculative parsing context (`failure_context`)."""
@@ -90,7 +80,7 @@ class ASTState(utilities.Diagnostics):
         """
         Report or stage an AST/Combinator error using the parser's cursor position.
 
-        - Inside `safe_mode()` (`safe_flag == True`), stages `err` weighted by
+        - Inside `safe_mode()` (`in_failure_context == True`), stages `err` weighted by
           the current parser cursor position (`pos > staged_weight`).
         - Outside `safe_mode()`, records `err` permanently and triggers `fail()`
           if `config.ERROR_EXIT_ON_ERROR` is enabled.
@@ -101,7 +91,7 @@ class ASTState(utilities.Diagnostics):
             else (self.parser.pos if hasattr(self, "parser") else 0)
         )
 
-        if self.safe_flag:
+        if self.in_failure_context:
             return self.stage_failure(err, weight=cursor_pos)
 
         self.discard_staged_failure()
@@ -158,8 +148,6 @@ class ASTState(utilities.Diagnostics):
             tok_type = current.token
             if tok_type in _TOKEN_NODE_MAP:
                 node_cls = _TOKEN_NODE_MAP[tok_type]
-            elif tok_type == Token.DOCSTRING and config.LEXER_SUPPORT_DOCSTRINGS:
-                node_cls = LiteralString
             else:
                 node_cls = LiteralSymbol
 
@@ -207,7 +195,6 @@ class ASTState(utilities.Diagnostics):
                 )
                 return False
             child.branchable = True
-            child.brancheable = True
 
         self.success("El entrypoint es válido")
         return True

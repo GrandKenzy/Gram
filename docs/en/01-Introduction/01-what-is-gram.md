@@ -16,7 +16,7 @@ In many compiler toolkits, grammar definitions become entangled with symbol tabl
 ### B. Declarative Grammars in Pure Python
 Rather than maintaining external `.g4` or BNF text files that require a separate code-generation build step, Gram grammars are written directly in Python:
 - Production rules are declared as subclasses of `RuleItem`.
-- Complex structures are composed from 28 combinators (`Seq`, `Alt`, `Opt`, `Many`, `Some`, `Separator`, `Enclosed`, `Until`, `UntilIndent`, `Ref`, `Req`, etc.) and Top-Down Operator Precedence (Pratt) expression parsers (`ArithmeticExpr`, `ConditionalExpr`, `DualExpr`).
+- Complex structures are composed from the available combinators (`Seq`, `Alt`, `Opt`, `Many`, `Some`, `Separator`, `Enclosed`, `Until`, `UntilIndent`, `Ref`, `Req`, `Preprocess`, `Convert`, `Expected`, etc.) and Top-Down Operator Precedence (Pratt) expression parsers (`ArithmeticExpr`, `ConditionalExpr`, `DualExpr`).
 - Rule identifiers are automatically assigned non-colliding integer codes via `AutoCode` and `CodeManager`.
 
 ### C. Transactional Backtracking & Deepest-Failure Diagnostics
@@ -72,7 +72,7 @@ Compilers often need to parse more than one syntax within the same process (for 
 | :--- | :--- | :--- |
 | **Lexer** | `from gram import lexer` | `Lexer`, `Token`, `TokenType`, `CustomToken`, `TokenStream`, `words`, `Keyword`, `WordGroup` |
 | **Parser** | `from gram import parser` | `Parser`, `ParseState`, `Checkpoint`, `TokenInfo`, `Hookr` |
-| **Combinators** | `from gram import combinators` | `RuleItem`, `Ref`, `Seq`, `Alt`, `Opt`, `Many`, `Some`, `Separator`, `Enclosed`, `Until`, `UntilIndent`, `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSymbol`, `Item`, `Literal`, `Save`, `Load`, `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator`, `Req`, `ArithmeticExpr`, `ConditionalExpr`, `DualExpr` |
+| **Combinators** | `from gram import combinators` | `RuleItem`, `Ref`, `Seq`, `Alt`, `Opt`, `Many`, `Some`, `Separator`, `Enclosed`, `Until`, `UntilIndent`, `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSeqSymbol`, `Item`, `Literal`, `Save`, `Load`, `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator`, `Req`, `ArithmeticExpr`, `ConditionalExpr`, `DualExpr` |
 | **AST** | `from gram import ast` | `ASTAnalyzer`, `ASTState`, `Visitor`, `ASTNode`, `ASTRef`, `ArrayNode`, `ItemNode`, `LiteralNode`, `Identifier`, `LiteralNumber`, `LiteralString`, `LiteralSymbol`, `ASTKeyword`, `RayTracing`, `Trace`, `TraceRecord` |
 | **Rules** | `from gram import rules` | `AutoCode`, `SetCode`, `CodeManager`, `code_manager` |
 | **Sessions** | `from gram import sessions` | `Session` |

@@ -54,7 +54,7 @@ class Many(Combinator):
 
         if scope.candidate is not None:
             weight, err = scope.candidate
-            if publish_failure and not analyzer.safe_flag:
+            if publish_failure and not analyzer.in_failure_context:
                 with analyzer.failure_scope():
                     analyzer.stage_failure(err, weight=weight)
                     analyzer.flush_failure()

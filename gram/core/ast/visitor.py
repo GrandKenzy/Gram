@@ -44,7 +44,7 @@ def Visitor(self: ASTAnalyzer, combinator: Combinator) -> Any:
 
     if isinstance(combinator, Ref):
         self.raytracing.addpath(combinator.rule_name)
-        if getattr(combinator, "branchable", False) or getattr(combinator, "brancheable", False):
+        if getattr(combinator, "branchable", False):
             self.raytracing.generate_branch()
 
     should_trace = not getattr(combinator, "ignore", False)

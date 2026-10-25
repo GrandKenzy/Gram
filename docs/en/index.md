@@ -1,6 +1,6 @@
 # Gram Framework Documentation
 
-> **Version:** `2.0.0b1` (Beta)  
+> **Version:** `2.0.0b2` (Beta)
 > **Runtime:** Pure Python 3.10+ (Zero external runtime dependencies)
 
 Welcome to the official English documentation for **Gram**, a pure-Python lexical analysis, parser combinator, and Abstract Syntax Tree (`AST`) generation framework for building Domain-Specific Languages (DSLs), transpilers, and compiler frontends.
@@ -13,16 +13,17 @@ Welcome to the official English documentation for **Gram**, a pure-Python lexica
 High-level overview of the framework, its design goals, installation instructions, and current release lifecycle.
 - **[01. What is Gram?](./01-Introduction/01-what-is-gram.md)** — Core architecture, strict separation between syntactic and semantic phases, and design objectives.
 - **[02. Installation](./01-Introduction/02-installation.md)** — Installing Gram via **VNMA** (`vnma.toml`, Git branches, tags, and live editable links) or directly via Git and `PYTHONPATH`.
-- **[03. Beta Status](./01-Introduction/03-beta-status.md)** — Current stability matrix for `v2.0.0b1`, tested subsystems, and experimental features.
+- **[03. Beta Status](./01-Introduction/03-beta-status.md)** — Current stability matrix for `v2.0.0b2`, tested subsystems, and experimental features.
 
 ### [02. Combinators](./02-Combinators/index.md)
-Reference guide for all 28 syntactic combinators in `gram.core.combinators`, execution contracts, and Pratt expression engines.
-- **[01. Matching Combinators](./02-Combinators/01-matching.md)** — `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSymbol`, `MatchSeqSymbol`, and `generador_expr`.
+Reference guide for all available syntactic combinators in `gram.core.combinators`, execution contracts, and Pratt expression engines.
+- **[01. Matching Combinators](./02-Combinators/01-matching.md)** — `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSeqSymbol`, and `generador_expr`.
 - **[02. Structural Combinators](./02-Combinators/02-structural.md)** — `Seq` (`+`), `Alt` (`|`), `Opt`, and `Enclosed`.
 - **[03. Repetition Combinators](./02-Combinators/03-repetition.md)** — `Many`, `Some`, `Until`, `UntilIndent`, and `Separator`.
 - **[04. Rules & Storage](./02-Combinators/04-rules-and-storage.md)** — `RuleItem`, `Ref`, `Item`, `Literal`, `Save`, and `Load`.
 - **[05. Lookahead & Control](./02-Combinators/05-lookahead-and-control.md)** — `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, and `ErrorCombinator`.
 - **[06. Fluent Token Validation](./02-Combinators/06-fluent-validation.md)** — `Req` fluent validation and in-place token transformation chains.
+- **[08. Preprocessing and Expectations](./02-Combinators/08-preprocessing-and-expectations.md)** — `Preprocess`, `Convert`, and `Expected` for validation, logical conversions, and strict assertions.
 - **[07. Pratt Expressions](./02-Combinators/07-expressions.md)** — `ArithmeticExpr`, `ConditionalExpr`, `DualExpr`, `bind_left`, and `bind_right`.
 
 ### [03. Usage Guide](./03-Usage/index.md)

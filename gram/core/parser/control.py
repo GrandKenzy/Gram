@@ -7,12 +7,14 @@ and stack-based diagnostic telemetry.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, MutableMapping
 from contextlib import contextmanager
+import copy
 from typing import Literal
 
 from gram import config, errors
-from gram.core.lexer import Token, TokenType
+from gram.core.lexer import CustomToken, Token, TokenType
+from gram.core.parser.conversions import ConversionTarget
 from gram.core.parser import Checkpoint
 from gram.utilities import Diagnostics, Format, error
 from gram.core.parser.hookr import Hookr
@@ -23,7 +25,12 @@ class ParseState(Diagnostics):
     and diagnostic telemetry for the parser.
     """
 
-    def __init__(self, file: str | None = None) -> None:
+    def __init__(
+        self,
+        file: str | None = None,
+        *,
+        conversions: Mapping[str, ConversionTarget] | None = None,
+    ) -> None:
         """
         Initialize the parser state and underlying diagnostics stack.
 
@@ -36,6 +43,11 @@ class ParseState(Diagnostics):
         self.tokens: list[TokenType] = []
         self.storage: dict[str, TokenType] = {}
         self.tk_tags: dict[int, frozenset[str]] = {}
+        # Logical IDENT-to-token conversions active for this parser session.
+        # The physical token stream remains untouched for future positions.
+        self.conversions: dict[str, Token | CustomToken] = dict(conversions or {})
+        self._external_storages: dict[int, MutableMapping[str, TokenType]] = {}
+        self._external_storage_baselines: dict[int, dict[str, TokenType]] = {}
         self._token_overrides: dict[int, TokenType] = {}
         # Cursor position that the most recent `restore()` abandoned.
         self._restore_from_pos: int = 0
@@ -56,6 +68,18 @@ class ParseState(Diagnostics):
         self._targets = list(checkpoint.targets)
         self.storage = dict(checkpoint.storage)
         self.tk_tags = dict(checkpoint.tk_tags)
+        self.conversions = dict(checkpoint.conversions)
+
+        saved_external = {
+            key: dict(items) for key, items in checkpoint.external_storages
+        }
+        for key, storage in self._external_storages.items():
+            contents = saved_external.get(
+                key,
+                self._external_storage_baselines.get(key, {}),
+            )
+            storage.clear()
+            storage.update(contents)
 
         # Revert indices first replaced after the checkpoint, then recover the
         # exact values of indices that were already replaced when it was saved.
@@ -194,6 +218,77 @@ class ParseState(Diagnostics):
         tok = self.tokens[self.pos]
         self.debug(f'Peeked {tok}. Line={tok.line}, Col={tok.col}, Type={tok.token.name}')
         return tok
+
+    def resolve_token_at(self, index: int) -> TokenType | None:
+        """Return a logical token with any active IDENT conversion applied."""
+        if not self.validate_pos(index):
+            return None
+
+        current = self.tokens[index]
+        if current.token != Token.IDENT:
+            return current
+
+        target = self.conversions.get(str(current.value))
+        if target is None:
+            return current
+
+        resolved = copy.copy(current)
+        resolved.token = target  # type: ignore[assignment]
+        return resolved
+
+    def peek_effective(self) -> TokenType | None:
+        """Return the current token after applying logical conversions."""
+        return self.resolve_token_at(self.pos)
+
+    def register_conversion(self, name: str, target: Token | CustomToken) -> None:
+        """Register a parser-local logical conversion for an exact IDENT value."""
+        existing = self.conversions.get(name)
+        if existing is not None and existing != target:
+            raise ValueError(
+                f"La conversión para {name!r} ya está registrada como {existing!r}."
+            )
+        self.conversions[name] = target
+
+    def export_conversions(self) -> dict[str, ConversionTarget]:
+        """Return a detached snapshot of the parser's active conversions."""
+        return dict(self.conversions)
+
+    def import_conversions(
+        self,
+        conversions: Mapping[str, ConversionTarget],
+        *,
+        replace: bool = False,
+    ) -> None:
+        """Merge conversions into this parser, rejecting conflicts by default."""
+        for name, target in conversions.items():
+            existing = self.conversions.get(name)
+            if existing is not None and existing != target and not replace:
+                raise ValueError(
+                    f"La conversión para {name!r} ya está registrada como {existing!r}."
+                )
+            self.conversions[name] = target
+
+    def track_external_storage(
+        self,
+        storage: MutableMapping[str, TokenType],
+    ) -> MutableMapping[str, TokenType]:
+        """Register a caller-owned storage mapping for checkpoint rollback."""
+        if storage is self.storage:
+            return storage
+
+        key = id(storage)
+        if key not in self._external_storages:
+            self._external_storages[key] = storage
+            self._external_storage_baselines[key] = dict(storage)
+        return storage
+
+    def current_indent_level(self) -> int:
+        """Return the active source indentation column at the physical cursor."""
+        level = 0
+        for token in self.tokens[: self.pos]:
+            if token.token in (Token.INDENT, Token.DEDENT):
+                level = int(token.value) if token.value is not None else 0
+        return level
 
     def consume(self, expected: Token | str | None = None) -> TokenType | None:
         """
@@ -359,6 +454,11 @@ class ParseState(Diagnostics):
             targets=tuple(self._targets),
             storage=tuple(self.storage.items()),
             tk_tags=tuple(self.tk_tags.items()),
+            conversions=tuple(self.conversions.items()),
+            external_storages=tuple(
+                (key, tuple(storage.items()))
+                for key, storage in self._external_storages.items()
+            ),
             token_overrides=tuple(self._token_overrides.items()),
             name=name,
             token_values=tuple((idx, self.tokens[idx]) for idx in self._token_overrides),

@@ -7,10 +7,17 @@ wrapper (`TokenStream`), and keyword/group management utilities.
 """
 from __future__ import annotations
 
-from gram.core.lexer import control, core, items, tokens, visitors, words
+from gram.core.lexer import control, core, flags, items, multiline, tokens, visitors, words
 from gram.core.lexer.control import LexerState
 from gram.core.lexer.core import Lexer, check_state
 from gram.core.lexer.items import TokenStream
+from gram.core.lexer.flags import CHAR, NONE, SIMPLE_QUOTE, TokenFlags
+from gram.core.lexer.multiline import (
+    MULTLINE,
+    add_multline,
+    list_multline,
+    remove_multline,
+)
 from gram.core.lexer.tokens import (
     MAP_SYMBOLS,
     CustomToken,
@@ -45,11 +52,16 @@ from gram.core.lexer.words import (
 
 def Version() -> str:
     """Return the version string of the Gram lexer subsystem."""
-    return "1.1.0"
+    return "2.0.0b2"
 
 
 __all__ = [
     "MAP_SYMBOLS",
+    "MULTLINE",
+    "CHAR",
+    "NONE",
+    "SIMPLE_QUOTE",
+    "TokenFlags",
     # Tokens & Symbols
     "CustomToken",
     # Keywords & WordGroups
@@ -84,6 +96,11 @@ __all__ = [
     "groups",
     "is_empty",
     "items",
+    "flags",
+    "multiline",
+    "add_multline",
+    "list_multline",
+    "remove_multline",
     "keyword_exists",
     "remove_group",
     "remove_keyword",

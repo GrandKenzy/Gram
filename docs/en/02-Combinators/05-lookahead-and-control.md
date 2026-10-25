@@ -145,7 +145,7 @@ Tag(tag: str, mode: Literal["add", "remove", "exists", "not_exists"] = "add")
 Tag.add(tag: str) -> Tag
 Tag.remove(tag: str) -> Tag
 Tag.exists(tag: str) -> Tag
-Tag.not_exists(tag: str) -> Tag   # also aliased as Tag.unexists(tag)
+Tag.not_exists(tag: str) -> Tag
 ```
 
 ### Return Value & Diagnostics

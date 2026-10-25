@@ -1,9 +1,11 @@
+from collections.abc import Mapping, MutableMapping
 from typing import Any, Literal
 
 from gram import config
 from gram.core.combinators import RuleItem
 from gram.core.lexer import Lexer, TokenType, words, tokens
-from gram.core.parser import Parser
+from gram.core.parser import ConversionState, Parser
+from gram.core.parser.conversions import ConversionTarget
 
 _MODES = frozenset(('Many', 'Some'))
 
@@ -82,9 +84,40 @@ class Session:
         """Tokenize `source` and return the resulting tokens."""
         return Lexer(source, name).process()
 
-    def parse(self, tokens: list[TokenType], name: str, entrypoint: type[RuleItem] | None = None):
+    def new_conversion_state(self) -> ConversionState:
+        """Create an empty detached conversion state for a compilation unit."""
+        return ConversionState()
+
+    def parse(
+        self,
+        tokens: list[TokenType],
+        name: str,
+        entrypoint: type[RuleItem] | None = None,
+        *,
+        conversion_state: ConversionState | MutableMapping[str, ConversionTarget] | None = None,
+    ):
         """Parse `tokens` using `entrypoint`, or the session entrypoint when omitted."""
         entry = entrypoint or self.entrypoint
         if not entry:
             raise RuntimeError('No se especificó una entrada')
-        return Parser(tokens, name).parse(entry, self.mode)  # type: ignore
+
+        state = (
+            conversion_state.export()
+            if isinstance(conversion_state, ConversionState)
+            else dict(conversion_state or {})
+        )
+        parser = Parser(tokens, name, conversions=state)
+        result = parser.parse(entry, self.mode)  # type: ignore
+
+        # A shared state is updated only after a successful parse result. A
+        # failed file cannot leak speculative or partial conversions outward.
+        parse_errors = list(getattr(parser, "_errors", ()))
+        analyzer = parser.analyzer_ast_instance
+        parse_errors.extend(getattr(analyzer, "_errors", ()) if analyzer else ())
+        succeeded = result is not None and not parse_errors
+        if succeeded and isinstance(conversion_state, ConversionState):
+            conversion_state.replace(parser.export_conversions())
+        elif succeeded and isinstance(conversion_state, MutableMapping):
+            conversion_state.clear()
+            conversion_state.update(parser.export_conversions())
+        return result

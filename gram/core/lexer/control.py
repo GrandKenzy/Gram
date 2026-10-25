@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from gram import config, errors
+from gram.core.lexer.multiline import get_multline
 from gram.core.lexer import tokens
 from gram.core.lexer.tokens import MAP_SYMBOLS, Token, TokenType
 from gram.utilities import Diagnostics, Format
@@ -74,6 +75,8 @@ class LexerState(Diagnostics):
             self.comment_token: Token | str = "#"
         else:
             self.comment_token = tokens.MAP_SYMBOLS[config.LEXER_COMMENT_TOKEN]
+        self.block_comment_token = getattr(config, 'LEXER_BLOCK_COMMENT_TOKEN', None)
+        self.multiline = self._build_multiline_registry()
 
         self.info_node = self.node(
             "LEXER",
@@ -104,6 +107,81 @@ class LexerState(Diagnostics):
                 Format.FileTar.set(source.resolve())
         else:
             self.source = [s.rstrip("\r\n") for s in source]
+
+    def _build_multiline_registry(self) -> dict[str, str]:
+        """Build the active delimiter table for this lexer instance."""
+        registry = dict(get_multline())
+        if not config.LEXER_SUPPORT_DOCSTRINGS:
+            registry.pop('"""', None)
+            registry.pop("'''", None)
+        if (
+            getattr(config, "LEXER_SUPPORT_BLOCK_COMMENTS", True)
+            and self.block_comment_token
+        ):
+            registry[self.block_comment_token] = "*/"
+        return registry
+
+    def multiline_match(self, col_override: int | None = None) -> tuple[str, str] | None:
+        """Return the longest active multiline delimiter at the current column."""
+        pos = self.col if col_override is None else col_override
+        for opening in sorted(self.multiline, key=len, reverse=True):
+            if self.currline.startswith(opening, pos):
+                return opening, self.multiline[opening]
+        return None
+
+    def process_multiline(
+        self,
+        opening: str,
+        closing: str,
+        *,
+        token: Token = Token.STRING,
+        description: str = "",
+        decode_escapes: bool = False,
+    ) -> TokenType:
+        """Consume one registered multiline construct across source lines."""
+        start = self.col
+        start_line = self.line
+        self.col += len(opening)
+        chars: list[str] = []
+
+        while self.has_lines():
+            if self.currline.startswith(closing, self.col):
+                self.col += len(closing)
+                return TokenType(
+                    token,
+                    "".join(chars),
+                    start_line,
+                    start,
+                    description=description,
+                )
+
+            if self.col >= len(self.currline):
+                chars.append("\n")
+                self.line += 1
+                self.col = 0
+                continue
+
+            char = self.advance()
+            if decode_escapes and char == "\\":
+                if self.col >= len(self.currline):
+                    chars.append("\\")
+                    continue
+                escaped = self.advance()
+                from gram.core.lexer.visitors.strings import process_escape
+
+                chars.append(process_escape(escaped, self))
+            else:
+                chars.append(char)
+
+        self.report_error(
+            errors.LexerError(
+                "UnclosedMultilineLiteral",
+                errors.LEXER_UNCLOSED_STRING,
+                f"Literal multiline sin cerrar iniciado en línea {start_line + 1}, columna {start}.",
+                f"Se esperaba el delimitador de cierre {closing!r}.",
+            )
+        )
+        return TokenType(Token.ERROR, "".join(chars), start_line, start)
 
     @classmethod
     def get_stack(cls) -> StackInfo:
@@ -208,7 +286,17 @@ class LexerState(Diagnostics):
     def is_comment_start(self, char: str, col_override: int | None = None) -> bool:
         """Return True if `char` at the current column starts a line comment."""
         pos = self.col if col_override is None else col_override
+        if self.is_block_comment_start(pos):
+            return True
         return self._comment_length(char, pos) > 0
+
+    def is_block_comment_start(self, col_override: int | None = None) -> bool:
+        """Return whether a configured block-comment opener starts at `col`."""
+        marker = self.block_comment_token
+        if not marker or not getattr(config, 'LEXER_SUPPORT_BLOCK_COMMENTS', True):
+            return False
+        pos = self.col if col_override is None else col_override
+        return self.currline.startswith(marker, pos)
 
     def _comment_length(self, char: str, pos: int) -> int:
         """Return the length of the complete comment marker at `pos`, or zero."""
@@ -236,6 +324,7 @@ class LexerState(Diagnostics):
         """Consume the remainder of the current physical line as a `Token.COMMENT`."""
         start = self.col
         line_str = self.currline
+
         comment_len = self._comment_length(self.peek(), self.col) or 1
 
         self.col += comment_len
@@ -253,6 +342,11 @@ class LexerState(Diagnostics):
         generated: list[TokenType] = []
         line_str = self.currline
         indent = len(line_str) - len(line_str.lstrip(" "))
+
+        if not getattr(config, "SUPPORT_INDENT", True):
+            self.col = indent
+            return generated
+
         current_indent = self.indents[-1]
 
         if indent > current_indent:

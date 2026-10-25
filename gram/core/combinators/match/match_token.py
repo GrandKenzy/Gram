@@ -102,8 +102,9 @@ class MatchToken(Combinator):
                 )
                 return None
 
-            current = parser.peek()
-            if current is None:
+            raw_current = parser.peek()
+            current = parser.peek_effective()
+            if raw_current is None or current is None:
                 return None
 
             location = f"Line: {current.line}, Col: {current.col}"

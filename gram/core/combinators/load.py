@@ -2,16 +2,19 @@
 Load Combinator (`gram.core.combinators.load`) [BETA].
 ======================================================
 BETA FEATURE: Retrieves or interacts with a `TokenType` previously stored in
-`parser.storage` using one of five modes: `'get'`, `'match'`, `'unmatch'`,
-`'replace'`, or `'change'`. When a `matcher` is provided, delegates token
-consumption and AST node creation directly to the `matcher`.
+`parser.storage` or an optional caller-owned storage mapping using one of five
+modes: `'get'`, `'match'`, `'unmatch'`, `'replace'`, or `'change'`. When a
+`matcher` is provided, delegates token consumption and AST node creation
+directly to the `matcher`.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any, Literal
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.lexer import TokenType
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
@@ -42,6 +45,8 @@ class Load(Combinator):
         name: str,
         mode: LoadMode = "get",
         matcher: Combinator | None = None,
+        *,
+        storage: Mapping[str, TokenType] | None = None,
     ) -> None:
         """
         Initialize the `Load` combinator [BETA].
@@ -52,11 +57,14 @@ class Load(Combinator):
                 `'replace'`, or `'change'`).
             matcher (Combinator | None): Optional combinator that validates and
                 automatically consumes the stream token.
+            storage (Mapping | None): Optional isolated source mapping. If
+                omitted, uses `parser.storage`; `change` requires it to be mutable.
         """
         super().__init__()
         self.name: str = name
         self.mode: LoadMode = mode
         self.matcher: Combinator | None = matcher
+        self.storage: Mapping[str, TokenType] | None = storage
 
     def _consume_with_matcher(
         self,
@@ -98,6 +106,20 @@ class Load(Combinator):
         token consumption to `self.matcher` if configured.
         """
         parser = analyzer.parser
+        destination = parser.storage if self.storage is None else self.storage
+        if self.mode == "change":
+            if not isinstance(destination, MutableMapping):
+                analyzer.report_error(
+                    errors.GrammarError(
+                        "LoadStorageNotMutable",
+                        errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                        "Load(mode='change') requiere un almacenamiento mutable.",
+                        "Pase un dict o MutableMapping como storage.",
+                    ),
+                    pos=parser.pos,
+                )
+                return None
+            parser.track_external_storage(destination)
         father = parser.node(
             "ProcessingLoad",
             f"[BETA] Ejecutando Load('{self.name}', mode='{self.mode}')",
@@ -105,7 +127,7 @@ class Load(Combinator):
         )
 
         try:
-            saved_token = parser.storage.get(self.name)
+            saved_token = destination.get(self.name)
             if saved_token is None:
                 father.note(
                     f"La clave '{self.name}' no existe en parser.storage.", "error"
@@ -246,7 +268,7 @@ class Load(Combinator):
             # Mode 5: Swap (change) current token at cursor with stored token
             if self.mode == "change":
                 parser.replace_token_at(parser.pos, saved_token)
-                parser.storage[self.name] = current
+                destination[self.name] = current
 
                 if self.matcher is not None:
                     res = self._consume_with_matcher(analyzer, checkpoint, saved_token)
@@ -268,9 +290,13 @@ class Load(Combinator):
             parser.down()
 
     def __repr__(self) -> str:
+        suffix = ", storage=external" if self.storage is not None else ""
         if self.matcher is not None:
-            return f"Load({self.name!r}, mode={self.mode!r}, matcher={self.matcher!r})"
-        return f"Load({self.name!r}, mode={self.mode!r})"
+            return (
+                f"Load({self.name!r}, mode={self.mode!r}, "
+                f"matcher={self.matcher!r}{suffix})"
+            )
+        return f"Load({self.name!r}, mode={self.mode!r}{suffix})"
 
 
 __all__ = ["Load", "LoadMode"]

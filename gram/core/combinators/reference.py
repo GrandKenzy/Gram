@@ -45,15 +45,6 @@ class Ref(Combinator):
         self.branchable: bool = False
 
     @property
-    def brancheable(self) -> bool:
-        """Backward-compatible alias for `branchable`."""
-        return self.branchable
-
-    @brancheable.setter
-    def brancheable(self, value: bool) -> None:
-        self.branchable = value
-
-    @property
     def rule_name(self) -> str:
         """Return the descriptive identifier of the referenced rule."""
         if isinstance(self.rule, str):
