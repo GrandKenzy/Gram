@@ -2,6 +2,11 @@
 
 **Release date:** 2026-10-23
 
+> **Beta 1** · Diagnostics, sessions, checkpoints, and trace modes
+
+This release hardens speculative parsing and makes language-session state
+explicitly migratable between isolated frontends.
+
 ## ⚠️ Breaking changes
 
 ### `ERROR_EXIT_ON_ERROR` now defaults to `True`

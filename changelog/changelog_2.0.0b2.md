@@ -5,6 +5,8 @@
 This release remains **Beta** and expands the lexer/parser foundations for
 language frontends, especially C-style preprocessing and multi-file parsing.
 
+> **Beta 2** · Configurable lexer, preprocessing combinators, and isolated state
+
 ## Added
 
 - Configurable recognition for prefixed strings (`L"..."`, `u"..."`,

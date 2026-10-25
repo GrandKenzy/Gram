@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="badge/header.jpeg" alt="Gram Framework" width="100%">
+  <img src="badge/banner.jpeg" alt="Gram Framework" width="100%">
 </p>
 
 # Gram Framework
@@ -18,7 +18,7 @@
 </p>
 
 > [!WARNING]
-> **Breaking change in `2.0.0b1`:** `config.ERROR_EXIT_ON_ERROR` now defaults to **`True`**, so unsuppressed errors call `Error.raise_error()` and terminate the process (`sys.exit(1)`). To collect diagnostics without exiting, set `config.ERROR_EXIT_ON_ERROR = False` or register an error hook returning `ErrorAction.SUPPRESS_RAISE` / `ErrorAction.OMIT`. See [the versioned changelog](changelog/changelog_2.0.0b2.md) for full details.
+> **Breaking change in `2.0.0b1`:** `config.ERROR_EXIT_ON_ERROR` now defaults to **`True`**, so unsuppressed errors call `Error.raise_error()` and terminate the process (`sys.exit(1)`). To collect diagnostics without exiting, set `config.ERROR_EXIT_ON_ERROR = False` or register an error hook returning `ErrorAction.SUPPRESS_RAISE` / `ErrorAction.OMIT`. See the [versioned changelog](changelog/README.md) for full details.
 
 ---
 
@@ -248,5 +248,5 @@ Gram is distributed under the **Free Use & Commercial Output License** (see [LIC
 ---
 
 <p align="center">
-  <img src="badge/footer.jpeg" alt="Gram Framework" width="100%">
+  <img src="badge/front.jpeg" alt="Gram Framework" width="100%">
 </p>
