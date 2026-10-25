@@ -41,3 +41,6 @@ language frontends, especially C-style preprocessing and multi-file parsing.
 
 - Synchronized Spanish and English guides, indexes, installation references,
   beta status pages, sessions, storage, and preprocessing documentation.
+- Documented `Preprocess` as an experimental, high-responsibility extension
+  point with guidance for checkpoints, rollback, sessions, conversions,
+  isolated storage, expectations, and tracing.
