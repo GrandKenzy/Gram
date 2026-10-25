@@ -44,6 +44,32 @@ class TestPreprocessConvertExpected(CombinatorTestCase):
                     any(error.name == "PreprocessRejected" for error in analyzer._errors)
                 )
 
+    def test_preprocess_accepts_any_truthy_result(self) -> None:
+        result, analyzer = self.parse_with_analyzer(
+            Seq(Preprocess(lambda analyzer, token: "accepted"), MatchToken(Token.IDENT)),
+            "name",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(analyzer.parser.pos, 1)
+        self.assertFalse(analyzer._errors)
+
+    def test_preprocess_restores_cursor_when_callback_moves_it(self) -> None:
+        def invalid_callback(analyzer, token):
+            analyzer.parser.advance()
+            return True
+
+        result, analyzer = self.parse_with_analyzer(
+            Preprocess(invalid_callback),
+            "name other",
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual(analyzer.parser.pos, 0)
+        self.assertTrue(
+            any(error.name == "PreprocessConsumedTokens" for error in analyzer._errors)
+        )
+
     def test_preprocess_sees_active_logical_conversion(self) -> None:
         seen = []
 

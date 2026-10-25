@@ -15,9 +15,31 @@ conversions, and express strict zero-width conditions without consuming tokens.
 
 `Preprocess` is not a sandbox or an automatic second lexer phase: it is an
 extension point executed on the current effective token. Gram's only strict
-guarantees are that the callback must return exactly `True` and must not move
+guarantees are that the callback must return a truthy value and must not move
 `parser.pos`. Any external state you modify—files, globals, lexer registries,
 or external services—must be managed and rolled back by your own code.
+
+The callback result controls a short transaction:
+
+- **Truthy value** (`True`, a non-empty object, a non-zero number, etc.):
+  `Preprocess` accepts the token, does not call `restore()`, and returns `[]`.
+- **Falsy value** (`False`, `None`, `0`, `""`, an empty collection, etc.):
+  `Preprocess` calls `restore()` on the entry checkpoint, records
+  `PreprocessRejected`, and returns `None`.
+- **Exception:** restores the checkpoint, records `PreprocessCallbackError`,
+  and returns `None`.
+- **Cursor movement:** even if the callback returns a truthy value, changing
+  `parser.pos` makes Gram restore the checkpoint, record
+  `PreprocessConsumedTokens`, and return `None`.
+
+`Preprocess` diagnostics are intentionally shallow: they are recorded at the
+position where the combinator started. This does not make `Preprocess`
+invisible to tracing. Like every combinator, `ASTAnalyzer.visitor()` records
+its entry, exit, position, and outcome; in `detailed` mode it appears as its
+own `TraceRecord`. What Gram cannot automatically decompose is each Python
+instruction inside the callback. If the callback explicitly invokes
+`analyzer.visitor(another_combinator)`, that nested combinator does appear in
+normal and detailed tracing.
 
 ### Tools for keeping control
 
@@ -68,7 +90,8 @@ from gram.core.lexer import Token
 Preprocess(func)
 ```
 
-The callback receives `(analyzer, token)` and must return exactly `True`:
+The callback receives `(analyzer, token)` and must return a truthy value for
+analysis to continue:
 
 ```python
 def valid_name(analyzer, token):
@@ -77,8 +100,11 @@ def valid_name(analyzer, token):
 rule = Seq(Preprocess(valid_name), MatchToken(Token.IDENT))
 ```
 
-`False`, `None`, any other return value, or an exception produces an error.
-`Preprocess` must not move the parser cursor.
+`False`, `None`, and any other falsy value restore the entry checkpoint, record
+an error, and stop the combinator. Truthy values continue without restoring.
+Exceptions also restore and record an error. In every failure case, the
+diagnostic is anchored at `Preprocess`'s entry position; the callback must not
+move the parser cursor.
 
 ## `Convert`
 

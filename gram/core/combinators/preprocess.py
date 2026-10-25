@@ -13,16 +13,21 @@ if TYPE_CHECKING:
 
 
 class Preprocess(Combinator):
-    """Run a strict user predicate against the current effective token."""
+    """Run a user predicate against the current effective token.
 
-    def __init__(self, func: Callable[[ASTAnalyzer, TokenType], bool]) -> None:
+    Truthy callback results allow parsing to continue without restoring the
+    entry checkpoint. Falsy results and callback failures restore that
+    checkpoint and publish a shallow diagnostic at the entry position.
+    """
+
+    def __init__(self, func: Callable[[ASTAnalyzer, TokenType], object]) -> None:
         super().__init__()
         if not callable(func):
             errors.GrammarError(
                 "InvalidPreprocessFunction",
                 errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
                 "Preprocess requiere una función invocable.",
-                "Pase una función con firma (analyzer, token) -> bool.",
+                "Pase una función con firma (analyzer, token) -> object.",
             ).raise_error()
         self.func = func
 
@@ -31,6 +36,7 @@ class Preprocess(Combinator):
         checkpoint = parser.savepoint("PREPROCESS-Analysis")
         current = parser.peek_effective()
         if current is None:
+            parser.restore(checkpoint)
             analyzer.report_error(
                 errors.ParserError(
                     "PreprocessUnexpectedEOF",
@@ -38,7 +44,7 @@ class Preprocess(Combinator):
                     "Preprocess no encontró un token actual.",
                     "Asegúrese de ejecutar el combinador antes de EOF.",
                 ),
-                pos=parser.pos,
+                pos=checkpoint.pos,
             )
             return None
 
@@ -52,7 +58,7 @@ class Preprocess(Combinator):
                     "PreprocessCallbackError",
                     errors.GRAMMAR_COMBINATOR_FAILED,
                     f"La función de Preprocess lanzó {type(exc).__name__}: {exc}.",
-                    "Corrija la función personalizada para que devuelva un booleano.",
+                    "Corrija la función personalizada para que devuelva un valor truthy o falsy válido.",
                 ),
                 pos=start,
             )
@@ -71,14 +77,14 @@ class Preprocess(Combinator):
             )
             return None
 
-        if result is not True:
+        if not result:
             parser.restore(checkpoint)
             analyzer.report_error(
                 errors.GrammarError(
                     "PreprocessRejected",
                     errors.GRAMMAR_COMBINATOR_FAILED,
                     f"Preprocess rechazó el token {current.token.name} ({current.value!r}).",
-                    "La función debe devolver True para permitir continuar.",
+                    "La función debe devolver un valor verdadero para permitir continuar.",
                 ),
                 pos=start,
             )

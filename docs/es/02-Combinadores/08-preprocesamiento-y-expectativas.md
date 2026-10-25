@@ -15,10 +15,32 @@ Estos combinadores permiten validar el token actual, registrar conversiones lóg
 
 `Preprocess` no es un sandbox ni una segunda fase automática del lexer: es un
 punto de extensión ejecutado sobre el token efectivo actual. La única
- garantía estricta de Gram es que el callback debe devolver exactamente
- `True` y no puede mover `parser.pos`. Cualquier estado externo que modifiques
+ garantía estricta de Gram es que el callback debe devolver un valor verdadero
+ y no puede mover `parser.pos`. Cualquier estado externo que modifiques
  —archivos, variables globales, registros léxicos o servicios externos— debe
  ser administrado y revertido por tu propia implementación.
+
+El resultado del callback controla una transacción corta:
+
+- **Valor verdadero** (`True`, un objeto no vacío, un número distinto de cero,
+  etc.): `Preprocess` acepta el token, no ejecuta `restore()` y retorna `[]`.
+- **Valor falso** (`False`, `None`, `0`, `""`, una colección vacía, etc.):
+  `Preprocess` ejecuta `restore()` sobre el checkpoint de entrada, registra
+  `PreprocessRejected` y retorna `None`.
+- **Excepción:** restaura el checkpoint, registra `PreprocessCallbackError` y
+  retorna `None`.
+- **Movimiento del cursor:** aunque el callback retorne un valor verdadero, si
+  cambia `parser.pos`, Gram restaura el checkpoint, registra
+  `PreprocessConsumedTokens` y retorna `None`.
+
+Los diagnósticos de `Preprocess` son deliberadamente superficiales: se
+registran en la posición donde comenzó el combinador. Esto no significa que
+`Preprocess` sea invisible para el tracing. Como todos los combinadores,
+`ASTAnalyzer.visitor()` registra su entrada, salida, posición y resultado; en
+modo `detailed` aparece como un `TraceRecord` propio. Lo que Gram no puede
+descomponer automáticamente es cada instrucción Python dentro del callback.
+Si el callback invoca explícitamente `analyzer.visitor(otro_combinador)`, ese
+combinador anidado sí aparece en el tracing normal y detallado.
 
 ### Herramientas para mantener el control
 
@@ -71,7 +93,8 @@ from gram.core.lexer import Token
 Preprocess(func)
 ```
 
-La función recibe `(analyzer, token)` y debe devolver exactamente `True`:
+La función recibe `(analyzer, token)` y debe devolver un valor verdadero para
+permitir que el análisis continúe:
 
 ```python
 def valid_name(analyzer, token):
@@ -80,7 +103,11 @@ def valid_name(analyzer, token):
 rule = Seq(Preprocess(valid_name), MatchToken(Token.IDENT))
 ```
 
-`False`, `None`, otro retorno o una excepción producen un error. `Preprocess` no puede mover el cursor.
+`False`, `None` y cualquier otro valor falso restauran el checkpoint de entrada,
+registran un error y detienen el combinador. Los valores verdaderos continúan
+sin restaurar. Una excepción también restaura y registra un error. En todos los
+casos de fallo, el diagnóstico se ancla a la posición inicial de
+`Preprocess`; el callback no puede mover el cursor.
 
 ## `Convert`
 
