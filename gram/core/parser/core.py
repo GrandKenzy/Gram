@@ -56,6 +56,8 @@ class Parser(ParseState):
         self,
         entrypoint: type[RuleItem],
         mode: Literal["Many", "Some"] = "Many",
+        *,
+        trace: Literal["off", "basic", "detailed"] = "basic",
     ):
         """
         Execute syntactic analysis starting from the given grammar entrypoint rule.
@@ -63,6 +65,7 @@ class Parser(ParseState):
         Args:
             entrypoint (type[RuleItem]): The root grammar rule class to evaluate.
             mode (Literal['Many', 'Some']): Top-level repetition mode ('Many' for 0+ or 'Some' for 1+).
+            trace (Literal['off', 'basic', 'detailed']): Raytracing mode for the AST analyzer.
 
         Returns:
             Any: The resulting AST or visitor output from `ASTAnalyzer.process()`.
@@ -80,7 +83,7 @@ class Parser(ParseState):
             return None
 
         self.debug('Starting syntactic analysis')
-        analyzer = ASTAnalyzer(self, entrypoint, mode=mode)
+        analyzer = ASTAnalyzer(self, entrypoint, mode=mode, trace=trace)
         self.analyzer_ast_instance = analyzer
         return analyzer.process()
 

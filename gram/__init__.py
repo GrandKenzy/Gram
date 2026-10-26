@@ -23,8 +23,8 @@ from gram.core.process import (
     process,
 )
 
-__version__ = "2.0.0b2"
-__version_info__ = (2, 0, 0, "beta", 2)
+__version__ = "2.0.0b3"
+__version_info__ = (2, 0, 0, "beta", 3)
 
 
 def version() -> str:

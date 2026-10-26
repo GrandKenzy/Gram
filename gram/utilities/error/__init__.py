@@ -9,7 +9,9 @@ OSGDC dimension codes, and catalog entries.
 from __future__ import annotations
 
 import inspect
+import os
 import sys
+from functools import lru_cache
 from pathlib import Path
 from types import FrameType
 
@@ -17,6 +19,15 @@ from gram.utilities import Format
 from gram.utilities.error import codes, stack
 from gram.utilities.error.codes import CodeError, Codes, set_map_codes
 from gram.utilities.error.stack import StackError
+
+
+@lru_cache(maxsize=4096)
+def _resolve_origin(filename: str, cwd: str) -> str:
+    """Resolve an error origin once per filename and working directory."""
+    path = Path(filename)
+    if not path.is_absolute():
+        path = Path(cwd) / path
+    return str(path.resolve())
 
 
 class Error(Exception):
@@ -75,7 +86,7 @@ class Error(Exception):
             return 'unknown'
 
         try:
-            return str(Path(caller.f_code.co_filename).resolve())
+            return _resolve_origin(caller.f_code.co_filename, os.getcwd())
         except (OSError, ValueError):
             return caller.f_code.co_filename
 

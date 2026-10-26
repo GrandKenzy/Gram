@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
-  <img src="https://img.shields.io/badge/version-2.0.0b2-informational.svg" alt="Version 2.0.0b2">
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-179%20passed-success.svg" alt="Tests: 179 passed"></a>
+  <img src="https://img.shields.io/badge/version-2.0.0b3-informational.svg" alt="Version 2.0.0b3">
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-185%20passed-success.svg" alt="Tests: 185 passed"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Free%20Use%20%26%20Commercial%20Output-brightgreen.svg" alt="License"></a>
   <a href="https://github.com/GrandKenzy/Gram"><img src="https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg" alt="Zero External Dependencies"></a>
 </p>
@@ -79,7 +79,7 @@ Clone the repository and add its root directory to `PYTHONPATH` (or work directl
 git clone https://github.com/GrandKenzy/Gram.git
 cd Gram
 python -m gram
-# Output: Gram Framework v2.0.0b2
+# Output: Gram Framework v2.0.0b3
 ```
 
 ### 2. With VNMA (Vendor Manager)
@@ -222,7 +222,7 @@ python -m unittest discover -s tests
 
 ```text
 ----------------------------------------------------------------------
-Ran 179 tests in 17.4s
+Ran 185 tests in 8.6s
 
 OK
 ```

@@ -9,11 +9,10 @@
 
 ## Current release
 
-### [`2.0.0b2`](changelog_2.0.0b2.md) · Beta 2
+### [`2.0.0b3`](changelog_2.0.0b3.md) · Beta 3
 
-The current beta focuses on configurable lexical behavior, C-style
-preprocessing, parser-local conversions, multiline delimiters, and isolated
-state for multi-language sessions.
+The current beta focuses on parser telemetry controls, efficient speculative
+backtracking, and stable performance across language frontends.
 
 > [!IMPORTANT]
 > Gram is still in beta. Minor API and behavioral changes may occur before the
@@ -23,7 +22,8 @@ state for multi-language sessions.
 
 | Version | Date | Main focus | Notes |
 | --- | --- | --- | --- |
-| [`2.0.0b2`](changelog_2.0.0b2.md) | 2026-10-25 | Configurable lexer and preprocessing | Current |
+| [`2.0.0b3`](changelog_2.0.0b3.md) | 2026-10-26 | Parser performance and telemetry | Current |
+| [`2.0.0b2`](changelog_2.0.0b2.md) | 2026-10-25 | Configurable lexer and preprocessing | Beta 2 |
 | [`2.0.0b1`](changelog_2.0.0b1.md) | 2026-10-23 | Diagnostics, sessions, and checkpoints | Beta 1 |
 | [`2.0.0b0`](changelog_2.0.0b0.md) | — | Parser foundations and tooling | Initial beta |
 

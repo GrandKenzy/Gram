@@ -50,6 +50,13 @@ class Trace:
         t.levels = list(self.levels)
         return t
 
+    def copy_prefix(self, values_length: int, levels_length: int) -> Trace:
+        """Copy only the trace prefix that existed at a parser checkpoint."""
+        t = Trace()
+        t.values = self.values[:values_length]
+        t.levels = self.levels[:levels_length]
+        return t
+
     def clear(self) -> None:
         """Reset the trace entries."""
         self.values.clear()
@@ -94,9 +101,8 @@ class RayTracing:
         self.mode = mode
         self.trace: Trace = Trace()
         self.paths: list[str] = []
-        self._checkpoints: dict[int, tuple[Trace, list[str]]] = {}
-        self._trace_stack: list[Trace] = []
-        self._path_stack: list[list[str]] = []
+        self._checkpoints: dict[int, tuple[Trace, int, int, tuple[str, ...]]] = {}
+        self._trace_stack: list[tuple[Trace, int, int, tuple[str, ...]]] = []
         self.branches: list[Trace] = []
         self.records: list[TraceRecord] = []
         self.backtracks: list[int] = []
@@ -122,29 +128,32 @@ class RayTracing:
         """
         Save a snapshot of the current trace and paths upon a parser savepoint.
         """
-        saved_trace = self.trace.copy()
-        saved_paths = list(self.paths)
+        snapshot = (
+            self.trace,
+            len(self.trace.values),
+            len(self.trace.levels),
+            tuple(self.paths),
+        )
 
         if checkpoint is not None:
-            self._checkpoints[id(checkpoint)] = (saved_trace, saved_paths)
+            self._checkpoints[id(checkpoint)] = snapshot
 
-        self._trace_stack.append(saved_trace)
-        self._path_stack.append(saved_paths)
+        self._trace_stack.append(snapshot)
 
     def unreach(self, checkpoint: Any = None) -> None:
         """
         Restore trace and paths to the saved snapshot upon a parser restore/backtrack.
         """
         if checkpoint is not None and id(checkpoint) in self._checkpoints:
-            saved_trace, saved_paths = self._checkpoints[id(checkpoint)]
-            self.trace = saved_trace.copy()
+            saved_trace, values_length, levels_length, saved_paths = self._checkpoints[id(checkpoint)]
+            self.trace = saved_trace.copy_prefix(values_length, levels_length)
             self.paths = list(saved_paths)
             return
 
         if self._trace_stack:
-            self.trace = self._trace_stack.pop()
-        if self._path_stack:
-            self.paths = self._path_stack.pop()
+            saved_trace, values_length, levels_length, saved_paths = self._trace_stack.pop()
+            self.trace = saved_trace.copy_prefix(values_length, levels_length)
+            self.paths = list(saved_paths)
 
     def addpath(self, p: str) -> None:
         """Append a rule name to the sequential execution path."""
@@ -211,7 +220,6 @@ class RayTracing:
         """
         self._checkpoints.clear()
         self._trace_stack.clear()
-        self._path_stack.clear()
 
 
 __all__ = ["Trace", "TraceRecord", "RayTracing"]

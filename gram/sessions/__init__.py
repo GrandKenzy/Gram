@@ -95,6 +95,7 @@ class Session:
         entrypoint: type[RuleItem] | None = None,
         *,
         conversion_state: ConversionState | MutableMapping[str, ConversionTarget] | None = None,
+        trace: Literal['off', 'basic', 'detailed'] = 'basic',
     ):
         """Parse `tokens` using `entrypoint`, or the session entrypoint when omitted."""
         entry = entrypoint or self.entrypoint
@@ -107,7 +108,7 @@ class Session:
             else dict(conversion_state or {})
         )
         parser = Parser(tokens, name, conversions=state)
-        result = parser.parse(entry, self.mode)  # type: ignore
+        result = parser.parse(entry, self.mode, trace=trace)  # type: ignore
 
         # A shared state is updated only after a successful parse result. A
         # failed file cannot leak speculative or partial conversions outward.
