@@ -147,6 +147,8 @@ class Token(Enum):
     ERROR = auto()
     UNKNOWN = auto()
     EMPTY_LINE = auto()
+    # Appended deliberately: numeric token codes above remain stable.
+    DECIMAL = auto()
 
     @classmethod
     def from_string(cls, name: str) -> Token | None:

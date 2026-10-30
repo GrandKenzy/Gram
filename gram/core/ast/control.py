@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 _TOKEN_NODE_MAP: dict[Token, type[ASTNode]] = {
     Token.IDENT: Identifier,
     Token.NUMBER: LiteralNumber,
+    Token.DECIMAL: LiteralNumber,
     Token.STRING: LiteralString,
     Token.KEYWORD: ASTKeyword,
 }

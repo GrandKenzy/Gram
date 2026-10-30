@@ -66,7 +66,7 @@ class ConfigurableLexerTests(unittest.TestCase):
     def test_leading_dot_numbers_can_be_disabled(self) -> None:
         enabled = Lexer(".5").process()
         self.assertEqual([(token.token, token.value) for token in enabled],
-                         [(Token.NUMBER, 0.5), (Token.EOF, None)])
+                         [(Token.DECIMAL, 0.5), (Token.EOF, None)])
 
         config.LEXER_SUPPORT_LEADING_DOT_NUMBERS = False
         disabled = Lexer(".5").process()

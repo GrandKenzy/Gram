@@ -128,7 +128,14 @@ def process(
         )
 
     lexer.success(f"Número procesado: {parsed!r}")
-    return TokenType(Token.NUMBER, parsed, start_line, start)
+    # Keep the historical NUMBER token for integers and radix literals. A
+    # decimal-point/exponent spelling gets the new generic DECIMAL token.
+    token_kind = (
+        Token.DECIMAL
+        if "." in raw_value or "e" in raw_value.lower()
+        else Token.NUMBER
+    )
+    return TokenType(token_kind, parsed, start_line, start)
 
 
 __all__ = ["process"]

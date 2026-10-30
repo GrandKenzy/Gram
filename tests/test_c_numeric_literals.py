@@ -13,7 +13,7 @@ class CNumericLiteralTests(unittest.TestCase):
         words.clear_all()
         super().tearDown()
 
-    def test_c_suffixes_and_hex_float_are_single_number_tokens(self) -> None:
+    def test_c_suffixes_and_hex_float_keep_numeric_token_kinds(self) -> None:
         with patch.dict(
             config.__dict__,
             {
@@ -33,7 +33,7 @@ class CNumericLiteralTests(unittest.TestCase):
 
         self.assertEqual(
             [token.token for token in tokens],
-            [Token.NUMBER, Token.NUMBER, Token.NUMBER, Token.NUMBER, Token.NUMBER, Token.EOF],
+            [Token.DECIMAL, Token.NUMBER, Token.DECIMAL, Token.DECIMAL, Token.NUMBER, Token.EOF],
         )
         self.assertEqual(
             [token.value for token in tokens[:-1]],
