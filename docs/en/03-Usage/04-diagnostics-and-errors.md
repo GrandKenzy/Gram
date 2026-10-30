@@ -152,6 +152,8 @@ registry (`gram.utilities.error.StackError`) and dump them to `./log/error.log`:
 - `StackError.all()`, `StackError.last()`, `StackError.count()`, `StackError.clear()` inspect or reset the stack.
 - `StackError.index_of(err)` returns the registered zero-based index or `-1`.
 - `StackError.write()` overwrites the snapshot in plain text, preserving registration order and separating entries with blank lines.
+- `StackError.__err__` remains readable for compatibility, but direct mutation is rejected so identity indexes stay O(1); use the stack methods instead.
+- `StackLimit` can retain a bounded in-memory stack, spill older entries to JSONL, and recover them with `StackError.recover()`. Each spilled record includes a physical `line` and stable `seq` identifier. Use `mode="raise"` to fail with `StackLimitReached` when the limit is reached.
 
 ---
 

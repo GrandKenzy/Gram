@@ -152,6 +152,8 @@ registro global (`gram.utilities.error.StackError`) y volcarlos en `./log/error.
 - `StackError.all()`, `StackError.last()`, `StackError.count()`, `StackError.clear()` inspeccionan o reinician la pila.
 - `StackError.index_of(err)` devuelve el índice registrado comenzando en cero, o `-1`.
 - `StackError.write()` sobrescribe el snapshot en texto plano, conserva el orden de registro y separa las entradas con líneas vacías.
+- `StackError.__err__` continúa siendo legible por compatibilidad, pero rechaza mutaciones directas para conservar índices de identidad O(1); usa los métodos de la pila.
+- `StackLimit` permite limitar la pila en memoria, volcar las entradas antiguas a JSONL y recuperarlas con `StackError.recover()`. Cada registro volcado incluye `line` físico y un identificador estable `seq`. Con `mode="raise"`, el límite produce `StackLimitReached`.
 
 ---
 

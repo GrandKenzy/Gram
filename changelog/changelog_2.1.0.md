@@ -7,3 +7,6 @@
 - `errors` mejora la validación de códigos, el registro de errores y la escritura de snapshots.
 - `info` centraliza nodos, targets y flujos de notas (`debug`, `warn`, `advice`, `error`, `fatal`).
 - Logs más seguros e idempotentes, con benchmark y pruebas de regresión incluidos.
+- `StackError` optimiza la deduplicación e indexación por identidad y protege su almacenamiento público contra mutaciones no controladas.
+- `StackLimit` limita la memoria, permite volcado JSONL con identificadores de línea y secuencia, recuperación de registros y modo de error al alcanzar el límite.
+- `ErrorCombinator` conserva la recuperación de errores usando las operaciones controladas del stack; la suite alcanza 198 pruebas exitosas.

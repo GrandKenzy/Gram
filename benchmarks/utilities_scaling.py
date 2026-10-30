@@ -19,7 +19,7 @@ from gram.utilities import Diagnostics
 from gram.utilities import Format
 from gram import errors
 from gram.utilities.error.codes import CodeError, Codes, set_map_codes
-from gram.utilities.error.stack import StackError
+from gram.utilities.error.stack import StackError, StackLimit
 from gram.utilities.info import Node, StackInfo
 from gram.utilities.info.log import Log
 
@@ -190,6 +190,33 @@ def _measure_error_stack_index(events: int) -> None:
         StackError.clear()
 
 
+def _measure_stack_limit_spill(events: int) -> None:
+    """Measure bounded retention and one JSONL spill path."""
+    StackError.configure_limit(None)
+    StackError.clear()
+    with tempfile.TemporaryDirectory(prefix="gram-error-spill-benchmark-") as directory:
+        limit = StackLimit(
+            max_entries=max(2, events),
+            spill_threshold=max(1, events // 2),
+            retain_entries=max(0, events // 4),
+            path=Path(directory) / "error-spill.jsonl",
+            fsync=False,
+        )
+        StackError.configure_limit(limit)
+        try:
+            for index in range(events):
+                StackError.add(
+                    errors.ParserError(
+                        f"Spill-{index}",
+                        errors.PARSER_UNEXPECTED_TOKEN,
+                        "benchmark",
+                    )
+                )
+        finally:
+            StackError.configure_limit(None)
+            StackError.clear()
+
+
 def _report(name: str, values: list[float]) -> None:
     print(
         f"{name:<24} median={statistics.median(values):.6f}s "
@@ -239,6 +266,10 @@ def main() -> None:
         _report(
             "error-stack-index",
             _samples(lambda: _measure_error_stack_index(events), args.repeats),
+        )
+        _report(
+            "stack-limit-spill",
+            _samples(lambda: _measure_stack_limit_spill(events), args.repeats),
         )
 
 

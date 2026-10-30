@@ -48,12 +48,14 @@ class ErrorCombinator(Combinator):
         try:
             # Combine recorded errors from analyzer, parser, and global StackError
             source_list: list[errors.Error]
+            global_stack = False
             if analyzer._errors:
                 source_list = analyzer._errors
             elif parser._errors:
                 source_list = parser._errors
             else:
                 source_list = StackError.__err__
+                global_stack = True
 
             total_errors = len(source_list)
             if total_errors == 0:
@@ -74,8 +76,11 @@ class ErrorCombinator(Combinator):
                 if self.length == 0
                 else min(self.length, total_errors)
             )
-            caught_errors = list(source_list[-to_catch:])
-            del source_list[-to_catch:]
+            if global_stack:
+                caught_errors = StackError._pop_recent(to_catch)
+            else:
+                caught_errors = list(source_list[-to_catch:])
+                del source_list[-to_catch:]
 
             caught_errors.reverse()
             father.note(

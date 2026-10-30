@@ -19,7 +19,7 @@ from collections.abc import Callable
 from .. import Format
 from . import codes, stack
 from .codes import CodeError, Codes, set_map_codes
-from .stack import StackError
+from .stack import StackError, StackLimit, StackLimitReached, StackRecoveryError
 
 
 _dispatch_error_hooks: Callable[[object, 'Error'], str] | None = None
@@ -123,8 +123,9 @@ class Error(Exception):
     def get_index(self) -> int:
         """Return this error's registry index, or ``-1`` when unregistered.
 
-        Complexity: O(1) amortized when registered through ``StackError.add``;
-        direct external edits may require an O(N) cache repair.
+        Complexity: O(1) for entries registered through ``StackError.add``.
+        Direct mutation of ``StackError.__err__`` is rejected so this lookup
+        never falls back to a repeated O(N) scan.
         """
         return StackError.index_of(self)
 
@@ -245,6 +246,9 @@ __all__ = [
     'Codes',
     'Error',
     'StackError',
+    'StackLimit',
+    'StackLimitReached',
+    'StackRecoveryError',
     'configure_runtime',
     'codes',
     'set_map_codes',

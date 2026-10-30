@@ -9,7 +9,7 @@ import unittest
 from gram import errors
 from gram.utilities import Diagnostics, ErrorAction, Format
 from gram.utilities.error.codes import CodeError, Codes, set_map_codes
-from gram.utilities.error.stack import StackError
+from gram.utilities.error.stack import StackError, StackLimit, StackLimitReached
 from gram.utilities.info import Node, StackInfo
 from gram.utilities.info.log import Log
 
@@ -29,7 +29,9 @@ class TestUtilitiesRefactor(unittest.TestCase):
         }
         self.code_default = Codes.DEFAULT
         self.error_entries = list(StackError.__err__)
-        self.error_indexes = dict(StackError._index_by_identity)
+        self.stack_limit = StackError._limit
+        StackError.configure_limit(None)
+        StackError.clear()
 
     def tearDown(self) -> None:
         StackInfo.clear_and_clean_all()
@@ -47,10 +49,12 @@ class TestUtilitiesRefactor(unittest.TestCase):
             {name: set(values) for name, values in self.code_limits.items()}
         )
         Codes.DEFAULT = self.code_default
-        StackError.__err__.clear()
-        StackError.__err__.extend(self.error_entries)
-        StackError._index_by_identity.clear()
-        StackError._index_by_identity.update(self.error_indexes)
+        StackError.configure_limit(None)
+        StackError.clear()
+        for error in self.error_entries:
+            StackError.add(error)
+        if self.stack_limit is not None:
+            StackError.configure_limit(self.stack_limit)
 
     def test_node_exposes_all_typed_flows(self) -> None:
         node = Node("ROOT", "test")
@@ -212,7 +216,7 @@ class TestUtilitiesRefactor(unittest.TestCase):
         self.assertTrue(code.safe)
         self.assertEqual(code.type, "S")
 
-    def test_stack_error_deduplicates_identity_and_repairs_direct_list_edits(self) -> None:
+    def test_stack_error_deduplicates_identity_and_blocks_direct_list_edits(self) -> None:
         first = errors.ParserError(
             "First",
             errors.PARSER_UNEXPECTED_TOKEN,
@@ -232,13 +236,92 @@ class TestUtilitiesRefactor(unittest.TestCase):
         StackError.add(first)
         StackError.add(first)
         StackError.add(second)
-        StackError.__err__.append(third)
+        with self.assertRaises(RuntimeError):
+            StackError.__err__.append(third)
+        StackError.add(third)
 
         self.assertEqual(StackError.count(), 3)
         self.assertEqual(first.get_index(), 0)
         self.assertEqual(second.get_index(), 1)
         self.assertEqual(third.get_index(), 2)
         self.assertEqual(StackError.all(), [first, second, third])
+
+    def test_stack_error_limit_spills_records_with_line_and_sequence_ids(self) -> None:
+        first = errors.ParserError(
+            "First",
+            errors.PARSER_UNEXPECTED_TOKEN,
+            "first",
+        )
+        second = errors.ParserError(
+            "Second",
+            errors.PARSER_UNEXPECTED_TOKEN,
+            "second",
+        )
+        third = errors.ParserError(
+            "Third",
+            errors.PARSER_UNEXPECTED_TOKEN,
+            "third",
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            limit = StackLimit(
+                max_entries=4,
+                spill_threshold=3,
+                retain_entries=1,
+                path=Path(directory) / "spill.jsonl",
+                fsync=False,
+            )
+            StackError.configure_limit(limit)
+            StackError.add(first)
+            StackError.add(second)
+            StackError.add(third)
+
+            records = StackError.recover()
+
+        self.assertEqual(StackError.count(), 1)
+        self.assertEqual(StackError.total_count(), 3)
+        self.assertEqual([record["line"] for record in records], [1, 2])
+        self.assertEqual(records[1]["seq"], records[0]["seq"] + 1)
+        self.assertEqual(records[0]["name"], "First")
+        self.assertIn("First", records[0]["rendered"])
+
+        StackError.add(first)
+        self.assertEqual(StackError.total_count(), 3)
+
+    def test_stack_error_limit_raise_preserves_existing_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            StackError.configure_limit(
+                StackLimit(
+                    max_entries=2,
+                    mode="raise",
+                    path=Path(directory) / "unused.jsonl",
+                    fsync=False,
+                )
+            )
+            StackError.add(
+                errors.ParserError(
+                    "First",
+                    errors.PARSER_UNEXPECTED_TOKEN,
+                    "first",
+                )
+            )
+            StackError.add(
+                errors.ParserError(
+                    "Second",
+                    errors.PARSER_UNEXPECTED_TOKEN,
+                    "second",
+                )
+            )
+            with self.assertRaises(StackLimitReached):
+                StackError.add(
+                    errors.ParserError(
+                        "Third",
+                        errors.PARSER_UNEXPECTED_TOKEN,
+                        "third",
+                    )
+                )
+
+        self.assertEqual(StackError.count(), 2)
 
     def test_stack_error_writes_one_snapshot_in_order(self) -> None:
         first = errors.ParserError(
