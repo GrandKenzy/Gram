@@ -1,8 +1,8 @@
-# VSIX & Editor Tooling (Beta)
+# VSIX & Editor Tooling
 
 > [!WARNING]
-> **Beta Feature Notice:**  
-> The `gram.vsix` package (schema extraction, token coloring, `.vsix` packaging, and the built-in JSON-RPC Language Server) is currently in **Beta**. Core workflows are functional and zero-dependency, but rule-to-LSP heuristics and manifest generation options are under active development.
+> **Development Note:**
+> The `gram.vsix` package (schema extraction, token coloring, `.vsix` packaging, and the built-in JSON-RPC Language Server) is functional and zero-dependency. Rule-to-LSP heuristics and manifest generation options may continue to evolve.
 
 `gram.vsix` allows you to attach declarative editor metadata directly to your `RuleItem` classes and `Keyword` definitions, and use that metadata to:
 1. Render 24-bit ANSI TrueColor syntax-highlighted previews in the terminal (`ASTColorResolver`).

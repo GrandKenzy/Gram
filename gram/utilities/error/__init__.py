@@ -14,11 +14,33 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 from types import FrameType
+from collections.abc import Callable
 
-from gram.utilities import Format
-from gram.utilities.error import codes, stack
-from gram.utilities.error.codes import CodeError, Codes, set_map_codes
-from gram.utilities.error.stack import StackError
+from .. import Format
+from . import codes, stack
+from .codes import CodeError, Codes, set_map_codes
+from .stack import StackError
+
+
+_dispatch_error_hooks: Callable[[object, 'Error'], str] | None = None
+_should_exit: Callable[[], bool] = lambda: False
+_hide_console: Callable[[], bool] = lambda: False
+
+
+def configure_runtime(
+    *,
+    should_exit: Callable[[], bool] | None = None,
+    hide_console: Callable[[], bool] | None = None,
+    dispatch_error_hooks: Callable[[object, 'Error'], str] | None = None,
+) -> None:
+    """Inject optional host policies without importing a host framework."""
+    global _dispatch_error_hooks, _should_exit, _hide_console
+    if should_exit is not None:
+        _should_exit = should_exit
+    if hide_console is not None:
+        _hide_console = hide_console
+    if dispatch_error_hooks is not None:
+        _dispatch_error_hooks = dispatch_error_hooks
 
 
 @lru_cache(maxsize=4096)
@@ -41,12 +63,14 @@ class Error(Exception):
         code (CodeError): Formal 5-digit OSGDC error code specification.
         caution (tuple[str, ...]): Explanatory paragraphs and repair hints.
         origin (str): Resolved file path where the error was instantiated.
+        file (str): Source identity active when the error was instantiated.
     """
 
     name: str
     code: CodeError
     caution: tuple[str, ...]
     origin: str
+    file: str
 
     def __init__(
         self,
@@ -66,6 +90,8 @@ class Error(Exception):
         self.name = name
         self.code = code
         self.caution = caution
+        self.file = Format.FileTar.file or 'unknown'
+        self._error_hooks_dispatched = False
 
         frame = inspect.currentframe()
         caller: FrameType | None = frame.f_back if frame is not None else None
@@ -95,14 +121,12 @@ class Error(Exception):
         return self.name
 
     def get_index(self) -> int:
+        """Return this error's registry index, or ``-1`` when unregistered.
+
+        Complexity: O(1) amortized when registered through ``StackError.add``;
+        direct external edits may require an O(N) cache repair.
         """
-        Return the sequential index of this error inside `StackError`,
-        or `-1` if it has not been registered.
-        """
-        try:
-            return StackError.__err__.index(self)
-        except ValueError:
-            return -1
+        return StackError.index_of(self)
 
     def _format_box(self, text: str) -> str:
         """Wrap `text` inside a centered 40-character decorative ASCII header bar."""
@@ -134,7 +158,7 @@ class Error(Exception):
             if self.caution
             else 'No additional information provided.'
         )
-        target_file: str = Format.FileTar.file or 'unknown'
+        target_file = self.file
 
         if ansi:
             return (
@@ -181,27 +205,36 @@ class Error(Exception):
             except Exception:
                 print(f'ERROR: {self.name} - {self.caution}')
 
-    def raise_error(self, exit: bool | None = None) -> None:
+    def raise_error(
+        self,
+        exit: bool | None = None,
+        *,
+        hide_console: bool | None = None,
+        dispatch: bool = True,
+    ) -> None:
         """
-        Print the error to the console (unless muted by configuration) and either
-        terminate the process with exit code 1 or raise `self`.
+        Print the error to the console (unless muted by the injected host policy)
+        and either terminate the process with exit code 1 or raise `self`.
 
         Args:
-            exit (bool | None): Explicit override for `config.ERROR_EXIT_ON_ERROR`.
+            exit (bool | None): Explicit override for the configured host policy.
+            hide_console (bool | None): Explicit console visibility override.
+            dispatch (bool): Whether to evaluate the injected error hook dispatcher.
         """
-        from gram import config
-        from gram.utilities import Diagnostics, ErrorAction
+        action = 'store'
+        if dispatch and not self._error_hooks_dispatched:
+            if _dispatch_error_hooks is not None:
+                action = _dispatch_error_hooks(self, self)
+            self._error_hooks_dispatched = True
 
-        action = Diagnostics.dispatch_error_hooks(self, self)
-        if action == ErrorAction.OMIT or getattr(self, "_suppress_raise", False):
+        if action == 'omit' or getattr(self, "_suppress_raise", False):
             return
 
-        if not getattr(config, 'ERROR_HIDE_CONSOLE', False):
+        muted = _hide_console() if hide_console is None else hide_console
+        if not muted:
             self.print()
 
-        should_exit = (
-            getattr(config, 'ERROR_EXIT_ON_ERROR', False) if exit is None else exit
-        )
+        should_exit = _should_exit() if exit is None else exit
         if should_exit:
             sys.exit(1)
         raise self
@@ -212,6 +245,7 @@ __all__ = [
     'Codes',
     'Error',
     'StackError',
+    'configure_runtime',
     'codes',
     'set_map_codes',
     'stack',

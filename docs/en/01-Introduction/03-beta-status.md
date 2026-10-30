@@ -1,5 +1,7 @@
 # Beta Status (`v2.0.0b2`)
 
+> This page is an archive of the pre-`2.1.0` beta cycle. Gram `2.1.0` is the current stable release.
+
 > [!IMPORTANT]
 > **Gram `2.0.0b2` is currently in Beta.**
 > While the core lexical, syntactic, checkpointing, session, and diagnostic engines are actively used in real compiler frontends (such as domain-specific languages and custom scripting engines) and verified by an automated test suite of 179 unit and fuzz tests, minor API adjustments and behavioral refinements may still occur before the final `2.0.0` stable release.

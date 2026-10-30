@@ -1,6 +1,6 @@
 # Guía de Instalación
 
-Gram es un framework desarrollado 100% en Python puro, sin librerías externas de C ni dependencias de terceros en tiempo de ejecución (requiere **Python 3.10+**).
+Gram es un framework desarrollado 100% en Python puro, sin librerías externas de C ni dependencias de terceros en tiempo de ejecución (requiere **Python 3.12+**).
 
 Al no requerir metadatos de empaquetado PyPI (`pyproject.toml` / `setup.py`), Gram está diseñado para gestionarse y aislarse mediante **[VNMA (Vendor Manager)](https://github.com/GrandKenzy/vnma)** o consumirse directamente mediante **Git** y `PYTHONPATH`.
 
@@ -11,13 +11,13 @@ Al no requerir metadatos de empaquetado PyPI (`pyproject.toml` / `setup.py`), Gr
 **[VNMA](https://github.com/GrandKenzy/vnma)** descarga y aloja las dependencias directamente dentro de la carpeta local `vendor/` de tu proyecto, proporcionando aislamiento hermético en `sys.path`, reproducibilidad estricta mediante archivo de bloqueo (`vnma.lock`) y configuración automática de rutas para editores como VS Code y PyCharm sin necesidad de duplicar entornos virtuales enteros (`venv`).
 
 > [!NOTE]
-> Gram incluye en la raíz de su repositorio un archivo [`vnma_config.toml`](../../../vnma_config.toml) (`name = "gram-framework2.0.0b2"`, `packname = "gram"`, `modules = ["gram"]`). Al instalar o enlazar Gram con VNMA, puedes importar `gram` directamente (`import gram` o `from gram import lexer, parser, combinators`) desde cualquier módulo del proyecto.
+> Gram incluye metadata opcional de vendor en la raíz del repositorio (`name = "gram-framework2.1.0"`, `packname = "gram"`, `modules = ["gram"]`). Si un proyecto host usa VNMA, puede importar `gram` directamente (`import gram` o `from gram import lexer, parser, combinators`).
 >
 > Para cualquier consulta, comandos del CLI o especificaciones avanzadas sobre **VNMA**, consulta la documentación oficial y su repositorio: **[https://github.com/GrandKenzy/vnma](https://github.com/GrandKenzy/vnma)**.
 
 ### A. Configuración en `vnma.toml`
 
-En el archivo `vnma.toml` de la raíz de tu proyecto, declara Gram bajo la sección `[dependencies]`. Puedes instalar Gram desde una rama remota de GitHub, fijarlo a un tag inmutable (como `v2.0.0b2`), o vincular una copia local para desarrollo editable en tiempo real:
+En el archivo `vnma.toml` de la raíz de tu proyecto, declara Gram bajo `[dependencies]` solo si ese proyecto host ya usa VNMA. Puedes instalar Gram desde una rama remota de GitHub, fijarlo al tag estable `v2.1.0` o vincular una copia local para desarrollo editable en tiempo real:
 
 ```toml
 [project]
@@ -26,8 +26,8 @@ version = "0.1.0"
 
 [dependencies]
 
-# Opción 1: Desde GitHub fijado al tag v2.0.0b2 (recomendado para builds reproducibles)
-gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.0.0b2" }
+# Opción 1: Desde GitHub fijado al tag estable v2.1.0 (recomendado para builds reproducibles)
+gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.1.0" }
 
 # Opción 2: Desde GitHub siguiendo la rama principal
 # gramv2.0.0b = { git = "https://github.com/GrandKenzy/Gram.git", branch = "main" }
@@ -55,7 +55,7 @@ O instala directamente desde la línea de comandos de VNMA:
 
 ```bash
 # Instala desde GitHub en una sola orden:
-vnma install git+https://github.com/GrandKenzy/Gram.git@v2.0.0b2
+vnma install git+https://github.com/GrandKenzy/Gram.git@v2.1.0
 
 # O crea un enlace editable de copia cero hacia tu clon local:
 vnma link "~/Desktop/Gram"
@@ -83,14 +83,14 @@ cd Gram
 # Ver los tags disponibles:
 git tag -l
 
-# Cambiar al tag de la beta v2.0.0b2:
-git checkout v2.0.0b2
+# Cambiar al tag estable v2.1.0:
+git checkout v2.1.0
 ```
 
 O clonar directamente el tag en un solo comando:
 
 ```bash
-git clone --branch v2.0.0b2 --depth 1 https://github.com/GrandKenzy/Gram.git
+git clone --branch v2.1.0 --depth 1 https://github.com/GrandKenzy/Gram.git
 ```
 
 ### B. Añadir Gram a `PYTHONPATH`
@@ -114,12 +114,12 @@ python3 -m gram
 Ejecutar `python -m gram` (o consultar `gram.version()` desde Python) imprime la versión activa:
 
 ```text
-Gram Framework v2.0.0b2
+Gram Framework v2.1.0
 ```
 
 ```python
 import gram
 
-print(gram.__version__)       # "2.0.0b2"
-print(gram.__version_info__)  # (2, 0, 0, 'beta', 2)
+print(gram.__version__)       # "2.1.0"
+print(gram.__version_info__)  # (2, 1, 0, 'final', 0)
 ```

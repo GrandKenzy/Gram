@@ -23,8 +23,8 @@ The `Lexer` reads several global flags from `gram.config`:
 | `config.SUPPORT_INDENT` | `True` | When `False`, the lexer emits neither `Token.INDENT` nor `Token.DEDENT`. |
 | `config.SUPPORT_TRIPLE_DOT` | `True` | Controls whether `...` is recognized as `Token.THREE_DOTS` or as three `Token.DOT` tokens. |
 | `config.LEXER_IGNORE_EMPTY_LINES` | `True` | When `True`, blank or comment-only lines are skipped without emitting redundant `Token.NEWLINE` tokens or perturbing `INDENT`/`DEDENT` calculation. |
-| `config.LEXER_ADD_INFO` | `False` | When `True`, emits lexical telemetry notes to `LexerState`. |
-| `config.LEXER_ADD_ERROR` | `False` | When `True`, records lexical failure notes in the lexer diagnostic stack. |
+| `config.LEXER_ADD_INFO` | `True` | When `True`, emits lexical telemetry notes to `LexerState`. |
+| `config.LEXER_ADD_ERROR` | `True` | When `True`, records lexical failure notes in the lexer diagnostic stack. |
 
 ### Multiline delimiters
 

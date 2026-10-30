@@ -1,143 +1,129 @@
-"""
-ES:
-    Pila Global de Registro de Errores (StackError).
-    =================================================
-    Mantiene el registro histórico en memoria de todos los errores instanciados
-    durante el ciclo de vida del framework y gestiona su volcado persistente a disco.
+"""Global error registry and snapshot writer for the error utilities."""
 
-EN:
-    Global Error Registry Stack (StackError).
-    =================================================
-    Maintains the in-memory historical record of all error instances generated
-    during the framework's lifecycle and manages their persistent dump to disk.
-"""
 from __future__ import annotations
+
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
-    from gram.utilities.error import Error
+    from . import Error
 
 
 class StackError:
-    """
-    ES:
-        Gestiona la recolección global estática de excepciones de tipo `Error`.
-        
-        Actúa como un Singleton que registra cronológicamente los errores.
-        Permite inspeccionar el estado actual de los fallos del framework y 
-        escribir el log completo en un archivo de texto definido en `LOGFILE`.
+    """Store explicitly registered errors and write them as one snapshot.
 
-    EN:
-        Manages the static global collection of `Error` type exceptions.
-        
-        Acts as a Singleton that chronologically records errors.
-        Allows inspecting the current state of framework failures and 
-        writing the complete log to a text file defined in `LOGFILE`.
+    The public ``__err__`` list remains available for compatibility with
+    existing consumers. Use :meth:`add` for normal registration; it ignores
+    repeated additions of the same error instance.
     """
 
     LOGFILE: ClassVar[Path] = Path('log/error.log')
     __err__: ClassVar[list[Error]] = []
-    
+    _index_by_identity: ClassVar[dict[int, int]] = {}
+
+    @classmethod
+    def _index_of(cls, error: Error) -> int:
+        """Return the identity index, repairing the cache after direct list edits.
+
+        Complexity: O(1) when the cache is current; O(N) during fallback repair.
+        """
+        identity = id(error)
+        index = cls._index_by_identity.get(identity)
+        if (
+            index is not None
+            and index < len(cls.__err__)
+            and cls.__err__[index] is error
+        ):
+            return index
+
+        for index, candidate in enumerate(cls.__err__):
+            if candidate is error:
+                cls._index_by_identity[identity] = index
+                return index
+
+        cls._index_by_identity.pop(identity, None)
+        return -1
+
+    @classmethod
+    def index_of(cls, error: Error) -> int:
+        """Return the zero-based index of ``error``, or ``-1`` if absent.
+
+        Complexity: O(1) amortized for errors registered through :meth:`add`.
+        """
+        return cls._index_of(error)
+
     @classmethod
     def write(cls) -> None:
-        """
-        ES:
-            Escribe secuencialmente todos los errores registrados en el archivo de log.
-            
-            Si los directorios padres de `LOGFILE` no existen, los crea automáticamente.
-            Los errores se escriben en modo texto plano (sin colores ANSI) para
-            garantizar la correcta lectura en editores de texto.
+        """Overwrite ``LOGFILE`` with all explicitly registered errors.
 
-        EN:
-            Sequentially writes all registered errors to the log file.
-            
-            If the parent directories of `LOGFILE` do not exist, they are created 
-            automatically. Errors are written in plain text mode (without ANSI colors) 
-            to ensure proper reading in text editors.
+        Errors are rendered in registration order and separated by two newline
+        characters. Formatting completes before the file is opened, preventing
+        a rendering failure from truncating an existing snapshot.
+
+        Complexity: O(N) formatting plus one file write, where N is the number
+        of entries in ``__err__``.
         """
         try:
+            content = '\n\n'.join(
+                error.stringify(ansi=False) for error in cls.__err__
+            )
+            if content:
+                content += '\n\n'
             cls.LOGFILE.parent.mkdir(parents=True, exist_ok=True)
-            with cls.LOGFILE.open('w', encoding='utf-8') as file:
-                for error in cls.__err__: 
-                    file.write(error.stringify(ansi=False))
-                    file.write('\n\n')
+            cls.LOGFILE.write_text(content, encoding='utf-8')
         except OSError as exc:
-            print(f'ERROR al escribir en el archivo log {cls.LOGFILE}: {exc}')    
-    
+            print(f'ERROR al escribir en el archivo log {cls.LOGFILE}: {exc}')
+
     @classmethod
     def add(cls, error: Error) -> None:
-        """
-        ES:
-            Añade una nueva instancia de error al final de la pila global.
+        """Register ``error`` once by object identity.
 
-        EN:
-            Adds a new error instance to the end of the global stack.
+        Adding a different error instance always appends it, even when its
+        rendered content is equal to an existing entry.
+
+        Complexity: O(1) amortized.
         """
+        if cls._index_of(error) >= 0:
+            return
+        cls._index_by_identity[id(error)] = len(cls.__err__)
         cls.__err__.append(error)
-        
+
     @classmethod
     def last(cls) -> Error | None:
-        """
-        ES:
-            Recupera el último error que fue registrado en la pila.
-            Retorna `None` si la pila se encuentra vacía.
-
-        EN:
-            Retrieves the last error that was registered in the stack.
-            Returns `None` if the stack is empty.
-        """
+        """Return the most recently registered error, or ``None``."""
         if not cls.__err__:
             return None
         return cls.__err__[-1]
-    
+
     @classmethod
     def all(cls) -> list[Error]:
-        """
-        ES:
-            Retorna una copia superficial de la lista que contiene todos los errores.
-            Útil para iterar sobre los errores sin riesgo de mutar la pila original.
+        """Return a shallow copy of the registered error list.
 
-        EN:
-            Returns a shallow copy of the list containing all errors.
-            Useful for iterating over errors without risking mutation to the original stack.
+        Complexity: O(N).
         """
         return cls.__err__.copy()
-    
+
     @classmethod
     def count(cls) -> int:
-        """
-        ES:
-            Devuelve la cantidad total de errores almacenados en la pila actual.
+        """Return the number of registered entries.
 
-        EN:
-            Returns the total number of errors stored in the current stack.
+        Complexity: O(1).
         """
         return len(cls.__err__)
-    
+
     @classmethod
     def clear(cls) -> None:
-        """
-        ES:
-            Limpia completamente el registro, eliminando todos los errores de la pila.
-
-        EN:
-            Completely clears the registry, removing all errors from the stack.
-        """
+        """Remove all registered errors and reset the identity index."""
         cls.__err__.clear()
-        
+        cls._index_by_identity.clear()
+
     @classmethod
     def empty(cls) -> bool:
+        """Return whether no errors are registered.
+
+        Complexity: O(1).
         """
-        ES:
-            Comprueba si la pila de registro de errores está completamente vacía.
-
-        EN:
-            Checks whether the error registry stack is completely empty.
-        """
-        return len(cls.__err__) == 0
+        return not cls.__err__
 
 
-__all__ = [
-    'StackError'
-]
+__all__ = ['StackError']

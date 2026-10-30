@@ -1,12 +1,13 @@
 from __future__ import annotations
-from gram.utilities.info.log import Log
-from gram.utilities.info.note import Note
-from gram.utilities.info.stack import StackInfo
-from gram.utilities import Format
 
+from .. import Format
+from .log import Log
+from .note import Note
 
 
 class Node:
+    __slots__ = ('name', 'description', 'priority', 'stack')
+
     def __init__(
         self,
         name: str,
@@ -18,10 +19,32 @@ class Node:
         self.priority = priority
         self.stack: list[Note | Node] = []
         
-    def note(self, description: str, type: Format.LogType):
+    def note(self, description: str, type: Format.LogType = 'normal') -> Note:
         n = Note(description, type.lower())
         self.stack.append(n)
         return n
+
+    def emit(self, description: str, type: Format.LogType = 'normal') -> Note:
+        """Append one typed note without making callers know stack internals."""
+        return self.note(description, type)
+
+    def debug(self, description: str) -> Note:
+        return self.emit(description, 'normal')
+
+    def warn(self, description: str) -> Note:
+        return self.emit(description, 'warn')
+
+    def advice(self, description: str) -> Note:
+        return self.emit(description, 'advice')
+
+    def success(self, description: str) -> Note:
+        return self.emit(description, 'success')
+
+    def error(self, description: str) -> Note:
+        return self.emit(description, 'error')
+
+    def fatal(self, description: str) -> Note:
+        return self.emit(description, 'fatal')
     
     def node(self, name: str, description: str, priority: int = 0):
         sub = Node(name, description, priority)
@@ -44,10 +67,13 @@ class Node:
         indent = prefix + ((Format.line * 4) * level)
         content: list[str] = [f'{indent}<Node {self.name} L={level}>:']
         
-        if not self.stack:
-            self.note('Empty Node', 'normal')
-        
-        for item in self.stack:
+        items: list[Note | Node]
+        if self.stack:
+            items = self.stack
+        else:
+            items = [Note('Empty Node', 'normal')]
+
+        for item in items:
             if isinstance(item, Note):
                 if item.type in Format.ONLY_SHOW_TYPES:
                     content.append(f'| {item.stringify(level + 1, ansi)}')
@@ -87,3 +113,5 @@ __all__ = [
     'Node',
     'Note',
 ]
+
+from .stack import StackInfo

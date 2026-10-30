@@ -1,20 +1,29 @@
-from typing import Literal
-import random
+"""Small standalone formatting and log-source primitives."""
+
+from itertools import count
 from pathlib import Path
+from typing import Literal
+
+
 line = '━'
 left = '├'
+
+
 class FileTar:
-    file: str = 'unknown'
+    """Current source identity used to group logs without importing Gram."""
+
+    file: str | None = None
     rid: int = 0
+    _ids = count(1)
 
     @classmethod
     def set(cls, file: str | Path):
         cls.file = str(file)
-        cls.rid = random.randint(1, 100000)
+        cls.rid = next(cls._ids)
 
     @classmethod
-    def get(cls):
-        f = Path(cls.file).name
+    def get(cls) -> tuple[str, int]:
+        f = Path(cls.file).name if cls.file else ''
         return f, cls.rid
 ARESET: str = '\033[0m'
 
@@ -70,10 +79,13 @@ log_type_icon_map = {
 
 ONLY_SHOW_TYPES: list[LogType] = ['normal', 'advice', 'error', 'fatal', 'success', 'warn']
 MAX_PRIORITY = 1000
-def LogTypeColor(t: str):
+
+
+def LogTypeColor(t: str) -> str:
     default = log_type_color_map['normal']
     return log_type_color_map.get(t.lower(), default)
 
-def LogTypeIcon(t: str):
+
+def LogTypeIcon(t: str) -> str:
     default = log_type_icon_map['normal']
     return log_type_icon_map.get(t.lower(), default)

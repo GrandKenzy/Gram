@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
-  <img src="https://img.shields.io/badge/version-2.0.0b3-informational.svg" alt="Version 2.0.0b3">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12%2B-blue.svg" alt="Python 3.12+"></a>
+  <img src="https://img.shields.io/badge/version-2.1.0-informational.svg" alt="Version 2.1.0">
   <a href="tests/"><img src="https://img.shields.io/badge/tests-185%20passed-success.svg" alt="Tests: 185 passed"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Free%20Use%20%26%20Commercial%20Output-brightgreen.svg" alt="License"></a>
   <a href="https://github.com/GrandKenzy/Gram"><img src="https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg" alt="Zero External Dependencies"></a>
@@ -69,7 +69,7 @@ list[ASTNode]                     ──► ASTRef, ArrayNode, ASTBinaryOp, ASTU
 
 ## Installation
 
-Gram is a pure-Python package with zero third-party runtime dependencies (Python 3.10+).
+Gram is a pure-Python package with zero third-party runtime dependencies (Python 3.12+).
 
 ### 1. From Source (Git Checkout)
 
@@ -79,12 +79,12 @@ Clone the repository and add its root directory to `PYTHONPATH` (or work directl
 git clone https://github.com/GrandKenzy/Gram.git
 cd Gram
 python -m gram
-# Output: Gram Framework v2.0.0b3
+# Output: Gram Framework v2.1.0
 ```
 
-### 2. With VNMA (Vendor Manager)
+### 2. Optional VNMA integration
 
-Gram includes a [`vnma_config.toml`](vnma_config.toml) manifest exposing the `gram` module and the `gram` CLI entry point (`gram.__main__:main`). Declare Gram in your project's `vnma.toml`:
+Gram does not require VNMA for development or normal use. If a host project already uses VNMA, the optional [`vnma_config.toml`](vnma_config.toml) metadata exposes the `gram` module and the `gram` CLI entry point (`gram.__main__:main`):
 
 ```toml
 [project]
@@ -92,8 +92,8 @@ name = "my-compiler"
 version = "0.1.0"
 
 [dependencies]
-# From GitHub (pinned to the v2.0.0b2 beta tag or tracking main):
-gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.0.0b2" }
+# From GitHub (pinned to the v2.1.0 stable tag or tracking main):
+gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.1.0" }
 # gramv2.0.0b = { git = "https://github.com/GrandKenzy/Gram.git", branch = "main" }
 
 # Or from a local directory for real-time editable changes:
@@ -195,7 +195,7 @@ PROGRAM
 | **Combinators** | [`gram.core.combinators`](gram/core/combinators/__init__.py) | `Seq`, `Alt`, `Opt`, `Enclosed`, `Many`, `Some`, `Until`, `UntilIndent`, `Separator`, `Ref`, `RuleItem`, `Item`, `Literal`, `Save`, `Load`, `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator`, `Req`, `ArithmeticExpr`, `ConditionalExpr`, `DualExpr` |
 | **Diagnostics & Hooks** | [`gram.utilities`](gram/utilities/__init__.py) | `Diagnostics`, `ErrorAction` (`OMIT`, `SUPPRESS_RAISE`), `Diagnostics.hook_errors()`, `Diagnostics.failure_scope()` |
 | **Sessions** | [`gram.sessions`](gram/sessions/__init__.py) | `Session` (`init()`, `migrate()`, `load()`, `tokenize()`, `parse()`) |
-| **VSIX & LSP (Beta)** | [`gram.vsix`](gram/vsix/__init__.py) | `VSIXGenerator`, `VSIXAnalyzer`, `ASTColorResolver`, `LSPServer`, `LSPState`, `pack_vsix()`, `up()` |
+| **VSIX & LSP** | [`gram.vsix`](gram/vsix/__init__.py) | `VSIXGenerator`, `VSIXAnalyzer`, `ASTColorResolver`, `LSPServer`, `LSPState`, `pack_vsix()`, `up()` |
 
 ---
 

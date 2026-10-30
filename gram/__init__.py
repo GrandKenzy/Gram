@@ -18,13 +18,21 @@ from __future__ import annotations
 
 # System submodules
 from gram import config, errors, utilities, vsix
+from gram.utilities.error import configure_runtime
+
+configure_runtime(
+    should_exit=lambda: bool(config.ERROR_EXIT_ON_ERROR),
+    hide_console=lambda: bool(config.ERROR_HIDE_CONSOLE),
+    dispatch_error_hooks=utilities.Diagnostics.dispatch_error_hooks,
+)
+
 from gram.core import ast, combinators, lexer, parser, rules
 from gram.core.process import (
     process,
 )
 
-__version__ = "2.0.0b3"
-__version_info__ = (2, 0, 0, "beta", 3)
+__version__ = "2.1.0"
+__version_info__ = (2, 1, 0, "final", 0)
 
 
 def version() -> str:

@@ -18,7 +18,7 @@ from gram.utilities import Diagnostics
 class CompilerState(Diagnostics):
     def __init__(self) -> None:
         super().__init__(
-            file="compiler-log",         # Nombre del archivo de log bajo ./log/
+            file="compiler-log",         # Bajo ./log/ cuando no hay una fuente activa
             name="COMPILER",             # Título del nodo raíz de telemetría
             description="Semantic pass", # Descripción del nodo raíz
             expose_nodes=True,           # Mostrar nodos secundarios al formatear en texto
@@ -35,9 +35,10 @@ class CompilerState(Diagnostics):
   - `diag.advice(msg)` $\rightarrow$ emite una nota `'advice'`.
   - `diag.success(msg)` $\rightarrow$ emite una nota `'success'`.
   - `diag.error(msg)` $\rightarrow$ emite una nota `'error'`.
+  - `diag.fatal(msg)` $\rightarrow$ emite una nota `'fatal'`.
 - **Ámbitos de nodos secundarios (`node` y `down`):**
-  - `diag.node(name, description="", set_target=True)` crea un `Node` secundario bajo el objetivo actual y lo añade a `self._targets` cuando `set_target=True`.
-  - `diag.down()` extrae el nodo activo de `self._targets`, devolviendo el foco a su nodo padre.
+  - `diag.node(name, description="", set_target=True)` crea un `Node` secundario bajo el objetivo actual y lo activa cuando `set_target=True`.
+  - `diag.down()` extrae el objetivo activo y devuelve el foco a su nodo padre.
 
 ```python
 from gram.utilities import Diagnostics
@@ -63,10 +64,10 @@ print(diag.stack.stringify(ansi=False))
 
 ### Persistir Logs de Telemetría en Disco
 
-- Invocar `diag.stack.write()` escribe el árbol formateado en `./log/<file>.log` mediante `gram.utilities.info.Log`.
-- Invocar `gram.utilities.info.StackInfo.show_all()` vacía todas las instancias de `StackInfo` registradas.
+- Invocar `diag.stack.write()` escribe el árbol formateado mediante `gram.utilities.info.Log`. Sin una fuente activa, la ruta es `./log/<file>.log`; una fuente activa en `Format.FileTar` añade un directorio de fuente/rid.
+- Invocar `gram.utilities.info.StackInfo.show_all()` escribe una vez el snapshot de cada `StackInfo` registrado.
 - Para las fases integradas de Gram (`LexerState`, `Parser`, `ASTAnalyzer`), la verbosidad de telemetría y la creación automática de logs se configuran con `gram.config`:
-  - `config.LEXER_ADD_INFO`, `config.PARSER_ADD_INFO`, `config.AST_ADD_INFO` (por defecto `False`).
+  - `config.LEXER_ADD_INFO`, `config.PARSER_ADD_INFO`, `config.AST_ADD_INFO` (por defecto `True`).
   - `config.INFO_GENERATE_LOGFILE` (por defecto `False`) e `config.INFO_GENERATE_LOGFILE_ON_ERROR` (por defecto `False`).
 
 ---
@@ -86,6 +87,11 @@ Cada `CodeError` se formatea como `<Tipo>-<O><S><G><D><C> · <Nombre>` (por ejem
 | **`G`** | **Gravedad** | `0`: Menor, `1`: Error de Implementación, `2`: Obsoleto, `3`: Interno, `4`: Fatal |
 | **`D`** | **Documentación** | `0`: Documentado, `1`: Documentado y Rastreable, `2`: No Documentado |
 | **`C`** | **Condición** | `0`: Usable, `1`: Requiere Reparación, `2`: Debería Repararse |
+
+`set_map_codes()` valida todos los límites antes de reemplazar los mapas públicos
+de códigos. Si un límite es inválido, los mapas anteriores permanecen intactos.
+`CodeError` indexa el primer símbolo proporcionado para cada grupo y evalúa la
+seguridad en O(número de grupos configurados).
 
 ### Clases de Error de Dominio
 
@@ -137,13 +143,15 @@ INF:
 
 Cuando se invoca `err.raise_error()` (o `parser.report_error(err)` / `analyzer.report_error(err)` fuera de `safe_mode()`):
 1. A menos que `config.ERROR_HIDE_CONSOLE` sea `True`, la caja del error se imprime en stdout.
-2. Si `config.ERROR_EXIT_ON_ERROR` es `True` (**el valor por defecto en `2.0.0b2`**), Gram ejecuta `sys.exit(1)`.
+2. Si `config.ERROR_EXIT_ON_ERROR` es `True` (**el valor por defecto en `2.1.0`**), Gram ejecuta `sys.exit(1)`.
 3. Si `config.ERROR_EXIT_ON_ERROR` es `False`, Gram lanza `err` como una excepción ordinaria de Python.
 
-Para rastrear errores en el registro global `StackError` (`gram.utilities.error.StackError`) y volcarlos en `./log/error.log`:
-- `StackError.add(err)` agrega un error.
+Los errores no se agregan automáticamente a `StackError`. Para rastrearlos en el
+registro global (`gram.utilities.error.StackError`) y volcarlos en `./log/error.log`:
+- `StackError.add(err)` registra una instancia una sola vez por identidad; otra instancia distinta se conserva aunque su texto sea igual.
 - `StackError.all()`, `StackError.last()`, `StackError.count()`, `StackError.clear()` inspeccionan o reinician la pila.
-- `StackError.write()` escribe todos los errores acumulados en texto plano en `log/error.log`.
+- `StackError.index_of(err)` devuelve el índice registrado comenzando en cero, o `-1`.
+- `StackError.write()` sobrescribe el snapshot en texto plano, conserva el orden de registro y separa las entradas con líneas vacías.
 
 ---
 

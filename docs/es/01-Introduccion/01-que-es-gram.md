@@ -78,4 +78,4 @@ Un compilador frecuentemente necesita parsear más de un lenguaje en el mismo pr
 | **Sesiones** | `from gram import sessions` | `Session` |
 | **Diagnósticos y Errores** | `from gram import errors, utilities` | `Diagnostics`, `ErrorAction`, `Error`, `LexerError`, `ParserError`, `ASTError`, `GrammarError`, `SemanticError`, `StackError`, `StackInfo` |
 | **Configuración** | `from gram import config` | Banderas globales de configuración para lexer, parser, AST, errores y logs (`save()`, `load()`, `reset_to_defaults()`) |
-| **VSIX (Beta)** | `from gram import vsix` | `VSIXAnalyzer`, `VSIXGenerator`, `ASTColorResolver`, `TokenSelector`, `LSPServer`, `declare_info`, `pack_vsix`, `up` |
+| **VSIX y LSP** | `from gram import vsix` | `VSIXAnalyzer`, `VSIXGenerator`, `ASTColorResolver`, `TokenSelector`, `LSPServer`, `declare_info`, `pack_vsix`, `up` |

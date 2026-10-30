@@ -1,5 +1,7 @@
 # Estado Beta (`v2.0.0b2`)
 
+> Esta página conserva el historial del ciclo Beta anterior a `2.1.0`. Gram `2.1.0` es la versión estable actual.
+
 > [!IMPORTANT]
 > **Gram `2.0.0b2` se encuentra actualmente en fase Beta.**
 > Si bien los motores centrales de análisis léxico, análisis sintáctico, checkpoints, sesiones y diagnósticos son utilizados activamente en proyectos reales (como lenguajes de dominio específico y motores de scripting personalizados) y están respaldados por una suite de 179 pruebas unitarias y de estrés, aún pueden ocurrir ajustes menores de API antes de la versión final estable `2.0.0`.

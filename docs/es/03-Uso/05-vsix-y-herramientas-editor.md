@@ -1,8 +1,8 @@
-# VSIX y Herramientas de Editor (Beta)
+# VSIX y Herramientas de Editor
 
 > [!WARNING]
-> **Aviso de Estado Beta:**  
-> El paquete `gram.vsix` (extracción de esquemas, coloreado de tokens, empaquetado de `.vsix` y servidor de lenguaje JSON-RPC integrado) se encuentra actualmente en fase **Beta**. Los flujos de trabajo principales son completamente funcionales y con cero dependencias externas, pero las heurísticas de mapeo de reglas a LSP y las opciones de generación del manifiesto están bajo desarrollo activo.
+> **Nota de desarrollo:**
+> El paquete `gram.vsix` (extracción de esquemas, coloreado de tokens, empaquetado de `.vsix` y servidor de lenguaje JSON-RPC integrado) es funcional y no tiene dependencias externas. Las heurísticas de mapeo de reglas a LSP y las opciones de generación del manifiesto pueden seguir evolucionando.
 
 `gram.vsix` te permite adjuntar metadatos declarativos de editor directamente a tus clases `RuleItem` y definiciones de `Keyword`, y utilizar esos metadatos para:
 1. Renderizar previsualizaciones con resaltado de sintaxis ANSI TrueColor de 24 bits en la terminal (`ASTColorResolver`).

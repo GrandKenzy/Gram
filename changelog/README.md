@@ -9,28 +9,30 @@
 
 ## Current release
 
-### [`2.0.0b3`](changelog_2.0.0b3.md) · Beta 3
+### [`2.1.0`](changelog_2.1.0.md) · Stable
 
-The current beta focuses on parser telemetry controls, efficient speculative
-backtracking, and stable performance across language frontends.
+The current stable release is `2.1.0`. Its release notes are kept in one file
+and are extended as changes are made during the release cycle.
 
 > [!IMPORTANT]
-> Gram is still in beta. Minor API and behavioral changes may occur before the
-> stable `2.0.0` release.
+> Earlier `2.0.0b*` files are historical beta release notes. They are not the
+> current project status.
 
 ## Release timeline
 
 | Version | Date | Main focus | Notes |
 | --- | --- | --- | --- |
-| [`2.0.0b3`](changelog_2.0.0b3.md) | 2026-10-26 | Parser performance and telemetry | Current |
-| [`2.0.0b2`](changelog_2.0.0b2.md) | 2026-10-25 | Configurable lexer and preprocessing | Beta 2 |
-| [`2.0.0b1`](changelog_2.0.0b1.md) | 2026-10-23 | Diagnostics, sessions, and checkpoints | Beta 1 |
-| [`2.0.0b0`](changelog_2.0.0b0.md) | — | Parser foundations and tooling | Initial beta |
+| [`2.1.0`](changelog_2.1.0.md) | 2026-10-30 | Stable maintenance and ongoing release notes | Current |
+| [`2.0.0b3`](changelog_2.0.0b3.md) | 2026-10-26 | Parser performance and telemetry | Historical |
+| [`2.0.0b2`](changelog_2.0.0b2.md) | 2026-10-25 | Configurable lexer and preprocessing | Historical Beta 2 |
+| [`2.0.0b1`](changelog_2.0.0b1.md) | 2026-10-23 | Diagnostics, sessions, and checkpoints | Historical Beta 1 |
+| [`2.0.0b0`](changelog_2.0.0b0.md) | — | Parser foundations and tooling | Historical initial beta |
 
 ## How to read these notes
 
-Each release has its own `changelog_*.md` file. Entries are grouped by
-impact:
+Each release has exactly one `changelog_*.md` file. Append all notes for that
+version to the same file; do not create a new changelog for every individual
+change. Entries are grouped by impact:
 
 - **Breaking changes:** behavior or API changes that may require migration.
 - **Added:** new public capabilities and configuration.
@@ -41,5 +43,5 @@ impact:
 ## Repository conventions
 
 Central detects release notes from files matching `changelog_*.md` inside this
-folder. Keep the version in the filename, the heading, `vnma_config.toml`, and
-the package metadata synchronized when preparing a release.
+folder. Keep the version in the filename, the heading, package metadata and
+public documentation synchronized when preparing a release.

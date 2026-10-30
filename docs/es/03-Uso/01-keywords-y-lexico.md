@@ -23,8 +23,8 @@ El `Lexer` consulta varias variables globales de configuración en `gram.config`
 | `config.SUPPORT_INDENT` | `True` | Si es `False`, no se generan `Token.INDENT` ni `Token.DEDENT`. |
 | `config.SUPPORT_TRIPLE_DOT` | `True` | Controla si `...` se reconoce como `Token.THREE_DOTS` o como tres tokens `Token.DOT`. |
 | `config.LEXER_IGNORE_EMPTY_LINES` | `True` | Si es `True`, las líneas en blanco o con solo comentarios se omiten sin emitir tokens redundantes `Token.NEWLINE` ni perturbar el cálculo de `INDENT`/`DEDENT`. |
-| `config.LEXER_ADD_INFO` | `False` | Si es `True`, emite notas de telemetría léxica a `LexerState`. |
-| `config.LEXER_ADD_ERROR` | `False` | Si es `True`, registra notas de fallo léxico en la pila de diagnóstico del lexer. |
+| `config.LEXER_ADD_INFO` | `True` | Si es `True`, emite notas de telemetría léxica a `LexerState`. |
+| `config.LEXER_ADD_ERROR` | `True` | Si es `True`, registra notas de fallo léxico en la pila de diagnóstico del lexer. |
 
 ### Delimitadores multilínea
 

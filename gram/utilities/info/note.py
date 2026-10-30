@@ -1,16 +1,18 @@
 from __future__ import annotations
-from gram.utilities import Format
 
+from .. import Format
 
 
 class Note:
+    __slots__ = ('note', 'type')
+
     def __init__(
         self,
         note: str,
         type: Format.LogType = 'normal'
     ):
         self.note = note
-        self.type = type
+        self.type = type.lower()
         
     @property
     def description(self):

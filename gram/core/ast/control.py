@@ -112,7 +112,9 @@ class ASTState(utilities.Diagnostics):
         Promote the deepest staged failure (or `fallback`) and raise/exit if
         `config.ERROR_EXIT_ON_ERROR` is enabled.
         """
-        target = self.promote_staged_failure(fallback=fallback)
+        target = self.promote_staged_failure(fallback=fallback, record=False)
+        if target is not None:
+            self.record_failure(target)
         if (
             target is not None
             and not getattr(target, "_suppress_raise", False)

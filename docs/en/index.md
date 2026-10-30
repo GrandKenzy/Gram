@@ -1,7 +1,7 @@
 # Gram Framework Documentation
 
-> **Version:** `2.0.0b2` (Beta)
-> **Runtime:** Pure Python 3.10+ (Zero external runtime dependencies)
+> **Version:** `2.1.0` (Stable)
+> **Runtime:** Pure Python 3.12+ (Zero external runtime dependencies)
 
 Welcome to the official English documentation for **Gram**, a pure-Python lexical analysis, parser combinator, and Abstract Syntax Tree (`AST`) generation framework for building Domain-Specific Languages (DSLs), transpilers, and compiler frontends.
 
@@ -10,10 +10,10 @@ Welcome to the official English documentation for **Gram**, a pure-Python lexica
 ## Documentation Index
 
 ### [01. Introduction](./01-Introduction/index.md)
-High-level overview of the framework, its design goals, installation instructions, and current release lifecycle.
+High-level overview of the framework, its design goals, installation instructions, and current stable release.
 - **[01. What is Gram?](./01-Introduction/01-what-is-gram.md)** — Core architecture, strict separation between syntactic and semantic phases, and design objectives.
 - **[02. Installation](./01-Introduction/02-installation.md)** — Installing Gram via **VNMA** (`vnma.toml`, Git branches, tags, and live editable links) or directly via Git and `PYTHONPATH`.
-- **[03. Beta Status](./01-Introduction/03-beta-status.md)** — Current stability matrix for `v2.0.0b2`, tested subsystems, and experimental features.
+- **[03. Historical Beta Status](./01-Introduction/03-beta-status.md)** — Archived stability matrix for the pre-`2.1.0` beta cycle.
 
 ### [02. Combinators](./02-Combinators/index.md)
 Reference guide for all available syntactic combinators in `gram.core.combinators`, execution contracts, and Pratt expression engines.
@@ -32,4 +32,4 @@ Practical guides for structuring language frontends, managing multi-language ses
 - **[02. RuleItem & `nodeable`](./03-Usage/02-ruleitem-and-nodeable.md)** — Defining production rules with `RuleItem`, `AutoCode`/`SetCode`, root entrypoints, and how `nodeable` controls `ASTRef` wrapping vs. node inlining.
 - **[03. Language Sessions](./03-Usage/03-sessions.md)** — Isolating and switching between multiple language frontends using `gram.sessions.Session`.
 - **[04. Diagnostics & Error System](./03-Usage/04-diagnostics-and-errors.md)** — Hierarchical telemetry with `Diagnostics`, OSGDC error codes, `StackError`, and non-invasive error hooks (`ErrorAction`).
-- **[05. VSIX & Editor Tooling (Beta)](./03-Usage/05-vsix-and-editor-tooling.md)** — Declarative editor maps on `RuleItem`, `TokenSelector`, ANSI TrueColor previews, VS Code extension generation, and the built-in LSP server.
+- **[05. VSIX & Editor Tooling](./03-Usage/05-vsix-and-editor-tooling.md)** — Declarative editor maps on `RuleItem`, `TokenSelector`, ANSI TrueColor previews, VS Code extension generation, and the built-in LSP server.

@@ -10,8 +10,8 @@ import atexit
 from pathlib import Path
 from typing import ClassVar
 
-from gram.utilities import Format
-from gram.utilities.info.log import Log
+from .. import Format
+from .log import Log
 
 
 class StackInfo:
@@ -28,9 +28,7 @@ class StackInfo:
         ):
         
 
-        name = ''
-        if Format.FileTar.file:
-            name = Path(Format.FileTar.file).name
+        name = Path(Format.FileTar.file).name if Format.FileTar.file else ''
             
         if not file_name.endswith('.log'):
             file_name = file_name + '.log'
@@ -39,51 +37,108 @@ class StackInfo:
         self.expose_nodes: bool = expose_nodes
         self.folder_name = name
 
-        from gram.utilities.info import Node
+        from . import Node
         self.main: Node = Node(node_name, description, 0)
         self.log: Path | None = None
+        self._targets: list[Node] = []
         if generate_log_file:
             self.register()
         
         if self.log and generate_on_error:
             atexit.register(self.write)
+
+        type(self)._stacks.append(self)
         
     def register(self):
-        if self.folder_name:
+        if self.folder_name or Format.FileTar.file:
             file, i = Format.FileTar.get()
-            fn = f'{file}-{i}'
+            fn = f'{file}-{i}' if file else ''
         else:
             fn = self.folder_name
         
         self.log = Log.register(self.file_name, fn)
         
+    @property
+    def target(self) -> Node | None:
+        return self._targets[-1] if self._targets else None
+
+    @property
+    def targets(self) -> list[Node]:
+        return self._targets
+
+    def replace_targets(self, targets: list[Node]) -> None:
+        """Replace the active target stack while preserving its list identity."""
+        self._targets[:] = targets
+
+    def current(self) -> Node:
+        return self.target or self.main
+
+    def node(
+        self,
+        name: str,
+        description: str = '',
+        priority: int = 0,
+        *,
+        set_target: bool = False,
+        from_target: bool = True,
+    ) -> Node:
+        parent = self.current() if from_target else self.main
+        child = parent.node(name, description, priority)
+        if set_target:
+            self._targets.append(child)
+        return child
+
+    def down(self, get: bool = False) -> Node | None:
+        if not self._targets:
+            return None
+        node = self._targets.pop()
+        return node if get else None
+
+    def insert(self, node: Node) -> None:
+        self.current().stack.append(node)
+
+    def migrate(self, node: Node) -> None:
+        target = self.target
+        if target is None:
+            raise RuntimeError('No active target defined for migration.')
+        target.stack = node.stack
+
     def note(self, note: str, type: Format.LogType = 'normal'):
-        return self.main.note(note, type)
-    
-    def node(self, name: str, description: str, priority: int = 0):
-        return self.main.node(name, description, priority)
+        return self.current().note(note, type)
+
+    def emit(self, note: str, type: Format.LogType = 'normal'):
+        return self.current().emit(note, type)
+
+    def debug(self, note: str):
+        return self.current().debug(note)
+
+    def warn(self, note: str):
+        return self.current().warn(note)
+
+    def advice(self, note: str):
+        return self.current().advice(note)
+
+    def success(self, note: str):
+        return self.current().success(note)
+
+    def error(self, note: str):
+        return self.current().error(note)
+
+    def fatal(self, note: str):
+        return self.current().fatal(note)
     
     def console(self):
-        lines = list(self.main.stringify(
-            level=0,
-            expose_nodes=self.expose_nodes,
-            ansi=False,
-            format_list = True
-        ))
-        
-        if lines:
-            prefix = self.file_name.split('.')[0]
-            header = lines[0]
-            lines[0] = f'Stack {prefix} {header}'
-            print('\n'.join(lines))
+        rendered = self.stringify(ansi=False)
+        if rendered:
+            print(rendered)
             
     def stringify(self, ansi: bool = False):
-        lines = list(self.main.stringify(
+        lines = self.main.stringify(
             level=0,
             expose_nodes=self.expose_nodes,
             ansi=ansi,
             format_list=True
-        ))
+        )
 
         if lines:
             prefix = self.file_name.split('.')[0]
@@ -93,22 +148,20 @@ class StackInfo:
         return ''
 
     def write(self) -> None:
-            """Persiste el contenido del stack en el archivo de log si está configurado."""
-            if self.log:
-                Log.write_to_path(self.stringify(ansi=False), self.log)
-            else:
-                Log.write(self.stringify(ansi=False), self.file_name)
+        """Persist the current stack snapshot to its configured log path."""
+        if self.log:
+            Log.write_to_path(self.stringify(ansi=False), self.log)
+        else:
+            Log.write(self.stringify(ansi=False), self.file_name)
     @classmethod
     def show_all(cls) -> None:
-        """Vuelca y muestra todos los stacks registrados en el ciclo de ejecución."""
-        if Format.FileTar.file:
-            print('Escribiendo datos para', Format.FileTar.file)
-        
-        for stack in cls._stacks:
+        """Write all stacks registered during the current process."""
+        for stack in tuple(cls._stacks):
             stack.write()
 
     def clean(self):
         self.main.stack.clear()
+        self._targets.clear()
 
     @classmethod
     def clear_all(cls) -> None:
