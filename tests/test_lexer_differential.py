@@ -47,7 +47,7 @@ from gram.core.lexer.core import Lexer
 from gram.core.lexer.tokens import Token
 from gram.sessions import Session
 from tools.compare_lexers import compare_lexer_runs
-from tools.export_lexer_tables import export_session_tables
+from tools.export_lexer_tables import ABI_VERSION, export_session_tables
 
 GOLDEN_FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "lexer" / "golden_cases.json"
 
@@ -447,7 +447,8 @@ class TestLexerDifferential(unittest.TestCase):
             m1 = export_session_tables(session, tmpdir)
             m2 = export_session_tables(session, tmpdir)
             self.assertEqual(m1["content_hash"], m2["content_hash"])
-            self.assertEqual(m1["abi_version"], "1.0")
+            self.assertEqual(m1["abi_version"], ABI_VERSION)
+            self.assertEqual(m1["abi_version"], "1.1")
 
             for fname in (
                 "gram_lexer_config.h",

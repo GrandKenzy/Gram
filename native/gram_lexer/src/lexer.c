@@ -198,6 +198,9 @@ void gram_lexer_reset(
     lexer->pending_dedent_line = 1u;
     lexer->pending_dedent_col = 0;
     lexer->pending_dedent_offset = 0;
+    lexer->cached_u_line = (uint32_t)-1;
+    lexer->cached_u_end = 0;
+    lexer->cached_u_has_alnum = 0;
 
     if (lexer->length > 0) {
         gram_lexer_load_line_at(lexer, 0);
@@ -364,7 +367,7 @@ static int match_block_comment_at(const GramLexer *lexer, uint32_t pos) {
     return 0;
 }
 
-static int should_start_word_on_underscore(const GramLexer *lexer) {
+static int should_start_word_on_underscore(GramLexer *lexer) {
     int32_t mode = lexer->config.ident_underscores;
     if (mode == 0) {
         return 0;
@@ -373,24 +376,33 @@ static int should_start_word_on_underscore(const GramLexer *lexer) {
         return 1;
     }
 
-    const char *src = lexer->source;
-    uint32_t line_end = lexer->line_end;
-    uint32_t p = lexer->position;
+    uint32_t pos = lexer->position;
     uint32_t u_count = 0;
-    while (p < line_end && src[p] == '_') {
-        p++;
-        u_count++;
-    }
-
     int has_alnum_after = 0;
-    if (p < line_end) {
-        uint32_t next_cp = 0;
-        uint32_t next_step = 1u;
-        if (gram_utf8_decode(src, line_end, p, &next_cp, &next_step)) {
-            if (gram_unicode_is_alnum(next_cp)) {
-                has_alnum_after = 1;
+
+    if (lexer->cached_u_line == lexer->line && pos < lexer->cached_u_end) {
+        u_count = lexer->cached_u_end - pos;
+        has_alnum_after = (int)lexer->cached_u_has_alnum;
+    } else {
+        const char *src = lexer->source;
+        uint32_t line_end = lexer->line_end;
+        uint32_t p = pos;
+        while (p < line_end && src[p] == '_') {
+            p++;
+        }
+        if (p < line_end) {
+            uint32_t next_cp = 0;
+            uint32_t next_step = 1u;
+            if (gram_utf8_decode(src, line_end, p, &next_cp, &next_step)) {
+                if (gram_unicode_is_alnum(next_cp)) {
+                    has_alnum_after = 1;
+                }
             }
         }
+        lexer->cached_u_line = lexer->line;
+        lexer->cached_u_end = p;
+        lexer->cached_u_has_alnum = (uint8_t)has_alnum_after;
+        u_count = p - pos;
     }
 
     if (mode == -2) {

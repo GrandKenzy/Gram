@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 #define GRAM_LEXER_ABI_MAJOR 1
-#define GRAM_LEXER_ABI_MINOR 0
+#define GRAM_LEXER_ABI_MINOR 1
 
 /**
  * Built-in lexical token kinds matching gram.core.lexer.tokens.Token ordinals (0..84).

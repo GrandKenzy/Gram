@@ -19,7 +19,7 @@ from gram.core.lexer.tokens import Token
 from gram.sessions import Session
 
 ABI_MAJOR = 1
-ABI_MINOR = 0
+ABI_MINOR = 1
 ABI_VERSION = f"{ABI_MAJOR}.{ABI_MINOR}"
 CUSTOM_TOKEN_BASE = 1000
 
@@ -98,6 +98,21 @@ def _validate_and_normalize_session(session: Session) -> dict[str, Any]:
     ):
         raise ValueError(
             f"Unsupported LEXER_BLOCK_COMMENT_TOKEN={block_comment_open!r}."
+        )
+
+    ident_underscores = cfg.get(
+        "LEXER_IDENT_UNDERSCORES",
+        getattr(default_config, "LEXER_IDENT_UNDERSCORES", -1),
+    )
+    if (
+        isinstance(ident_underscores, bool)
+        or not isinstance(ident_underscores, int)
+        or ident_underscores < -2
+        or ident_underscores > 2147483647
+    ):
+        raise ValueError(
+            f"Unsupported LEXER_IDENT_UNDERSCORES={ident_underscores!r}; "
+            f"must be -1, -2, or an integer between 0 and 2147483647."
         )
 
     # 1. Extract and validate keywords
@@ -293,7 +308,7 @@ def _validate_and_normalize_session(session: Session) -> dict[str, Any]:
             bool(cfg.get("LEXER_SAVE_COMMENTS", getattr(default_config, "LEXER_SAVE_COMMENTS", True)))
         ),
         "add_error": int(bool(cfg.get("LEXER_ADD_ERROR", getattr(default_config, "LEXER_ADD_ERROR", True)))),
-        "ident_underscores": int(cfg.get("LEXER_IDENT_UNDERSCORES", getattr(default_config, "LEXER_IDENT_UNDERSCORES", -1))),
+        "ident_underscores": int(ident_underscores),
         "line_comment": comment_token,
         "block_comment_open": block_comment_open or "",
         "block_comment_close": "*/" if block_comment_open else "",

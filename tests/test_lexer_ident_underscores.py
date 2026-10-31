@@ -245,5 +245,85 @@ class TestLexerIdentUnderscores(unittest.TestCase):
             self.assertEqual(res_fail.returncode, 2, "Expected syntax error because UNDERSCORE was missing")
 
 
+    def test_ident_underscores_validation(self) -> None:
+        """Verify strict type and bounds validation (-1, -2, or 0..INT32_MAX)."""
+        session = sessions.Session("ValidationSession", "Some")
+
+        # Type errors
+        for invalid_type in (True, False, 1.5, "1", None):
+            if invalid_type is None:
+                continue  # None in Session.__init__ means default
+            with self.assertRaises(TypeError):
+                session.ident_underscores = invalid_type  # type: ignore[assignment]
+            with self.assertRaises(TypeError):
+                sessions.Session("ValSess", "Some", ident_underscores=invalid_type)  # type: ignore[arg-type]
+
+        # Value errors: outside [-2, 2147483647]
+        for invalid_val in (-3, -100, 2147483648, 4294967296):
+            with self.assertRaises(ValueError):
+                session.ident_underscores = invalid_val
+            with self.assertRaises(ValueError):
+                sessions.Session("ValSess", "Some", ident_underscores=invalid_val)
+
+        # LexerState property validation
+        from gram.core.lexer.control import LexerState
+
+        state = LexerState("")
+        with self.assertRaises(TypeError):
+            state.ident_underscores = True  # type: ignore[assignment]
+        with self.assertRaises(ValueError):
+            state.ident_underscores = -5
+        with self.assertRaises(ValueError):
+            state.ident_underscores = 2147483648
+
+        # Valid boundaries
+        for valid_val in (-2, -1, 0, 1, 100, 2147483647):
+            session.ident_underscores = valid_val
+            self.assertEqual(session.ident_underscores, valid_val)
+            state.ident_underscores = valid_val
+            self.assertEqual(state.ident_underscores, valid_val)
+
+    def test_linear_scaling_on_long_underscore_sequence(self) -> None:
+        """Verify O(n) performance (linear scaling, no O(n^2) repeated scans) on 10,000 underscores."""
+        import time
+
+        session = sessions.Session("LinearUnderscores", "Some", ident_underscores=-2)
+        session.add_keyword("kw")
+
+        # Case 1: 10,000 standalone underscores without alnum (mode -2 -> 10,000 UNDERSCORE tokens)
+        big_text = "_" * 10000
+
+        # Python backend linear check
+        t0 = time.perf_counter()
+        py_tokens = session.tokenize(big_text, "test", backend="python")
+        py_elapsed = time.perf_counter() - t0
+        self.assertEqual(len([t for t in py_tokens if t.token == Token.UNDERSCORE]), 10000)
+        self.assertLess(py_elapsed, 1.5, f"Python backend took too long ({py_elapsed:.2f}s); potential O(n^2) regression")
+
+        # Native C backend linear check (warm up compiler first)
+        _ = session.tokenize("_", "warmup", backend="c")
+        t0 = time.perf_counter()
+        c_tokens = session.tokenize(big_text, "test", backend="c")
+        c_elapsed = time.perf_counter() - t0
+        self.assertEqual(len([t for t in c_tokens if t.token == Token.UNDERSCORE]), 10000)
+        self.assertLess(c_elapsed, 0.5, f"C backend took too long ({c_elapsed:.2f}s); potential O(n^2) regression")
+
+        # Case 2: 10,000 underscores followed by an identifier (mode -2 -> single IDENT token)
+        ident_text = "_" * 10000 + "Alpha"
+        t0 = time.perf_counter()
+        py_ident_tokens = [t for t in session.tokenize(ident_text, "test", backend="python") if t.token != Token.EOF]
+        py_ident_elapsed = time.perf_counter() - t0
+        self.assertEqual(len(py_ident_tokens), 1)
+        self.assertEqual(py_ident_tokens[0].token, Token.IDENT)
+        self.assertLess(py_ident_elapsed, 1.5)
+
+        t0 = time.perf_counter()
+        c_ident_tokens = [t for t in session.tokenize(ident_text, "test", backend="c") if t.token != Token.EOF]
+        c_ident_elapsed = time.perf_counter() - t0
+        self.assertEqual(len(c_ident_tokens), 1)
+        self.assertEqual(c_ident_tokens[0].token, Token.IDENT)
+        self.assertLess(c_ident_elapsed, 0.5)
+
+
 if __name__ == "__main__":
     unittest.main()

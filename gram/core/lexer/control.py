@@ -64,6 +64,10 @@ class LexerState(Diagnostics):
         self.col: int = 0
         self.indents: list[int] = [0]
         self.comments: list[TokenType] = []
+        self._ident_underscores_override: int | None = None
+        self._cached_u_line: int = -1
+        self._cached_u_end: int = -1
+        self._cached_u_has_alnum: bool = False
 
         self._load_source(source)
 
@@ -150,6 +154,8 @@ class LexerState(Diagnostics):
     @property
     def ident_underscores(self) -> int:
         """Return the maximum leading underscores allowed in an identifier (-1 = unlimited, -2 = unlimited if followed by char, 0 = none, k >= 1 = at most k)."""
+        if self._ident_underscores_override is not None:
+            return self._ident_underscores_override
         val = self.get_config("LEXER_IDENT_UNDERSCORES", -1)
         try:
             return int(val)
@@ -158,6 +164,11 @@ class LexerState(Diagnostics):
 
     @ident_underscores.setter
     def ident_underscores(self, value: int) -> None:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"ident_underscores must be an int, got {type(value).__name__}")
+        if value < -2 or value > 2147483647:
+            raise ValueError(f"ident_underscores must be -1, -2, or an integer in [0, 2147483647], got {value}")
+        self._ident_underscores_override = int(value)
         if self.session is not None:
             self.session.config["LEXER_IDENT_UNDERSCORES"] = int(value)
 

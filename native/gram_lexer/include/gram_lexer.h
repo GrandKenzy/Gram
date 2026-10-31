@@ -178,6 +178,9 @@ typedef struct {
     uint32_t pending_dedent_line;
     uint32_t pending_dedent_col;
     uint32_t pending_dedent_offset;
+    uint32_t cached_u_line;
+    uint32_t cached_u_end;
+    uint8_t cached_u_has_alnum;
 } GramLexer;
 
 /**

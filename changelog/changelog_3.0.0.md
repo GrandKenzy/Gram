@@ -23,6 +23,9 @@
 - Indentation policies for `spaces`, `tabs`, and `mixed` with configurable `LEXER_TAB_WIDTH`, alongside proper reference cleanup when clearing a `WordGroup`.
 - Synchronized boolean classification, string documentation contracts, and `$len` formatting in `TokenType.formatter()`.
 - Configurable identifier leading underscore support (`LEXER_IDENT_UNDERSCORES` / `ident_underscores`): strictly limits leading underscores at the beginning of identifiers while keeping internal and trailing underscores (`A______B`, `D____________`) completely agnostic and intact; supports `-1` (unlimited, default), `-2` (unlimited only if followed by alphanumeric characters; standalone underscores emit `Token.UNDERSCORE`), `0` (no leading underscores permitted in identifiers; all leading or standalone underscores emit `Token.UNDERSCORE`), and `k >= 1` (at most `k` leading underscores in identifier; excess leading underscores emit individual `Token.UNDERSCORE` tokens), with full end-to-end parity across Python, C lexer backend, and C AOT compiler.
+- Linear single-pass lookahead cache for underscores (`_cached_u_line`, `_cached_u_end`, `_cached_u_has_alnum` in Python and C) eliminating $O(n^2)$ re-scanning penalties on long contiguous runs of underscores (tested up to 10,000+ underscores running in linear $O(n)$ time in both backends).
+- Strict type validation and 32-bit signed integer range bounds (`-2 <= ident_underscores <= 2147483647`) enforced in `Session`, `LexerState`, and `tools/export_lexer_tables.py`, preventing silent ctypes truncation or negative wrap-around in native C headers.
+- C Lexer ABI bumped to `1.1` (`GRAM_LEXER_ABI_MAJOR = 1`, `GRAM_LEXER_ABI_MINOR = 1`) reflecting the configuration struct update in `GramLexerConfig`.
 
 ## Parser and AST
 

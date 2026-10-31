@@ -84,7 +84,7 @@ print("Tablas exportadas. Hash de contenido:", manifest["content_hash"])
 - `gram_lexer_groups.c`: Matrices estáticas de pertenencia para grupos semánticos de palabras clave.
 - `gram_lexer_symbols.c`: Tablas ordenadas de operadores y símbolos para coincidencia maximal munch.
 - `gram_lexer_codes.h`: Identificadores numéricos para tokens y códigos de diagnóstico.
-- `gram_lexer_manifest.json`: Manifiesto de verificación con especificaciones de ABI 1.0 y hashes SHA-256.
+- `gram_lexer_manifest.json`: Manifiesto de verificación con especificaciones de ABI 1.1 y hashes SHA-256.
 
 ---
 

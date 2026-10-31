@@ -101,7 +101,7 @@ class Session:
         self.group: tuple[tuple[str, words.WordGroup], ...] | None = None
         self.config: dict[str, Any] = _session_config()
         if ident_underscores is not None:
-            self.config["LEXER_IDENT_UNDERSCORES"] = int(ident_underscores)
+            self.ident_underscores = ident_underscores
         self.last_config: dict[str, Any] | None = None
         self.symbols = tokens._MapSymbolsDict(tokens.MAP_SYMBOLS)
         self.symbol_order: list[str] = sorted(self.symbols, key=len, reverse=True)
@@ -128,6 +128,10 @@ class Session:
 
     @ident_underscores.setter
     def ident_underscores(self, value: int) -> None:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"ident_underscores must be an int, got {type(value).__name__}")
+        if value < -2 or value > 2147483647:
+            raise ValueError(f"ident_underscores must be -1, -2, or an integer in [0, 2147483647], got {value}")
         self.config["LEXER_IDENT_UNDERSCORES"] = int(value)
 
     def add_group(

@@ -29,14 +29,20 @@ def _should_start_word_on_underscore(lexer: LexerState) -> bool:
     if mode == -1:
         return True
 
-    line = lexer.currline
-    start = lexer.col
-    i = start
-    while i < len(line) and line[i] == "_":
-        i += 1
-    u_count = i - start
-
-    has_alnum_after = i < len(line) and (line[i].isalnum() or line[i].isalpha())
+    col = lexer.col
+    if getattr(lexer, "_cached_u_line", -1) == lexer.line and col < getattr(lexer, "_cached_u_end", -1):
+        u_count = lexer._cached_u_end - col
+        has_alnum_after = lexer._cached_u_has_alnum
+    else:
+        line = lexer.currline
+        i = col
+        while i < len(line) and line[i] == "_":
+            i += 1
+        has_alnum_after = i < len(line) and (line[i].isalnum() or line[i].isalpha())
+        lexer._cached_u_line = lexer.line
+        lexer._cached_u_end = i
+        lexer._cached_u_has_alnum = has_alnum_after
+        u_count = i - col
 
     if mode == -2:
         return has_alnum_after

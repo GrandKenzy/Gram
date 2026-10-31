@@ -84,7 +84,7 @@ print("Tables exported. Content hash:", manifest["content_hash"])
 - `gram_lexer_groups.c`: Static membership matrices for semantic keyword groups.
 - `gram_lexer_symbols.c`: Sorted symbol tables for maximal munch matching.
 - `gram_lexer_codes.h`: Numeric identifiers for tokens and diagnostic codes.
-- `gram_lexer_manifest.json`: Verification manifest containing ABI 1.0 specifications and SHA-256 hashes.
+- `gram_lexer_manifest.json`: Verification manifest containing ABI 1.1 specifications and SHA-256 hashes.
 
 ---
 
