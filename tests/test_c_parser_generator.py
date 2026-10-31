@@ -15,11 +15,14 @@ from gram import sessions
 from gram.core.combinators import (
     Alt,
     Combinator,
+    Convert,
     DualExpr,
     Enclosed,
+    Literal,
     Many,
     MatchGroup,
     MatchKeyword,
+    MatchSeqSymbol,
     MatchToken,
     Opt,
     Ref,
@@ -28,6 +31,7 @@ from gram.core.combinators import (
     Separator,
     Seq,
     Some,
+    Until,
 )
 from gram.core.lexer.tokens import Token
 from gram.core.parser.c_generator import (
@@ -511,6 +515,263 @@ class TestCDriverAndIrEndToEnd(unittest.TestCase):
         dangling = bytearray(data)
         struct.pack_into("<I", dangling, victim + 32, header["node_count"] + 5)
         rejected(bytes(dangling), "dangling")
+
+
+class TestCCompilerHardening(unittest.TestCase):
+    """Regression tests verifying closed combinator verification, MatchGroup filters, and Literal matching."""
+
+    def test_grammar_fingerprint_changes_when_rule_body_changes(self) -> None:
+        class R1(RuleItem):
+            rule = MatchKeyword("foo")
+
+        class R2(RuleItem):
+            rule = MatchKeyword("bar")
+
+        s1 = sessions.Session("test_fp1", "Many")
+        s1.entrypoint = R1
+        s2 = sessions.Session("test_fp2", "Many")
+        s2.entrypoint = R2
+
+        with tempfile.TemporaryDirectory() as td1, tempfile.TemporaryDirectory() as td2:
+            m1 = export_session_c_parser(s1, td1, emit_driver=True)
+            m2 = export_session_c_parser(s2, td2, emit_driver=True)
+            self.assertNotEqual(m1["grammar_id"], m2["grammar_id"])
+
+    def test_convert_combinator_is_rejected_at_export(self) -> None:
+        class ConvRule(RuleItem):
+            rule = Convert("ident", Token.IDENT)
+
+        s = sessions.Session("test_conv", "Many")
+        s.entrypoint = ConvRule
+
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(GrammarCompilerError) as ctx:
+                export_session_c_parser(s, td)
+            self.assertEqual(ctx.exception.name, "NonCompilableCombinator")
+            self.assertIn("Convert", str(ctx.exception.caution))
+
+    def test_dynamic_regex_in_match_seq_symbol_is_rejected(self) -> None:
+        class RegexRule(RuleItem):
+            rule = MatchSeqSymbol(regex=r"[a-z]+[0-9]*")
+
+        s = sessions.Session("test_dyn_sym", "Many")
+        s.entrypoint = RegexRule
+
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(GrammarCompilerError) as ctx:
+                export_session_c_parser(s, td)
+            self.assertEqual(ctx.exception.name, "DynamicRegexInSymbolUnsupported")
+
+    def test_literal_and_match_group_and_symbol_in_c(self) -> None:
+        if shutil.which("gcc") is None:
+            self.skipTest("GCC compiler not found in PATH")
+
+        s = sessions.Session("test_hardening_c", "Many")
+        for kw in ("int", "float", "void", "bool"):
+            s.add_keyword(kw)
+        s.add_group("$TYPES", ["int", "float", "void", "bool"])
+        s.add_keyword("let")
+
+        # Allow filter: only 'int' and 'float' allowed
+        class TypeAllowed(RuleItem):
+            rule = MatchGroup("$TYPES", values=["int", "float"], behavior_values="allow")
+
+        # Wildcard literal and exact literal
+        class LitRule(RuleItem):
+            rule = Seq(MatchKeyword("let"), Literal("42"), Literal())
+
+        class SymRule(RuleItem):
+            rule = MatchSeqSymbol(symbols=["+=", "-="])
+
+        class CaseSymRule(RuleItem):
+            rule = MatchSeqSymbol(pattern="AND", is_pattern=False, case_sensitive=False)
+
+        class RootRule(RuleItem):
+            rule = Alt(Ref(TypeAllowed), Ref(LitRule), Ref(SymRule), Ref(CaseSymRule))
+
+        s.entrypoint = RootRule
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            out_dir = Path(td)
+            export_session_c_parser(s, out_dir, emit_driver=True, emit_cli=True)
+
+            proj_root = Path(__file__).resolve().parent.parent
+            native_inc = proj_root / "native" / "gram_lexer" / "include"
+            native_src = proj_root / "native" / "gram_lexer" / "src"
+
+            sources = [
+                "gram_ast.c", "gram_parser.c", "gram_ir.c", "gram_driver.c",
+                "gram_lexer_keywords.c", "gram_lexer_symbols.c", "gram_lexer_groups.c",
+            ]
+            common = [str(out_dir / name) for name in sources] + [
+                str(native_src / name)
+                for name in (
+                    "lexer.c", "indentation.c", "numbers.c", "strings.c",
+                    "symbols.c", "utf8.c", "diagnostics_lite.c",
+                )
+            ]
+            cli_exe = out_dir / "gram_cli.exe"
+            flags = [
+                "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
+                str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
+            ]
+            subprocess.run(flags, check=True, capture_output=True, text=True)
+
+            def check_code(code: str) -> int:
+                fpath = out_dir / "input.src"
+                fpath.write_text(code, encoding="utf-8")
+                res = subprocess.run([str(cli_exe), "check", str(fpath)], capture_output=True, text=True)
+                return res.returncode
+
+            # 1. MatchGroup allow/deny:
+            self.assertEqual(check_code("int"), 0, "int should be accepted in allow filter")
+            self.assertEqual(check_code("float"), 0, "float should be accepted in allow filter")
+            self.assertEqual(check_code("void"), 2, "void must be rejected by allow filter")
+            self.assertEqual(check_code("bool"), 2, "bool must be rejected by allow filter")
+
+            # 2. Literal exact and wildcard:
+            # 'let' (keyword) + '42' (exact literal) + 'foo' (wildcard non-keyword literal)
+            self.assertEqual(check_code("let 42 foo"), 0, "let 42 foo should be accepted")
+            self.assertEqual(check_code("let 99 foo"), 2, "let 99 should fail exact match for 42")
+            # Wildcard Literal cannot match a keyword:
+            self.assertEqual(check_code("let 42 let"), 2, "wildcard Literal must reject KEYWORD 'let'")
+
+            # 3. MatchSeqSymbol symbols candidate list:
+            self.assertEqual(check_code("+="), 0, "+= should match candidate list")
+            self.assertEqual(check_code("-="), 0, "-= should match candidate list")
+            self.assertEqual(check_code("*="), 2, "*= not in candidates, should fail")
+
+            # 4. MatchSeqSymbol case-insensitive matching:
+            self.assertEqual(check_code("AND"), 0, "AND exact should match")
+            self.assertEqual(check_code("and"), 0, "and lowercase should match case-insensitively")
+            self.assertEqual(check_code("And"), 0, "And titlecase should match case-insensitively")
+
+    def test_until_combinator_in_c(self) -> None:
+        if shutil.which("gcc") is None:
+            self.skipTest("GCC compiler not found in PATH")
+
+        s = sessions.Session("test_until_c", "Many")
+        for kw in ("block", "cblock", "raw", "capped", "end"):
+            s.add_keyword(kw)
+
+        # 1. BlockUntil: consume_target=False (target is consumed by trailing MatchKeyword('end'))
+        class BlockUntil(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("block"),
+                Until(MatchKeyword("end"), consume_target=False),
+                MatchKeyword("end"),
+            )
+            rule = entrypoint
+
+        # 2. BlockConsumeTarget: consume_target=True
+        class BlockConsumeTarget(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("cblock"),
+                Until(MatchKeyword("end"), consume_target=True),
+            )
+            rule = entrypoint
+
+        # 3. CompoundTargetUntil: Seq(COLON, end)
+        class CompoundTargetUntil(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("raw"),
+                Until(Seq(MatchToken(Token.COLON), MatchKeyword("end")), consume_target=True),
+            )
+            rule = entrypoint
+
+        # 4. MaxTokensUntil: capped at 2 tokens
+        class MaxTokensUntil(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("capped"),
+                Until(MatchKeyword("end"), max_tokens=2, consume_target=True),
+            )
+            rule = entrypoint
+
+        class RootUntilRule(RuleItem):
+            nodeable = True
+            entrypoint = Alt(
+                Ref(BlockUntil),
+                Ref(BlockConsumeTarget),
+                Ref(CompoundTargetUntil),
+                Ref(MaxTokensUntil),
+            )
+            rule = entrypoint
+
+        s.entrypoint = RootUntilRule
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            out_dir = Path(td)
+            export_session_c_parser(s, out_dir, emit_driver=True, emit_cli=True)
+
+            proj_root = Path(__file__).resolve().parent.parent
+            native_inc = proj_root / "native" / "gram_lexer" / "include"
+            native_src = proj_root / "native" / "gram_lexer" / "src"
+
+            sources = [
+                "gram_ast.c", "gram_parser.c", "gram_ir.c", "gram_driver.c",
+                "gram_lexer_keywords.c", "gram_lexer_symbols.c", "gram_lexer_groups.c",
+            ]
+            common = [str(out_dir / name) for name in sources] + [
+                str(native_src / name)
+                for name in (
+                    "lexer.c", "indentation.c", "numbers.c", "strings.c",
+                    "symbols.c", "utf8.c", "diagnostics_lite.c",
+                )
+            ]
+            cli_exe = out_dir / "gram_cli.exe"
+            flags = [
+                "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
+                str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
+            ]
+            subprocess.run(flags, check=True, capture_output=True, text=True)
+
+            def check_code(code: str) -> int:
+                fpath = out_dir / "input.src"
+                fpath.write_text(code, encoding="utf-8")
+                res = subprocess.run([str(cli_exe), "check", str(fpath)], capture_output=True, text=True)
+                return res.returncode
+
+            # consume_target=False:
+            self.assertEqual(check_code("block a b c end"), 0, "block with tokens should match")
+            self.assertEqual(check_code("block end"), 0, "immediate target (0 items) should match")
+            self.assertEqual(check_code("block a b c"), 2, "missing end delimiter must fail and rollback")
+
+            # consume_target=True:
+            self.assertEqual(check_code("cblock x y z end"), 0, "cblock with consume_target=True should match")
+            self.assertEqual(check_code("cblock end"), 0, "cblock immediate target should match")
+            self.assertEqual(check_code("cblock x y z"), 2, "cblock without end must fail")
+
+            # Compound multi-token target Seq(COLON, end):
+            self.assertEqual(check_code("raw item1 item2 : end"), 0, "compound target : end should match")
+            self.assertEqual(check_code("raw item1 : item2 end"), 2, "partial target match must not terminate early")
+
+            # max_tokens cap:
+            self.assertEqual(check_code("capped a b end"), 0, "capped with 2 items <= max_tokens(2) must pass")
+            self.assertEqual(check_code("capped a b c end"), 2, "capped with 3 items > max_tokens(2) must fail")
+
+            # IR inspection: check that Until produces an ARRAY node with the collected children
+            fpath = out_dir / "test_ir.src"
+            gir_path = out_dir / "test_ir.gir"
+            fpath.write_text("block a 123 end", encoding="utf-8")
+            compile_res = subprocess.run(
+                [str(cli_exe), "compile", str(fpath), "-o", str(gir_path)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(compile_res.returncode, 0, compile_res.stderr)
+            self.assertTrue(gir_path.exists())
+
+            header, nodes, strings = decode_ir(gir_path.read_bytes())
+            array_nodes = [n for n in nodes if strings[n["symbol"]] == b"ARRAY"]
+            self.assertGreaterEqual(len(array_nodes), 1)
+            # The Until array node should have 2 children ('a' and '123')
+            until_array = array_nodes[-1]
+            self.assertEqual(until_array["child_count"], 2)
 
 
 if __name__ == "__main__":

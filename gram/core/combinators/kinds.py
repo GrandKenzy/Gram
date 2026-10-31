@@ -85,8 +85,8 @@ COMPILABLE_COMBINATOR_KINDS: frozenset[CombinatorKind] = frozenset(
         CombinatorKind.EXPR_DUAL,
         CombinatorKind.EXPR_ARITHMETIC,
         CombinatorKind.EXPR_CONDITIONAL,
-        CombinatorKind.CONVERT,
         CombinatorKind.SEPARATOR,
+        CombinatorKind.UNTIL,
     }
 )
 

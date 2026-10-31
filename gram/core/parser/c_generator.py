@@ -39,7 +39,7 @@ from gram.core.combinators.expressions import (
     ConditionalExpr,
     DualExpr,
 )
-from gram.core.combinators.item import Item, Literal
+from gram.core.combinators.item import Item, Literal, _ANY_LITERAL
 from gram.core.combinators.kinds import (
     CombinatorKind,
     get_combinator_kind,
@@ -60,6 +60,7 @@ from gram.core.combinators.same_line import SameLine
 from gram.core.combinators.separator import Separator
 from gram.core.combinators.sequence import Seq
 from gram.core.combinators.some import Some
+from gram.core.combinators.until import Until
 from gram.core.lexer.tokens import Token
 
 if TYPE_CHECKING:
@@ -107,6 +108,8 @@ class CParserGenerator:
         self.expr_combs: list[BaseExpr] = []
         self._visited_combs: set[int] = set()
         self.groups_used: set[str] = set()
+        self.group_matchers: dict[tuple[str, str, tuple[str, ...]], tuple[str, list[str]]] = {}
+        self.symbol_matchers: dict[tuple[tuple[str, ...], bool], tuple[str, list[str], bool]] = {}
 
     def crawl(self) -> None:
         """Crawl and validate the entire grammar graph starting from entrypoint."""
@@ -143,6 +146,41 @@ class CParserGenerator:
         self.rule_names[rule_cls] = _sanitize_c_ident(rule_cls.__name__)
         return rid
 
+    def _extract_symbol_candidates(self, comb: MatchSeqSymbol) -> tuple[list[str], bool]:
+        case_sens = getattr(comb, "case_sensitive", False)
+        if getattr(comb, "symbols", None):
+            return list(comb.symbols), case_sens
+        if not getattr(comb, "is_pattern", True) and getattr(comb, "pattern", None) is not None:
+            return [str(comb.pattern)], case_sens
+        pat = getattr(comb, "pattern", None) or getattr(comb, "symbol", None) or ""
+        if not pat:
+            return [""], case_sens
+        parts = pat.split("|")
+        extracted: list[str] = []
+        is_literal_union = True
+        for part in parts:
+            try:
+                unescaped = re.sub(r"\\([\\^$*+?{}[\]|().])", r"\1", part)
+                if any(ch in unescaped for ch in "^$*+?{}[]."):
+                    is_literal_union = False
+                    break
+                extracted.append(unescaped)
+            except Exception:
+                is_literal_union = False
+                break
+        if not is_literal_union or not extracted:
+            raise GrammarCompilerError(
+                "DynamicRegexInSymbolUnsupported",
+                errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                f"MatchSeqSymbol con patrón regex dinámico {pat!r} no es compilable a C AOT.",
+                "Utilice cadenas literales fijas, una lista de símbolos en symbols=[...], o tokens léxicos dedicados.",
+            )
+        return extracted, case_sens
+
+    def _get_symbol_key(self, comb: MatchSeqSymbol) -> tuple[tuple[str, ...], bool]:
+        cands, case_sens = self._extract_symbol_candidates(comb)
+        return (tuple(sorted(cands)), case_sens)
+
     def _crawl_combinator(self, comb: Combinator, context_path: str) -> None:
         if comb is None:
             return
@@ -164,6 +202,26 @@ class CParserGenerator:
 
         if isinstance(comb, MatchGroup):
             self.groups_used.add(comb.group)
+            vals = tuple(sorted(comb.values)) if getattr(comb, "values", None) else ()
+            beh = getattr(comb, "behavior_values", "none") or "none"
+            key = (comb.group, beh, vals)
+            if key not in self.group_matchers:
+                all_kws = self._get_group_keywords(comb.group)
+                if beh == "allow":
+                    allowed = [kw for kw in all_kws if kw in comb.values]
+                elif beh == "deny":
+                    allowed = [kw for kw in all_kws if kw not in comb.values]
+                else:
+                    allowed = list(all_kws)
+                fn_name = f"gram_match_group_{_sanitize_c_ident(comb.group)}_{len(self.group_matchers)}"
+                self.group_matchers[key] = (fn_name, sorted(allowed))
+
+        elif isinstance(comb, MatchSeqSymbol):
+            cands, case_sens = self._extract_symbol_candidates(comb)
+            key = (tuple(sorted(cands)), case_sens)
+            if key not in self.symbol_matchers:
+                fn_name = f"gram_match_seq_sym_{len(self.symbol_matchers)}"
+                self.symbol_matchers[key] = (fn_name, cands, case_sens)
 
         # 2. Recursive graph exploration
         if isinstance(comb, Ref):
@@ -186,6 +244,9 @@ class CParserGenerator:
             for i, v in enumerate(comb.values):
                 self._crawl_combinator(v, f"{context_path}.values[{i}]")
             self._crawl_combinator(comb.sep, f"{context_path}.sep")
+        elif isinstance(comb, Until):
+            if getattr(comb, "target", None) is not None:
+                self._crawl_combinator(comb.target, f"{context_path}.Until.target")
         elif isinstance(comb, BaseExpr):
             if cid not in self.expr_comb_ids:
                 eid = len(self.expr_combs)
@@ -268,13 +329,14 @@ class CParserGenerator:
             "    GramAstUndo *undo;      /* Attachment log enabling transactional rollback */",
             "    size_t undo_count;",
             "    size_t undo_capacity;",
+            "    bool has_error;         /* True if any memory allocation or realloc failed (OOM) */",
             "} GramAstArena;",
             "",
             "bool gram_ast_arena_init(GramAstArena *arena, size_t initial_cap);",
             "void gram_ast_arena_reset(GramAstArena *arena);",
             "void gram_ast_arena_free(GramAstArena *arena);",
             "uint32_t gram_ast_arena_alloc(GramAstArena *arena, uint16_t kind, uint16_t rule_id, uint32_t tok_start);",
-            "void gram_ast_add_child(GramAstArena *arena, uint32_t parent_idx, uint32_t child_idx);",
+            "bool gram_ast_add_child(GramAstArena *arena, uint32_t parent_idx, uint32_t child_idx);",
             "const char* gram_ast_kind_name(GramAstKind kind);",
             "",
             "#ifdef __cplusplus",
@@ -314,6 +376,7 @@ class CParserGenerator:
             '    arena->capacity = initial_cap;',
             '    arena->count = 1; /* Index 0 is reserved as null/sentinel */',
             '    arena->undo_count = 0;',
+            '    arena->has_error = false;',
             '    memset(&arena->nodes[0], 0, sizeof(GramAstNode));',
             '    return true;',
             '}',
@@ -322,6 +385,7 @@ class CParserGenerator:
             '    if (!arena || !arena->nodes) return;',
             '    arena->count = 1;',
             '    arena->undo_count = 0;',
+            '    arena->has_error = false;',
             '}',
             '',
             'void gram_ast_arena_free(GramAstArena *arena) {',
@@ -334,14 +398,18 @@ class CParserGenerator:
             '    arena->capacity = 0;',
             '    arena->undo_count = 0;',
             '    arena->undo_capacity = 0;',
+            '    arena->has_error = false;',
             '}',
             '',
             'uint32_t gram_ast_arena_alloc(GramAstArena *arena, uint16_t kind, uint16_t rule_id, uint32_t tok_start) {',
-            '    if (!arena || !arena->nodes) return 0;',
+            '    if (!arena || !arena->nodes || arena->has_error) return 0;',
             '    if (arena->count >= arena->capacity) {',
             '        size_t new_cap = arena->capacity * 2;',
             '        GramAstNode *new_nodes = (GramAstNode*)realloc(arena->nodes, new_cap * sizeof(GramAstNode));',
-            '        if (!new_nodes) return 0;',
+            '        if (!new_nodes) {',
+            '            arena->has_error = true;',
+            '            return 0;',
+            '        }',
             '        arena->nodes = new_nodes;',
             '        arena->capacity = new_cap;',
             '    }',
@@ -358,14 +426,18 @@ class CParserGenerator:
             '}',
             '',
             '/* O(1) append. Every attachment is logged so gram_parser_restore can unlink it exactly. */',
-            'void gram_ast_add_child(GramAstArena *arena, uint32_t parent_idx, uint32_t child_idx) {',
-            '    if (!arena || !parent_idx || !child_idx || parent_idx == child_idx) return;',
-            '    if (parent_idx >= arena->count || child_idx >= arena->count) return;',
-            '    if (arena->nodes[parent_idx].last_child == child_idx) return;',
+            'bool gram_ast_add_child(GramAstArena *arena, uint32_t parent_idx, uint32_t child_idx) {',
+            '    if (!arena || arena->has_error) return false;',
+            '    if (!parent_idx || !child_idx || parent_idx == child_idx) return false;',
+            '    if (parent_idx >= arena->count || child_idx >= arena->count) return false;',
+            '    if (arena->nodes[parent_idx].last_child == child_idx) return true;',
             '    if (arena->undo_count == arena->undo_capacity) {',
             '        size_t new_cap = arena->undo_capacity * 2;',
             '        GramAstUndo *grown = (GramAstUndo*)realloc(arena->undo, new_cap * sizeof(GramAstUndo));',
-            '        if (!grown) return;',
+            '        if (!grown) {',
+            '            arena->has_error = true;',
+            '            return false;',
+            '        }',
             '        arena->undo = grown;',
             '        arena->undo_capacity = new_cap;',
             '    }',
@@ -380,6 +452,7 @@ class CParserGenerator:
             '    }',
             '    parent->last_child = child_idx;',
             '    arena->nodes[child_idx].next_sibling = 0;',
+            '    return true;',
             '}',
             '',
             'const char* gram_ast_kind_name(GramAstKind kind) {',
@@ -495,6 +568,7 @@ class CParserGenerator:
             '#include "gram_lexer_tokens.h"',
             '#include <string.h>',
             '#include <stdlib.h>',
+            '#include <ctype.h>',
             '',
             'void gram_parser_init(GramParser *p, const GramToken *tokens, size_t count, const char *source, size_t source_len, GramAstArena *arena, GramDiagSink diag) {',
             '    p->tokens = tokens;',
@@ -529,16 +603,25 @@ class CParserGenerator:
             '    return NULL;',
             '}',
             '',
+            'static inline int gram_memcasecmp(const char *a, const char *b, size_t n) {',
+            '    for (size_t i = 0; i < n; i++) {',
+            '        unsigned char ca = (unsigned char)a[i];',
+            '        unsigned char cb = (unsigned char)b[i];',
+            '        int diff = tolower(ca) - tolower(cb);',
+            '        if (diff != 0) return diff;',
+            '    }',
+            '    return 0;',
+            '}',
+            '',
             'static inline bool gram_match_token_kind(GramParser *p, uint32_t expected_kind, uint32_t *out_node) {',
             '    gram_parser_skip_whitespace(p);',
             '    if (p->cursor < p->token_count && p->tokens[p->cursor].kind == expected_kind) {',
             '        uint32_t tok_idx = (uint32_t)p->cursor++;',
             '        if (out_node && p->arena) {',
             '            uint32_t n = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_TOKEN, 0, tok_idx);',
-            '            if (n) {',
-            '                p->arena->nodes[n].token_count = 1;',
-            '                *out_node = n;',
-            '            }',
+            '            if (!n) return false;',
+            '            p->arena->nodes[n].token_count = 1;',
+            '            *out_node = n;',
             '        }',
             '        return true;',
             '    }',
@@ -553,10 +636,9 @@ class CParserGenerator:
             '            uint32_t tok_idx = (uint32_t)p->cursor++;',
             '            if (out_node && p->arena) {',
             '                uint32_t n = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_KEYWORD, 0, tok_idx);',
-            '                if (n) {',
-            '                    p->arena->nodes[n].token_count = 1;',
-            '                    *out_node = n;',
-            '                }',
+            '                if (!n) return false;',
+            '                p->arena->nodes[n].token_count = 1;',
+            '                *out_node = n;',
             '            }',
             '            return true;',
             '        }',
@@ -572,10 +654,9 @@ class CParserGenerator:
             '            uint32_t tok_idx = (uint32_t)p->cursor++;',
             '            if (out_node && p->arena) {',
             '                uint32_t n = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_SYMBOL, 0, tok_idx);',
-            '                if (n) {',
-            '                    p->arena->nodes[n].token_count = 1;',
-            '                    *out_node = n;',
-            '                }',
+            '                if (!n) return false;',
+            '                p->arena->nodes[n].token_count = 1;',
+            '                *out_node = n;',
             '            }',
             '            return true;',
             '        }',
@@ -583,13 +664,49 @@ class CParserGenerator:
             '    return false;',
             '}',
             '',
-            '/* Forward declarations and matching routines for keyword groups */',
+            'static inline bool gram_match_literal_any(GramParser *p, uint32_t *out_node) {',
+            '    gram_parser_skip_whitespace(p);',
+            '    if (p->cursor < p->token_count) {',
+            '        const GramToken *tok = &p->tokens[p->cursor];',
+            '        if (tok->kind != GRAM_TOKEN_KEYWORD && tok->kind != GRAM_TOKEN_EOF) {',
+            '            uint32_t tok_idx = (uint32_t)p->cursor++;',
+            '            if (out_node && p->arena) {',
+            '                uint32_t n = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_LITERAL, 0, tok_idx);',
+            '                if (!n) return false;',
+            '                p->arena->nodes[n].token_count = 1;',
+            '                *out_node = n;',
+            '            }',
+            '            return true;',
+            '        }',
+            '    }',
+            '    return false;',
+            '}',
+            '',
+            'static inline bool gram_match_literal_str(GramParser *p, const char *val, size_t val_len, uint32_t *out_node) {',
+            '    gram_parser_skip_whitespace(p);',
+            '    if (p->cursor < p->token_count) {',
+            '        const GramToken *tok = &p->tokens[p->cursor];',
+            '        if (tok->kind != GRAM_TOKEN_KEYWORD && tok->kind != GRAM_TOKEN_EOF && tok->length == val_len) {',
+            '            if (memcmp(p->source + tok->start, val, val_len) == 0) {',
+            '                uint32_t tok_idx = (uint32_t)p->cursor++;',
+            '                if (out_node && p->arena) {',
+            '                    uint32_t n = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_LITERAL, 0, tok_idx);',
+            '                    if (!n) return false;',
+            '                    p->arena->nodes[n].token_count = 1;',
+            '                    *out_node = n;',
+            '                }',
+            '                return true;',
+            '            }',
+            '        }',
+            '    }',
+            '    return false;',
+            '}',
+            '',
+            '/* Forward declarations and matching routines for keyword groups and symbol sequences */',
         ]
 
-        for grp_name in sorted(self.groups_used):
-            gident = _sanitize_c_ident(grp_name)
-            kws = self._get_group_keywords(grp_name)
-            lines.append(f"static inline bool gram_match_group_{gident}(GramParser *p, uint32_t *out_node) {{")
+        for (grp_name, beh, vals), (fn_name, allowed) in sorted(self.group_matchers.items()):
+            lines.append(f"static inline bool {fn_name}(GramParser *p, uint32_t *out_node) {{")
             lines.append("    gram_parser_skip_whitespace(p);")
             lines.append("    if (p->cursor >= p->token_count) return false;")
             lines.append("    const GramToken *tok = &p->tokens[p->cursor];")
@@ -597,13 +714,41 @@ class CParserGenerator:
             lines.append("    const char *kw = p->source + tok->start;")
             lines.append("    size_t len = tok->length;")
             lines.append("    bool matched = false;")
-            for kw in kws:
-                lines.append(f'    if (!matched && len == {len(kw)}u && memcmp(kw, "{kw}", {len(kw)}u) == 0) matched = true;')
+            for kw in allowed:
+                slen = len(kw.encode("utf-8"))
+                lines.append(f'    if (!matched && len == {slen}u && memcmp(kw, "{kw}", {slen}u) == 0) matched = true;')
             lines.append("    if (matched) {")
             lines.append("        uint32_t tok_idx = (uint32_t)p->cursor++;")
             lines.append("        if (out_node && p->arena) {")
             lines.append("            uint32_t n = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_GROUP, 0, tok_idx);")
-            lines.append("            if (n) { p->arena->nodes[n].token_count = 1; *out_node = n; }")
+            lines.append("            if (!n) return false;")
+            lines.append("            p->arena->nodes[n].token_count = 1; *out_node = n;")
+            lines.append("        }")
+            lines.append("        return true;")
+            lines.append("    }")
+            lines.append("    return false;")
+            lines.append("}")
+            lines.append("")
+
+        for (cands_tuple, case_sens), (fn_name, cands, _) in sorted(self.symbol_matchers.items()):
+            cmp_fn = "memcmp" if case_sens else "gram_memcasecmp"
+            lines.append(f"static inline bool {fn_name}(GramParser *p, uint32_t *out_node) {{")
+            lines.append("    gram_parser_skip_whitespace(p);")
+            lines.append("    if (p->cursor >= p->token_count) return false;")
+            lines.append("    const GramToken *tok = &p->tokens[p->cursor];")
+            lines.append("    const char *src = p->source + tok->start;")
+            lines.append("    size_t len = tok->length;")
+            lines.append("    bool matched = false;")
+            for sym in cands:
+                esc_sym = sym.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+                slen = len(sym.encode("utf-8"))
+                lines.append(f'    if (!matched && len == {slen}u && {cmp_fn}(src, "{esc_sym}", {slen}u) == 0) matched = true;')
+            lines.append("    if (matched) {")
+            lines.append("        uint32_t tok_idx = (uint32_t)p->cursor++;")
+            lines.append("        if (out_node && p->arena) {")
+            lines.append("            uint32_t n = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_SYMBOL, 0, tok_idx);")
+            lines.append("            if (!n) return false;")
+            lines.append("            p->arena->nodes[n].token_count = 1; *out_node = n;")
             lines.append("        }")
             lines.append("        return true;")
             lines.append("    }")
@@ -633,6 +778,7 @@ class CParserGenerator:
             lines.append("    bool ok = true;")
             if nodeable:
                 lines.append(f"    uint32_t rule_ast = gram_ast_arena_alloc(p->arena, GRAM_AST_RULE_{rname.upper()}, {rid}, start_tok);")
+                lines.append("    if (p->arena && !rule_ast) { gram_parser_restore(p, cp); return false; }")
                 lines.append("    uint32_t *child_target = &rule_ast;")
             else:
                 lines.append("    uint32_t *child_target = out_node;")
@@ -665,6 +811,7 @@ class CParserGenerator:
         lines.append("    uint32_t root_node = 0;")
         lines.append("    if (p->arena) {")
         lines.append("        root_node = gram_ast_arena_alloc(p->arena, GRAM_AST_ARRAY, 0, 0);")
+        lines.append("        if (!root_node) return false;")
         lines.append("    }")
 
         mode = getattr(self.session, "mode", "Single")
@@ -1005,9 +1152,22 @@ class CParserGenerator:
         if isinstance(comb, MatchKeyword):
             kw = comb.keyword
             return f'gram_match_keyword_str(p, "{kw}", {len(kw)}u, {out_node_expr})'
+        if isinstance(comb, MatchGroup):
+            vals = tuple(sorted(comb.values)) if getattr(comb, "values", None) else ()
+            beh = getattr(comb, "behavior_values", "none") or "none"
+            key = (comb.group, beh, vals)
+            fn_name = self.group_matchers[key][0]
+            return f"{fn_name}(p, {out_node_expr})"
         if isinstance(comb, MatchSeqSymbol):
-            sym = getattr(comb, "pattern", None) or getattr(comb, "symbol", None) or ""
-            return f'gram_match_symbol_str(p, "{sym}", {len(sym)}u, {out_node_expr})'
+            key = self._get_symbol_key(comb)
+            fn_name = self.symbol_matchers[key][0]
+            return f"{fn_name}(p, {out_node_expr})"
+        if isinstance(comb, Literal):
+            lit = getattr(comb, "literal", None)
+            if lit is _ANY_LITERAL or lit is None:
+                return f"gram_match_literal_any(p, {out_node_expr})"
+            vstr = str(lit).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+            return f'gram_match_literal_str(p, "{vstr}", {len(str(lit).encode("utf-8"))}u, {out_node_expr})'
         if isinstance(comb, Ref) and isinstance(comb.rule, type) and issubclass(comb.rule, RuleItem):
             return f"gram_parse_rule_{self.rule_names[comb.rule]}(p, {out_node_expr})"
         return "false"
@@ -1045,22 +1205,40 @@ class CParserGenerator:
             lines.append(f"{pfx}}}")
 
         elif isinstance(comb, MatchGroup):
-            grp = comb.group
-            gident = _sanitize_c_ident(grp)
+            vals = tuple(sorted(comb.values)) if getattr(comb, "values", None) else ()
+            beh = getattr(comb, "behavior_values", "none") or "none"
+            key = (comb.group, beh, vals)
+            fn_name = self.group_matchers[key][0]
             lines.append(f"{pfx}{{")
             lines.append(f"{pfx}    uint32_t grp_node_{indent} = 0;")
-            lines.append(f"{pfx}    ok = gram_match_group_{gident}(p, &grp_node_{indent});")
+            lines.append(f"{pfx}    ok = {fn_name}(p, &grp_node_{indent});")
             child_stmt = add_child_stmt(f"grp_node_{indent}")
             if child_stmt:
                 lines.append(f"{pfx}    {child_stmt}")
             lines.append(f"{pfx}}}")
 
         elif isinstance(comb, MatchSeqSymbol):
-            sym = getattr(comb, "pattern", None) or getattr(comb, "symbol", None) or ""
+            key = self._get_symbol_key(comb)
+            fn_name = self.symbol_matchers[key][0]
             lines.append(f"{pfx}{{")
             lines.append(f"{pfx}    uint32_t sym_node_{indent} = 0;")
-            lines.append(f'{pfx}    ok = gram_match_symbol_str(p, "{sym}", {len(sym)}u, &sym_node_{indent});')
+            lines.append(f"{pfx}    ok = {fn_name}(p, &sym_node_{indent});")
             child_stmt = add_child_stmt(f"sym_node_{indent}")
+            if child_stmt:
+                lines.append(f"{pfx}    {child_stmt}")
+            lines.append(f"{pfx}}}")
+
+        elif isinstance(comb, Literal):
+            lines.append(f"{pfx}{{")
+            lines.append(f"{pfx}    uint32_t lit_node_{indent} = 0;")
+            lit = getattr(comb, "literal", None)
+            if lit is _ANY_LITERAL or lit is None:
+                lines.append(f"{pfx}    ok = gram_match_literal_any(p, &lit_node_{indent});")
+            else:
+                vstr = str(lit).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+                slen = len(str(lit).encode("utf-8"))
+                lines.append(f'{pfx}    ok = gram_match_literal_str(p, "{vstr}", {slen}u, &lit_node_{indent});')
+            child_stmt = add_child_stmt(f"lit_node_{indent}")
             if child_stmt:
                 lines.append(f"{pfx}    {child_stmt}")
             lines.append(f"{pfx}}}")
@@ -1204,6 +1382,7 @@ class CParserGenerator:
             lines.append(f"{pfx}    uint32_t {arr_var} = gram_ast_arena_alloc(p->arena, GRAM_AST_ARRAY, 0, (uint32_t)p->cursor);")
             lines.append(f"{pfx}    uint32_t *{arr_tgt} = &{arr_var};")
             lines.append(f"{pfx}    size_t {cnt_var} = 0;")
+            lines.append(f"{pfx}    (void){cnt_var};")
             lines.append(f"{pfx}    GramParserCheckpoint sep_first_cp_{indent} = gram_parser_save(p);")
             lines.append(self._compile_combinator(val_comb, arr_tgt, indent + 1))
             lines.append(f"{pfx}    if (ok) {{")
@@ -1234,6 +1413,73 @@ class CParserGenerator:
                 lines.append(f"{pfx}    {child_stmt}")
             lines.append(f"{pfx}}}")
 
+        elif isinstance(comb, Until):
+            target_comb = comb.target
+            consume_target = comb.consume_target
+            max_tokens = comb.max_tokens
+            arr_var = f"until_arr_{indent}"
+            arr_tgt = f"until_target_{indent}"
+            init_cp = f"until_init_cp_{indent}"
+            matched_var = f"until_matched_{indent}"
+            cnt_var = f"until_count_{indent}"
+            target_cp = f"target_cp_{indent}"
+            target_node = f"target_node_{indent}"
+            target_tgt = f"target_out_{indent}"
+
+            lines.append(f"{pfx}{{")
+            lines.append(f"{pfx}    GramParserCheckpoint {init_cp} = gram_parser_save(p);")
+            lines.append(f"{pfx}    uint32_t {arr_var} = 0;")
+            lines.append(f"{pfx}    if (p->arena) {{")
+            lines.append(f"{pfx}        {arr_var} = gram_ast_arena_alloc(p->arena, GRAM_AST_ARRAY, 0, (uint32_t)p->cursor);")
+            lines.append(f"{pfx}        if (!{arr_var}) {{ gram_parser_restore(p, {init_cp}); ok = false; }}")
+            lines.append(f"{pfx}    }}")
+            lines.append(f"{pfx}    uint32_t *{arr_tgt} = &{arr_var};")
+            lines.append(f"{pfx}    (void){arr_tgt};")
+            lines.append(f"{pfx}    bool {matched_var} = false;")
+            lines.append(f"{pfx}    size_t {cnt_var} = 0;")
+            lines.append(f"{pfx}    (void){cnt_var};")
+            lines.append(f"{pfx}    while (p->cursor <= p->token_count && (!p->arena || !p->arena->has_error)) {{")
+            lines.append(f"{pfx}        GramParserCheckpoint {target_cp} = gram_parser_save(p);")
+            lines.append(f"{pfx}        uint32_t {target_node} = 0;")
+            lines.append(f"{pfx}        uint32_t *{target_tgt} = &{target_node};")
+            lines.append(self._compile_combinator(target_comb, target_tgt, indent + 2))
+            lines.append(f"{pfx}        if (ok) {{")
+            if not consume_target:
+                lines.append(f"{pfx}            gram_parser_restore(p, {target_cp});")
+            else:
+                lines.append(f"{pfx}            if ({target_node} && {arr_var} && p->arena) {{")
+                lines.append(f"{pfx}                gram_ast_add_child(p->arena, {arr_var}, {target_node});")
+                lines.append(f"{pfx}            }}")
+            lines.append(f"{pfx}            {matched_var} = true;")
+            lines.append(f"{pfx}            break;")
+            lines.append(f"{pfx}        }}")
+            lines.append(f"{pfx}        gram_parser_restore(p, {target_cp});")
+            if max_tokens is not None and max_tokens >= 0:
+                lines.append(f"{pfx}        if ({cnt_var} >= {max_tokens}u) break;")
+            lines.append(f"{pfx}        if (p->cursor >= p->token_count) break;")
+            lines.append(f"{pfx}        uint32_t tok_idx_{indent} = (uint32_t)p->cursor++;")
+            lines.append(f"{pfx}        if ({arr_var} && p->arena) {{")
+            lines.append(f"{pfx}            uint32_t item_node_{indent} = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_TOKEN, 0, tok_idx_{indent});")
+            lines.append(f"{pfx}            if (!item_node_{indent}) {{ {matched_var} = false; break; }}")
+            lines.append(f"{pfx}            p->arena->nodes[item_node_{indent}].token_count = 1;")
+            lines.append(f"{pfx}            gram_ast_add_child(p->arena, {arr_var}, item_node_{indent});")
+            lines.append(f"{pfx}        }}")
+            lines.append(f"{pfx}        {cnt_var}++;")
+            lines.append(f"{pfx}    }}")
+            lines.append(f"{pfx}    if ({matched_var} && (!p->arena || !p->arena->has_error)) {{")
+            lines.append(f"{pfx}        if ({arr_var} && p->arena) {{")
+            lines.append(f"{pfx}            p->arena->nodes[{arr_var}].token_count = (uint32_t)(p->cursor - p->arena->nodes[{arr_var}].token_start);")
+            lines.append(f"{pfx}        }}")
+            lines.append(f"{pfx}        ok = true;")
+            child_stmt = add_child_stmt(arr_var)
+            if child_stmt:
+                lines.append(f"{pfx}        {child_stmt}")
+            lines.append(f"{pfx}    }} else {{")
+            lines.append(f"{pfx}        gram_parser_restore(p, {init_cp});")
+            lines.append(f"{pfx}        ok = false;")
+            lines.append(f"{pfx}    }}")
+            lines.append(f"{pfx}}}")
+
         elif isinstance(comb, BaseExpr):
             eid = self.expr_comb_ids[id(comb)]
             lines.append(f"{pfx}{{")
@@ -1245,7 +1491,12 @@ class CParserGenerator:
             lines.append(f"{pfx}}}")
 
         else:
-            lines.append(f"{pfx}ok = true;")
+            raise GrammarCompilerError(
+                "UnsupportedCombinatorInC",
+                errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                f"El combinador '{type(comb).__name__}' no dispone de implementación de código en C.",
+                "Utilice únicamente combinadores declarativos compilables.",
+            )
 
         return "\n".join(lines)
 
@@ -1344,6 +1595,7 @@ class CParserGenerator:
                 f"            if (gram_parse_expr_{eid}(p, unary_rbp, &operand)) {{",
                 "                if (p->arena) {",
                 "                    uint32_t u_node = gram_ast_arena_alloc(p->arena, GRAM_AST_EXPR_UNARY, (uint16_t)tok->kind, op_tok_idx);",
+                "                    if (!u_node) return false;",
                 "                    gram_ast_add_child(p->arena, u_node, operand);",
                 "                    p->arena->nodes[u_node].token_count = (uint32_t)(p->cursor - op_tok_idx);",
                 "                    if (out_node) *out_node = u_node;",
@@ -1409,6 +1661,7 @@ class CParserGenerator:
             f"        if (!gram_parse_expr_{eid}(p, rbp, &rhs)) return false;",
             "        if (p->arena) {",
             "            uint32_t bin_node = gram_ast_arena_alloc(p->arena, GRAM_AST_EXPR_BINARY, (uint16_t)op_kind, p->arena->nodes[lhs].token_start);",
+            "            if (!bin_node) return false;",
             "            gram_ast_add_child(p->arena, bin_node, lhs);",
             "            gram_ast_add_child(p->arena, bin_node, rhs);",
             "            p->arena->nodes[bin_node].token_count = (uint32_t)(p->cursor - p->arena->nodes[bin_node].token_start);",
@@ -1485,7 +1738,11 @@ def export_session_c_parser(
         "gram_parser.c": gen.generate_parser_source(),
     }
     rule_names = [gen.rule_names[r] for r in gen.rules]
-    grammar_id = c_driver.grammar_fingerprint(rule_names)
+    canonical_entropy = "\n".join(
+        f"{name}:{hashlib.sha256(code.encode('utf-8')).hexdigest()}"
+        for name, code in sorted(units.items())
+    )
+    grammar_id = c_driver.grammar_fingerprint(rule_names, extra_entropy=canonical_entropy)
 
     if emit_driver:
         units["gram_ir.h"] = c_driver.generate_ir_header(grammar_id)

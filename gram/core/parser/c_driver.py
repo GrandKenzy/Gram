@@ -22,9 +22,19 @@ GIR_VERSION_MAJOR = 1
 GIR_VERSION_MINOR = 0
 
 
-def grammar_fingerprint(rule_names: list[str]) -> int:
-    """Return a stable 64-bit identifier for an ordered list of rule names."""
-    digest = hashlib.sha256("\n".join(rule_names).encode("utf-8")).digest()
+def grammar_fingerprint(
+    rule_names: list[str],
+    *,
+    extra_entropy: str | bytes | None = None,
+) -> int:
+    """Return a stable 64-bit identifier for rules and canonical grammar content."""
+    hasher = hashlib.sha256("\n".join(rule_names).encode("utf-8"))
+    if extra_entropy:
+        if isinstance(extra_entropy, str):
+            extra_entropy = extra_entropy.encode("utf-8")
+        hasher.update(b"\n--CANONICAL_ENTROPY--\n")
+        hasher.update(extra_entropy)
+    digest = hasher.digest()
     return int.from_bytes(digest[:8], "little")
 
 
@@ -931,6 +941,11 @@ static GramDriverStatus gram_driver_parse_tokens(GramParseResult *r, GramDriverE
     gram_parser_init(&parser, r->tokens, r->token_count, r->source, r->source_len, &r->arena, diag);
     uint32_t root = 0;
     bool ok = gram_parse_entrypoint(&parser, &root);
+
+    if (r->arena.has_error) {
+        gram_ast_arena_free(&r->arena);
+        return gram_driver_fail(err, GRAM_DRIVER_ERR_NOMEM, 0, 0, 0, "out of memory allocating AST nodes or undo log");
+    }
 
     /* Many-mode entrypoints stop silently at the first unparsable item: demand a full consumption. */
     size_t tail = parser.cursor;
