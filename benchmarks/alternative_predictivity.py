@@ -68,11 +68,12 @@ def _make_program(branches: int, audited: bool) -> type[RuleItem]:
     )
 
 
-def _build_source(branches: int, statements: int) -> str:
-    """Use the last and most complex declared branch on every statement."""
+def _build_source(branches: int, statements: int, target: int | None = None) -> str:
+    """Build statements for a declared branch, defaulting to the last one."""
+    target = branches - 1 if target is None else target
     return "\n".join(
-        f"kind{branches - 1} "
-        + " ".join(f"value_{line}_{index}" for index in range(branches))
+        f"kind{target} "
+        + " ".join(f"value_{line}_{index}" for index in range(target + 1))
         + ";"
         for line in range(statements)
     )
@@ -84,12 +85,13 @@ def _measure(
     repeats: int,
     trace: str,
     audited: bool,
+    target: int | None = None,
 ) -> list[float]:
     """Measure parser execution after one warm-up run."""
     lexer.clear_all()
     for index in range(branches):
         lexer.add_keyword(f"kind{index}")
-    tokens = lexer.Lexer(_build_source(branches, statements)).process()
+    tokens = lexer.Lexer(_build_source(branches, statements, target)).process()
     program = _make_program(branches, audited)
 
     def run() -> None:
@@ -125,9 +127,17 @@ def main() -> None:
     parser.add_argument(
         "--trace", choices=("off", "basic", "detailed"), default="off"
     )
+    parser.add_argument(
+        "--target",
+        type=int,
+        default=None,
+        help="Índice de la rama declarada que se ejecuta (por defecto, la última).",
+    )
     args = parser.parse_args()
     if args.branches < 2 or args.statements < 1 or args.repeats < 1:
         parser.error("--branches debe ser >= 2; los demás valores deben ser > 0")
+    if args.target is not None and not 0 <= args.target < args.branches:
+        parser.error("--target debe estar entre 0 y branches - 1")
 
     config.ERROR_EXIT_ON_ERROR = False
     config.ERROR_HIDE_CONSOLE = True
@@ -141,7 +151,7 @@ def main() -> None:
     )
     print(
         f"branches={args.branches}, statements={args.statements}, "
-        "input=last_declared_longest_branch"
+        f"input=declared_branch_{args.branches - 1 if args.target is None else args.target}"
     )
 
     declared = _measure(
@@ -150,6 +160,7 @@ def main() -> None:
         args.repeats,
         args.trace,
         audited=False,
+        target=args.target,
     )
     _report("declared-order", declared)
 
@@ -160,6 +171,7 @@ def main() -> None:
             args.repeats,
             args.trace,
             audited=True,
+            target=args.target,
         )
         _report("audit=True", audited)
     else:

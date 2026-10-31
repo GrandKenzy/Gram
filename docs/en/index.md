@@ -33,3 +33,13 @@ Practical guides for structuring language frontends, managing multi-language ses
 - **[03. Language Sessions](./03-Usage/03-sessions.md)** — Isolating and switching between multiple language frontends using `gram.sessions.Session`.
 - **[04. Diagnostics & Error System](./03-Usage/04-diagnostics-and-errors.md)** — Hierarchical telemetry with `Diagnostics`, OSGDC error codes, `StackError`, and non-invasive error hooks (`ErrorAction`).
 - **[05. VSIX & Editor Tooling](./03-Usage/05-vsix-and-editor-tooling.md)** — Declarative editor maps on `RuleItem`, `TokenSelector`, ANSI TrueColor previews, VS Code extension generation, and the built-in LSP server.
+
+### [04. Lexer](./04-Lexer/index.md)
+Exhaustive reference guide for the lexical analysis engine, token representation, literal visitors, indentation tracking, and diagnostic telemetry.
+- **[01. Architecture & State Management](./04-Lexer/01-architecture-and-state.md)** — `Lexer` and `LexerState` design, source code ingestion, cursor navigation, keyword pre-flight checks, and single-pass scanning loop.
+- **[02. Token Catalog & Symbol Dispatch](./04-Lexer/02-tokens-and-symbols.md)** — The 11 formal categories of `Token`, `TokenType` lexemes, coordinate interpolation (`formatter`), `CustomToken`, `TokenFlags`, and `MAP_SYMBOLS` maximal munch.
+- **[03. Literals & Specialized Visitors](./04-Lexer/03-literals-and-visitors.md)** — Visitor dispatch architecture: numeric literals (radix bases, floating-point, separators, C suffixes), strings (escapes, Unicode `\uXXXX`, prefixed strings), and keyword resolution precedence.
+- **[04. Indentation, Comments, & Delimiters](./04-Lexer/04-indentation-and-comments.md)** — Off-side semantic whitespace tracking (`indents` stack, tab widths, mismatch errors), single-line comments, block comments, and custom multiline delimiter registries (`add_multline`).
+- **[05. Token Stream Navigation (`TokenStream`)](./04-Lexer/05-token-stream.md)** — Cursor management, lookahead inspection (`peek`, `current`), conditional matching (`check`, `match`), strict consumption (`consume`), slicing, and token exclusion filtering.
+- **[06. Configuration & Diagnostics Reference](./04-Lexer/06-configuration-and-diagnostics.md)** — Full matrix of `config` settings, diagnostic execution trees, error policies (`report_error`, `fail`, error action hooks), OSGDC error codes table, and multi-language session scoping.
+

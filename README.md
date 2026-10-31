@@ -209,6 +209,7 @@ Detailed section map:
 - **01. Introduction / Introducción:** [EN](docs/en/01-Introduction/index.md) | [ES](docs/es/01-Introduccion/index.md)
 - **02. Combinators / Combinadores:** [EN](docs/en/02-Combinators/index.md) | [ES](docs/es/02-Combinadores/index.md)
 - **03. Usage Guide / Guía de Uso:** [EN](docs/en/03-Usage/index.md) | [ES](docs/es/03-Uso/index.md)
+- **04. Lexer / Analizador Léxico:** [EN](docs/en/04-Lexer/index.md) | [ES](docs/es/04-Lexer/index.md)
 
 ---
 

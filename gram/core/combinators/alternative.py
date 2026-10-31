@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 from gram import errors
-from gram.core.combinators.base import Combinator
+from gram.core.combinators.base import Combinator, _predictive_epoch
 from gram.core.combinators.predictive import PredictivePlan, compile_predictive_plan
 from gram.core.combinators.signals import BacktrackSignal, CutFlowSignal
 
@@ -60,18 +60,54 @@ class Alt(Combinator):
         self.audit: bool = bool(audit)
         self._predictive_plan: PredictivePlan | None = None
         self._predictive_source: tuple[Combinator, ...] | None = None
+        self._predictive_epoch: int = _predictive_epoch()
+        self._predictive_context: tuple[int, int] | None = None
 
-    def get_predictive_plan(self) -> PredictivePlan:
+    @staticmethod
+    def _predictive_context_for(parser: object | None) -> tuple[int, int] | None:
+        """Return the session identity/revision used by a parser, if any."""
+        session = getattr(parser, "session", None) if parser is not None else None
+        revision = getattr(session, "predictive_revision", None)
+        if revision is None:
+            return None
+        return id(session), int(revision)
+
+    def get_predictive_plan(self, parser: object | None = None) -> PredictivePlan:
         """Return the cached static plan, compiling it after branch changes."""
-        if self._predictive_plan is None or self._predictive_source is not self.combinators:
+        if parser is None:
+            current_epoch = _predictive_epoch()
+            plan = self._predictive_plan
+            if (
+                plan is not None
+                and self._predictive_source is self.combinators
+                and self._predictive_context is None
+                and current_epoch == self._predictive_epoch
+            ):
+                return plan
+        else:
+            current_epoch = _predictive_epoch()
+        context = self._predictive_context_for(parser)
+        invalid = (
+            self._predictive_plan is None
+            or self._predictive_source is not self.combinators
+            or self._predictive_context != context
+        )
+        if not invalid and current_epoch != self._predictive_epoch:
+            invalid = not self._predictive_plan.dependencies_current()
+
+        if invalid:
             self._predictive_plan = compile_predictive_plan(self.combinators)
             self._predictive_source = self.combinators
+            self._predictive_context = context
+        self._predictive_epoch = current_epoch
         return self._predictive_plan
 
     def invalidate_audit(self) -> None:
         """Clear the cached predictive plan after external grammar mutation."""
         self._predictive_plan = None
         self._predictive_source = None
+        self._predictive_epoch = _predictive_epoch()
+        self._predictive_context = None
 
     def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
@@ -95,9 +131,13 @@ class Alt(Combinator):
         try:
             order: tuple[int, ...] | None = None
             if self.audit:
-                plan = self.get_predictive_plan()
-                order = plan.order
-                if plan.changed:
+                plan = (
+                    self.get_predictive_plan()
+                    if getattr(parser, "session", None) is None
+                    else self.get_predictive_plan(parser)
+                )
+                order = plan.order_for(parser)
+                if plan.changed or order != plan.order:
                     father.note(
                         f"Auditoría de ALT aplicada: orden declarado={tuple(range(len(self.combinators)))!r}, "
                         f"orden ejecutado={order!r}",

@@ -12,7 +12,9 @@ from gram.core.combinators.signals import (
     AbortFlowSignal,
     BacktrackSignal,
     BreakFlowSignal,
+    ControlFlowSignal,
     CutFlowSignal,
+    FlowKind,
     SkipFlowSignal,
 )
 from gram.core.combinators.skip import Skip
@@ -101,6 +103,21 @@ class TestSequenceAndAlternative(CombinatorTestCase):
                     analyzer.visitor(seq)
 
                 self.assertEqual(analyzer.parser.pos, 1)
+
+    def test_flow_signals_expose_distinct_semantic_kinds(self) -> None:
+        expected = {
+            SkipFlowSignal: FlowKind.STOP_SEQUENCE,
+            BreakFlowSignal: FlowKind.STOP_REPETITION,
+            BacktrackSignal: FlowKind.BACKTRACK_ALTERNATIVE,
+            CutFlowSignal: FlowKind.COMMIT_ALTERNATIVE,
+            AbortFlowSignal: FlowKind.ABORT,
+        }
+
+        for signal, kind in expected.items():
+            with self.subTest(signal=signal.__name__):
+                instance = signal()
+                self.assertIs(instance.kind, kind)
+                self.assertIsInstance(instance, ControlFlowSignal)
 
     # =========================================================================
     # 2. Alt (Alternative)

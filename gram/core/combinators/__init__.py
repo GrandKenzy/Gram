@@ -90,6 +90,7 @@ from .signals import (
     BreakFlowSignal,
     ControlFlowSignal,
     CutFlowSignal,
+    FlowKind,
     SkipFlowSignal,
 )
 from .skip import Skip
@@ -124,6 +125,7 @@ __all__ = [
     # Advanced Control, Lookahead & Validation Combinators
     "ErrorCombinator",
     "Expected",
+    "FlowKind",
     "GrammarType",
     "If",
     "Item",

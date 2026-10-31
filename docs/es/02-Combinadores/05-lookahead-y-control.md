@@ -104,13 +104,17 @@ Skip(signal: type[ControlFlowSignal])
 
 ### Referencia de Señales (`gram.core.combinators.signals`)
 
-| Clase de Señal | Manejada Por | Efecto |
-| :--- | :--- | :--- |
-| `SkipFlowSignal` | `Seq`, `Many`, `Some`, `Separator` | En `Seq`: detiene la secuencia anticipadamente y retorna los nodos recolectados hasta el momento. En `Many`/`Some`: si `parser.pos == checkpoint.pos`, restaura el checkpoint y sale del bucle; si se consumieron tokens en la iteración actual, los conserva y continúa a la siguiente iteración. En `Separator`: restaura el checkpoint del separador y sale del bucle. |
-| `BreakFlowSignal` | `Many`, `Some`, `Separator` | Se propaga a través de `Seq`. Restaura el checkpoint de la iteración/separador actual y sale limpiamente del bucle de repetición. |
-| `BacktrackSignal` | `Alt` | Se propaga a través de `Seq`. Descarta la rama actual de `Alt`, restaura el checkpoint de `Alt` e intenta con la siguiente alternativa. |
-| `CutFlowSignal` | `Alt` (vía `ASTState.failure_scope`) | Se propaga a través de `Seq`. Se compromete con la rama actual de `Alt`: arrastra el `_failure_candidate` de la rama, restaura el checkpoint de `Alt` y aborta `Alt` sin probar las ramas restantes. |
-| `AbortFlowSignal` | Invocador / nivel superior | Se propaga sin ser capturada a través de `Seq` y `Alt` para abortar el parseo inmediatamente. |
+| Clase de Señal | `FlowKind` | Manejada Por | Rollback / efecto |
+| :--- | :--- | :--- | :--- |
+| `SkipFlowSignal` | `STOP_SEQUENCE` | `Seq`, `Many`, `Some`, `Separator` | `Seq` retorna los nodos acumulados. Las repeticiones restauran solo un skip sin consumo; después de consumir conservan los tokens y continúan. `Separator` restaura su checkpoint. |
+| `BreakFlowSignal` | `STOP_REPETITION` | `Many`, `Some`, `Separator` | Restaura el checkpoint de la iteración/separador actual y termina la repetición. |
+| `BacktrackSignal` | `BACKTRACK_ALTERNATIVE` | `Alt` | Descarta la rama actual, restaura el checkpoint de `Alt` e intenta la siguiente. |
+| `CutFlowSignal` | `COMMIT_ALTERNATIVE` | `Alt` vía `ASTState.failure_scope` | Transporta `_failure_candidate`, restaura el checkpoint de `Alt` y termina `Alt` sin probar ramas posteriores. |
+| `AbortFlowSignal` | `ABORT` | Invocador / nivel superior | Los combinadores estructurales no la recuperan y el análisis termina inmediatamente. |
+
+Todas heredan de `ControlFlowSignal`, pero se mantienen como clases públicas
+distintas para conservar el significado de los handlers `except` existentes.
+`FlowKind` expone la directiva semántica sin reemplazar esas clases.
 
 ### Ejemplo
 ```python

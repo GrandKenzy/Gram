@@ -47,10 +47,12 @@ Evalúa las ramas candidatas en orden hasta que la primera rama devuelva un resu
 
 ### Constructor
 ```python
-Alt(*combinators: Combinator, ignore: bool = False)
+Alt(*combinators: Combinator, ignore: bool = False, audit: bool = False)
 ```
 
 - `ignore`: Si es `True`, el `Visitor` no incrementa la profundidad de anidamiento ni registra este contenedor `Alt` en el `RayTracing` (`ASTAnalyzer.is_valid_entrypoint` establece `ignore = True` en el `Alt` raíz del punto de entrada).
+- `audit`: Si es `True`, activa el plan predictivo cacheado. Las ramas exactas seguras pueden reordenarse por consumo de tokens y las ramas exactas imposibles para el token actual pueden omitirse. La tupla declarada `combinators` nunca se muta.
+- El plan cacheado se reconstruye tras cambios rastreados en la gramática anidada o la sesión; las conversiones locales del parser se leen dinámicamente en cada dispatch.
 - Lanza `EmptyAlternatives` (`GrammarError`) en tiempo de construcción si se invoca sin ramas.
 
 ### Ejecución, Señales y Diagnósticos

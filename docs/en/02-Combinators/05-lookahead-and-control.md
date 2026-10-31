@@ -104,13 +104,18 @@ Skip(signal: type[ControlFlowSignal])
 
 ### Signal Reference (`gram.core.combinators.signals`)
 
-| Signal Class | Handled By | Effect |
-| :--- | :--- | :--- |
-| `SkipFlowSignal` | `Seq`, `Many`, `Some`, `Separator` | In `Seq`: stops the sequence early and returns the nodes collected so far. In `Many`/`Some`: if `parser.pos == checkpoint.pos`, restores checkpoint and exits loop; if tokens were consumed in the current iteration, keeps them and continues to the next iteration. In `Separator`: restores the separator checkpoint and exits the loop. |
-| `BreakFlowSignal` | `Many`, `Some`, `Separator` | Propagates through `Seq`. Restores the current iteration/separator checkpoint and exits the repetition loop cleanly. |
-| `BacktrackSignal` | `Alt` | Propagates through `Seq`. Rejects the current `Alt` branch, restores `Alt`'s checkpoint, and tries the next alternative. |
-| `CutFlowSignal` | `Alt` (via `ASTState.failure_scope`) | Propagates through `Seq`. Commits to the current `Alt` branch: carries the branch's `_failure_candidate`, restores `Alt`'s checkpoint, and aborts `Alt` without trying remaining branches. |
-| `AbortFlowSignal` | Caller / top-level | Propagates uncaught through `Seq` and `Alt` to abort parsing immediately. |
+| Signal Class | `FlowKind` | Handled By | Rollback / effect |
+| :--- | :--- | :--- | :--- |
+| `SkipFlowSignal` | `STOP_SEQUENCE` | `Seq`, `Many`, `Some`, `Separator` | `Seq` returns accumulated nodes. Repetition rolls back only a zero-consumption skip; after consumption it keeps tokens and continues. `Separator` restores its separator checkpoint. |
+| `BreakFlowSignal` | `STOP_REPETITION` | `Many`, `Some`, `Separator` | Restores the current iteration/separator checkpoint and exits the repetition cleanly. |
+| `BacktrackSignal` | `BACKTRACK_ALTERNATIVE` | `Alt` | Rejects the current branch, restores `Alt`'s checkpoint, and tries the next alternative. |
+| `CutFlowSignal` | `COMMIT_ALTERNATIVE` | `Alt` via `ASTState.failure_scope` | Carries `_failure_candidate`, restores `Alt`'s checkpoint, and aborts `Alt` without trying later branches. |
+| `AbortFlowSignal` | `ABORT` | Caller / top level | Is not recovered by structural combinators and aborts analysis immediately. |
+
+All signals inherit from `ControlFlowSignal`, but they are intentionally kept
+as distinct public classes so existing `except` handlers preserve their
+meaning. `FlowKind` exposes the semantic directive without replacing those
+classes.
 
 ### Example
 ```python

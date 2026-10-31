@@ -84,6 +84,8 @@ class TestTraceModes(CombinatorTestCase):
 
         outcomes = {r.outcome: r.exception_type for r in analyzer.raytracing.records}
         self.assertEqual(outcomes.get("CONTROL"), "CutFlowSignal")
+        control = next(r for r in analyzer.raytracing.records if r.outcome == "CONTROL")
+        self.assertEqual(control.flow_kind, "commit_alternative")
 
     def test_parser_reports_abandoned_position_on_restore(self) -> None:
         p = parser.Parser(self.tokenize("int value"))

@@ -16,6 +16,19 @@ if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
 
 _NON_IDENT_RE = re.compile(r"[^a-zA-Z0-9_]")
+_PREDICTIVE_EPOCH = 0
+
+
+def _touch_predictive_epoch() -> int:
+    """Advance the process-local grammar mutation epoch."""
+    global _PREDICTIVE_EPOCH
+    _PREDICTIVE_EPOCH += 1
+    return _PREDICTIVE_EPOCH
+
+
+def _predictive_epoch() -> int:
+    """Return the process-local grammar mutation epoch."""
+    return _PREDICTIVE_EPOCH
 
 
 class Combinator:
@@ -28,6 +41,29 @@ class Combinator:
 
     header_class: bool = False
     ignore: bool = False
+    _predictive_revision: int = 0
+
+    _PREDICTIVE_IGNORED_ATTRIBUTES = frozenset(
+        {
+            "_predictive_revision",
+            "_predictive_plan",
+            "_predictive_source",
+            "_predictive_epoch",
+            "_predictive_context",
+            "header_class",
+            "ignore",
+            "audit",
+        }
+    )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        existed = hasattr(self, name)
+        object.__setattr__(self, name, value)
+        if not existed or name in self._PREDICTIVE_IGNORED_ATTRIBUTES:
+            return
+        revision = getattr(self, "_predictive_revision", 0) + 1
+        object.__setattr__(self, "_predictive_revision", revision)
+        _touch_predictive_epoch()
 
     def __init__(self, *args: Any, ignore: bool = False, **kwargs: Any) -> None:
         self.header_class: bool = self.__class__.header_class
@@ -121,6 +157,14 @@ class RuleMeta(type):
     code: int = 0
     nodeable: bool = True
 
+    def __setattr__(cls, name: str, value: Any) -> None:
+        previous = getattr(cls, name, None)
+        super().__setattr__(name, value)
+        if name == "entrypoint" and previous is not value:
+            revision = getattr(cls, "_predictive_revision", 0) + 1
+            super().__setattr__("_predictive_revision", revision)
+            _touch_predictive_epoch()
+
     def __new__(
         mcls, name: str, bases: tuple[type, ...], namespace: dict[str, Any]
     ) -> type:
@@ -139,6 +183,7 @@ class RuleMeta(type):
             namespace["code"] = AutoCode()
 
         cls = super().__new__(mcls, name, bases, namespace)
+        type.__setattr__(cls, "_predictive_revision", 0)
         code_manager.register(cls.code, cls)
         return cls
 
@@ -166,6 +211,7 @@ class RuleItem(metaclass=RuleMeta):
     nodeable: bool = True
     description: str = ""
     entrypoint: Combinator | None = None
+    _predictive_revision: int = 0
 
     # Mapas declarativos VSIX / LSP (requieren nodeable = True)
     colors: dict[TokenIndexKey, str] = {}

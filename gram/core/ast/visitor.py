@@ -63,11 +63,13 @@ def Visitor(self: ASTAnalyzer, combinator: Combinator) -> Any:
         result = combinator.parse(self)
     except BaseException as exception:
         if record is not None:
+            signal_kind = getattr(getattr(exception, "kind", None), "value", None)
             self.raytracing.end(
                 record,
                 position=self.parser.pos,
                 outcome='CONTROL' if isinstance(exception, ControlFlowSignal) else 'ERROR',
                 exception_type=type(exception).__name__,
+                flow_kind=signal_kind,
             )
         raise
     else:

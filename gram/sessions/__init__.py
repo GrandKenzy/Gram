@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from gram import config
 from gram.core.combinators import RuleItem
+from gram.core.combinators.base import _touch_predictive_epoch
 from gram.core.lexer import Lexer, TokenType, tokens, words
 from gram.core.parser import ConversionState, Parser
 from gram.core.parser.conversions import ConversionTarget
@@ -76,6 +77,7 @@ class Session:
         "_restore_config",
         "_restore_symbols",
         "_loaded",
+        "_predictive_revision",
     )
 
     def __init__(
@@ -106,6 +108,7 @@ class Session:
         self._restore_config: dict[str, Any] | None = None
         self._restore_symbols: tuple[tuple[str, tokens.Token], ...] = ()
         self._loaded = False
+        self._predictive_revision = 0
 
         # The lexer is a configured session view; tokenize() creates a fresh
         # cursor while retaining this session as its source of configuration.
@@ -135,6 +138,7 @@ class Session:
                 allow_override=allow_override,
             )
             self._sync_legacy_catalog()
+            self._touch_predictive_revision()
             return result
         finally:
             if previous is None:
@@ -167,6 +171,7 @@ class Session:
                 allow_override=allow_override,
             )
             self._sync_legacy_catalog()
+            self._touch_predictive_revision()
             return result
         finally:
             if previous is None:
@@ -203,6 +208,16 @@ class Session:
         """Return the number of keywords owned by the session."""
         return len(self.keywords)
 
+    @property
+    def predictive_revision(self) -> int:
+        """Return the revision of session-owned predictive inputs."""
+        return self._predictive_revision
+
+    def _touch_predictive_revision(self) -> None:
+        """Invalidate cached predictive plans that depend on this session."""
+        self._predictive_revision += 1
+        _touch_predictive_epoch()
+
     def _sync_legacy_catalog(self) -> None:
         """Keep legacy readers aligned when this session is currently loaded."""
         if self._loaded:
@@ -217,6 +232,7 @@ class Session:
             words.MAP_KEYWORDS.clear()
             words._GLOBAL_GROUPS.clear()
         self._sync_legacy_catalog()
+        self._touch_predictive_revision()
 
     def init(self) -> None:
         """Prepare isolated storage and route loose registrations to it."""
@@ -231,6 +247,7 @@ class Session:
         self.symbol_order[:] = sorted(self.symbols, key=len, reverse=True)
         self.last_config = deepcopy(self._restore_config)
         self.map_symbs_copy = self._restore_symbols
+        self._touch_predictive_revision()
         self.config = _session_config()
         words.bind_session(self)
 
@@ -254,6 +271,7 @@ class Session:
         _replace(tokens.MAP_SYMBOLS, self._restore_symbols)
         self.last_config = None
         self.map_symbs_copy = None
+        self._touch_predictive_revision()
 
     def load(self) -> None:
         """Activate this session's lexicon, symbols, and owned settings."""
@@ -264,6 +282,7 @@ class Session:
         _replace(tokens.MAP_SYMBOLS, self.symbols.items())
         config.load(self.config)
         self._loaded = True
+        self._touch_predictive_revision()
 
     def tokenize(self, source: list[str] | str, name: str):
         """Tokenize ``source`` with this session's lexer configuration."""

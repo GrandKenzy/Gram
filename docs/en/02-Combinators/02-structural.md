@@ -47,10 +47,12 @@ Evaluates candidate branches in order until the first branch returns a non-`None
 
 ### Constructor
 ```python
-Alt(*combinators: Combinator, ignore: bool = False)
+Alt(*combinators: Combinator, ignore: bool = False, audit: bool = False)
 ```
 
 - `ignore`: When `True`, `Visitor` does not increment nesting depth or record this `Alt` container itself in `RayTracing` (`ASTAnalyzer.is_valid_entrypoint` sets `ignore = True` on the root entrypoint `Alt`).
+- `audit`: When `True`, enables the cached predictive plan. Safe exact branches may be reordered by token consumption, and impossible exact branches may be skipped from the current token. The declared `combinators` tuple is never mutated.
+- The cached plan is rebuilt after tracked nested-grammar or session revisions; parser-local conversions are read dynamically for each dispatch.
 - Raises `EmptyAlternatives` (`GrammarError`) at construction time if called with no branches.
 
 ### Execution, Signals & Diagnostics

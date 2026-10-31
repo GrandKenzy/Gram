@@ -45,16 +45,21 @@ def parse(self, analyzer: ASTAnalyzer) -> Any:
 ### Modos de Traza (`ASTAnalyzer(..., trace=...)`)
 - `trace="off"`: Desactiva los registros y callbacks de traza. Los checkpoints del parser y los diagnósticos de parser/AST siguen funcionando normalmente.
 - `trace="basic"` (por defecto): Registra combinadores evaluados (`ignore=False`) y niveles de anidamiento en `raytracing.trace`, nombres de reglas en `raytracing.paths` y ramas en `raytracing.branches`.
-- `trace="detailed"`: Registra deliberadamente instrumentación completa: instancias de `TraceRecord` (`combinator`, `depth`, `start`, `end`, `outcome`, `exception_type`) para cada combinador evaluado y retrocesos en `raytracing.backtracks` y `raytracing.furthest`. Es el modo pesado para diseñar parsers y lexers dedicados, y se formatea con `raytracing.detailed()`.
+- `trace="detailed"`: Registra deliberadamente instrumentación completa: instancias de `TraceRecord` (`combinator`, `depth`, `start`, `end`, `outcome`, `exception_type`, `flow_kind`) para cada combinador evaluado y retrocesos en `raytracing.backtracks` y `raytracing.furthest`. Es el modo pesado para diseñar parsers y lexers dedicados, y se formatea con `raytracing.detailed()`.
 
 ### Auditoría predictiva de alternativas
 
 `Alt(..., audit=True)` activa un plan predictivo estático y cacheado. Solo puede
 reordenar ramas exactas, no anulables y sin efectos laterales, priorizando el
-consumo garantizado de tokens. La tupla pública `Alt.combinators` conserva el
+consumo garantizado de tokens, y omitir ramas exactas cuyo `first_set` no pueda
+coincidir con el token actual. La tupla pública `Alt.combinators` conserva el
 orden declarado.
 Las ramas opacas, recursivas, de ancho cero, ilimitadas o con control de flujo
 actúan como barreras y no se reordenan. El comportamiento predeterminado
 `audit=False` no cambia. Con `trace="detailed"`, los intentos están disponibles
 en `analyzer.raytracing.alternative_records` con índice declarado, índice
 planificado, intervalo de cursor y resultado.
+El plan cacheado sigue las revisiones de combinadores anidados y de
+`RuleItem.entrypoint`; las revisiones de sesión invalidan los planes
+contextuales. Las conversiones del parser se resuelven en cada dispatch desde
+el parser activo, por lo que no dejan un plan obsoleto.

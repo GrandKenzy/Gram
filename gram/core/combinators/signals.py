@@ -7,17 +7,34 @@ termination, and fatal parsing aborts.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from enum import Enum
+from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from gram.utilities.error import Error
+
+
+class FlowKind(Enum):
+    """Semantic directive carried by a control-flow signal."""
+
+    CONTROL = "control"
+    STOP_SEQUENCE = "stop_sequence"
+    STOP_REPETITION = "stop_repetition"
+    BACKTRACK_ALTERNATIVE = "backtrack_alternative"
+    COMMIT_ALTERNATIVE = "commit_alternative"
+    ABORT = "abort"
 
 
 class ControlFlowSignal(Exception):
     """
     Base signal for internal combinator flow control.
     Represents an execution directive rather than a syntactic error.
+
+    ``kind`` identifies the directive; the concrete subclasses remain public
+    so existing ``except`` handlers continue to distinguish their semantics.
     """
+
+    kind: ClassVar[FlowKind] = FlowKind.CONTROL
 
     def __init__(
         self, message: str = "Control flow signal", payload: Any = None
@@ -29,9 +46,13 @@ class ControlFlowSignal(Exception):
 
 class SkipFlowSignal(ControlFlowSignal):
     """
-    Signal requesting early, successful completion of a sequence or parsing
-    block without marking a cursor failure.
+    Stop the current sequence successfully without creating a failure.
+
+    In repetition combinators, zero-consumption skips stop the loop after a
+    rollback; skips after consumption keep the consumed tokens and continue.
     """
+
+    kind: ClassVar[FlowKind] = FlowKind.STOP_SEQUENCE
 
     def __init__(
         self, message: str = "Skip flow requested", payload: Any = None
@@ -41,9 +62,13 @@ class SkipFlowSignal(ControlFlowSignal):
 
 class BreakFlowSignal(ControlFlowSignal):
     """
-    Signal ordering immediate termination of a repetition loop (`Many`, `Some`,
-    `Sep`) without rolling back already accumulated elements.
+    Stop the current repetition cleanly.
+
+    The active iteration or separator checkpoint is restored before the loop
+    exits; already accepted items remain accumulated.
     """
+
+    kind: ClassVar[FlowKind] = FlowKind.STOP_REPETITION
 
     def __init__(
         self, message: str = "Break repetition loop requested", payload: Any = None
@@ -53,9 +78,13 @@ class BreakFlowSignal(ControlFlowSignal):
 
 class CutFlowSignal(ControlFlowSignal):
     """
-    Cut/Commit signal that commits the active branch and inhibits subsequent
-    backtracking in selection combinators (`Alt`).
+    Commit the active alternative branch and inhibit later backtracking.
+
+    ``Alt`` restores its own entry checkpoint, preserves the deepest failure
+    candidate carried by this signal, and does not try subsequent branches.
     """
+
+    kind: ClassVar[FlowKind] = FlowKind.COMMIT_ALTERNATIVE
 
     def __init__(
         self, message: str = "Commit branch / Cut backtracking", payload: Any = None
@@ -66,9 +95,12 @@ class CutFlowSignal(ControlFlowSignal):
 
 class BacktrackSignal(ControlFlowSignal):
     """
-    Signal explicitly forcing a rollback of the active branch in favor of the
-    next available candidate alternative.
+    Reject the active alternative branch and request the next candidate.
+
+    ``Alt`` restores its entry checkpoint and continues with the next branch.
     """
+
+    kind: ClassVar[FlowKind] = FlowKind.BACKTRACK_ALTERNATIVE
 
     def __init__(
         self, message: str = "Backtrack requested", payload: Any = None
@@ -78,9 +110,13 @@ class BacktrackSignal(ControlFlowSignal):
 
 class AbortFlowSignal(ControlFlowSignal):
     """
-    Signal for immediate, fatal termination of the entire syntactic analysis
-    process upon unrecoverable conditions.
+    Abort the entire syntactic analysis immediately.
+
+    Structural combinators do not recover this signal or reinterpret it as a
+    branch mismatch.
     """
+
+    kind: ClassVar[FlowKind] = FlowKind.ABORT
 
     def __init__(
         self, message: str = "Abort parsing process", payload: Any = None
@@ -94,5 +130,6 @@ __all__ = [
     "BreakFlowSignal",
     "ControlFlowSignal",
     "CutFlowSignal",
+    "FlowKind",
     "SkipFlowSignal",
 ]

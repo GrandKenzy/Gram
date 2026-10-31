@@ -6,10 +6,10 @@ compiled order without changing the default ordered-choice semantics.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, Literal
 
-from gram.core.combinators.base import Combinator
+from gram.core.combinators.base import Combinator, _predictive_epoch
 
 FirstAtom = tuple[str, str]
 Certainty = Literal["exact", "partial", "unknown"]
@@ -55,11 +55,75 @@ class PredictivePlan:
     order: tuple[int, ...]
     profiles: tuple[PredictiveProfile, ...]
     warnings: tuple[str, ...] = ()
+    _revision_sources: tuple[tuple[object, int], ...] = field(
+        default=(), repr=False, compare=False
+    )
 
     @property
     def changed(self) -> bool:
         """Return whether the compiled order differs from declaration order."""
         return self.order != tuple(range(len(self.profiles)))
+
+    @staticmethod
+    def _token_keys(token: object) -> frozenset[FirstAtom]:
+        """Return static matcher keys for a physical or effective token."""
+        token_type = getattr(getattr(token, "token", None), "name", None)
+        if token_type is None:
+            return frozenset()
+        keys: set[FirstAtom] = {("token", str(token_type))}
+        if str(token_type) == "KEYWORD":
+            value = getattr(token, "value", None)
+            if value is not None:
+                keys.add(("keyword", str(value)))
+        return frozenset(keys)
+
+    def order_for(self, parser: object) -> tuple[int, ...]:
+        """Filter exact branches that cannot match the current token.
+
+        Opaque branches remain in place. If no exact branch predicts the
+        current token, the complete compiled order is returned so existing
+        failure diagnostics remain available.
+        """
+        tokens = getattr(parser, "tokens", None)
+        position = getattr(parser, "pos", None)
+        if tokens is None or not isinstance(position, int) or position < 0:
+            return self.order
+        try:
+            physical = tokens[position]
+        except (IndexError, KeyError, TypeError):
+            return self.order
+
+        effective = physical
+        resolve = getattr(parser, "resolve_token_at", None)
+        if callable(resolve):
+            resolved = resolve(position)
+            if resolved is not None:
+                effective = resolved
+
+        keys = self._token_keys(physical) | self._token_keys(effective)
+        if not keys:
+            return self.order
+
+        matching: set[int] = set()
+        for index, profile in enumerate(self.profiles):
+            if profile.reorderable and profile.first_set and keys.intersection(profile.first_set):
+                matching.add(index)
+
+        if not matching:
+            return self.order
+
+        return tuple(
+            index
+            for index in self.order
+            if not self.profiles[index].reorderable or index in matching
+        )
+
+    def dependencies_current(self) -> bool:
+        """Return whether tracked grammar objects retain their revisions."""
+        return all(
+            getattr(source, "_predictive_revision", None) == revision
+            for source, revision in self._revision_sources
+        )
 
 
 def _unknown(reason: str) -> PredictiveProfile:
@@ -223,11 +287,24 @@ class _Analyzer:
     def __init__(self) -> None:
         self.memo: dict[int, PredictiveProfile] = {}
         self.active: set[int] = set()
+        self.revision_sources: list[tuple[object, int]] = []
+        self._revision_ids: set[int] = set()
+
+    def _track_revision(self, source: object) -> None:
+        revision = getattr(source, "_predictive_revision", None)
+        if revision is None:
+            return
+        source_id = id(source)
+        if source_id in self._revision_ids:
+            return
+        self._revision_ids.add(source_id)
+        self.revision_sources.append((source, revision))
 
     def visit(self, combinator: Combinator) -> PredictiveProfile:
         if not isinstance(combinator, Combinator):
             return _unknown("non-combinator child")
 
+        self._track_revision(combinator)
         key = id(combinator)
         if key in self.memo:
             return self.memo[key]
@@ -314,6 +391,7 @@ class _Analyzer:
             return _atomic(first)
 
         if isinstance(combinator, Ref):
+            self._track_revision(combinator.rule)
             entrypoint = getattr(combinator.rule, "entrypoint", None)
             if entrypoint is None:
                 return _unknown("reference has no entrypoint")
@@ -502,7 +580,12 @@ def compile_predictive_plan(
     if order != list(range(len(children))):
         warnings.append(f"audited order: {tuple(order)!r}")
 
-    return PredictivePlan(tuple(order), profiles, tuple(warnings))
+    return PredictivePlan(
+        tuple(order),
+        profiles,
+        tuple(warnings),
+        tuple(analyzer.revision_sources),
+    )
 
 
 def audit_alternatives(combinators: object) -> PredictivePlan:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 from gram import errors
 from gram.core.lexer import visitors, words
@@ -48,16 +49,30 @@ class Lexer(LexerState):
         logfile: str | None = None,
         *,
         session=None,
+        backend: Literal["python", "c"] = "python",
     ) -> None:
+        if backend not in ("python", "c"):
+            raise ValueError(
+                f"Unsupported lexer backend {backend!r}; expected 'python' or 'c'."
+            )
+        self.backend: Literal["python", "c"] = backend
         super().__init__(source, logfile=logfile, session=session)
 
     def tokenize(
         self,
         source: Sequence[str] | str | Path,
         logfile: str | None = None,
+        *,
+        backend: Literal["python", "c"] | None = None,
     ) -> list[TokenType]:
         """Create a fresh cursor and tokenize ``source`` with this session."""
-        return Lexer(source, logfile=logfile, session=self.session).process()
+        active_backend = self.backend if backend is None else backend
+        return Lexer(
+            source,
+            logfile=logfile,
+            session=self.session,
+            backend=active_backend,
+        ).process()
 
     def process(self) -> list[TokenType]:
         """
@@ -74,6 +89,15 @@ class Lexer(LexerState):
         self.debug("Iniciando análisis léxico")
 
         try:
+            if self.backend == "c":
+                from gram.core.lexer.c_backend import process_with_c_backend
+
+                tokens_list = process_with_c_backend(self)
+                self.success(
+                    f"Análisis léxico completado (backend C). Total de tokens generados: {len(tokens_list)}"
+                )
+                return tokens_list
+
             while self.has_lines():
                 if self.is_empty():
                     if (

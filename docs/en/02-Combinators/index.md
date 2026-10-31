@@ -45,15 +45,19 @@ def parse(self, analyzer: ASTAnalyzer) -> Any:
 ### Tracing Modes (`ASTAnalyzer(..., trace=...)`)
 - `trace="off"`: Disables trace records and trace callbacks. Parser checkpoints and parser/AST diagnostics still run normally.
 - `trace="basic"` (default): Records evaluated combinators (`ignore=False`) and nesting depth in `raytracing.trace`, rule names in `raytracing.paths`, and per-rule branches in `raytracing.branches`.
-- `trace="detailed"`: Intentionally records a full `TraceRecord` (`combinator`, `depth`, `start`, `end`, `outcome`, `exception_type`) for each evaluated combinator and tracks rollback positions in `raytracing.backtracks` / `raytracing.furthest`. It is the heavy instrumentation mode for designing dedicated parsers and lexers, and is formatted with `raytracing.detailed()`.
+- `trace="detailed"`: Intentionally records a full `TraceRecord` (`combinator`, `depth`, `start`, `end`, `outcome`, `exception_type`, `flow_kind`) for each evaluated combinator and tracks rollback positions in `raytracing.backtracks` / `raytracing.furthest`. It is the heavy instrumentation mode for designing dedicated parsers and lexers, and is formatted with `raytracing.detailed()`.
 
 ### Predictive Alternative Audit
 
 `Alt(..., audit=True)` enables a cached, static predictive plan. It can reorder
 only exact, non-nullable, side-effect-free branches by their guaranteed token
-consumption. The public `Alt.combinators` tuple remains in declared order.
+consumption and skip exact branches whose `first_set` cannot match the current
+token. The public `Alt.combinators` tuple remains in declared order.
 Opaque, recursive, zero-width, unbounded, and flow-control branches remain
 barriers and are not reordered. The default `audit=False` behavior is
 unchanged. In `trace="detailed"`, attempted alternatives are available through
 `analyzer.raytracing.alternative_records` with their declared index, planned
 index, cursor span, and outcome.
+The cached plan tracks nested combinator and `RuleItem.entrypoint` revisions;
+session revisions invalidate contextual plans. Parser conversions are resolved
+from the active parser at dispatch time, so they never leave a stale plan.

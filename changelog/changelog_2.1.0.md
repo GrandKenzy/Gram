@@ -36,6 +36,13 @@
   reciben la vista de sesión cuando necesitan configuración contextual.
 - `Alt(audit=True)` añade perfiles de consumo, caché de planes predictivos y
   reordenamiento conservador sin mutar el orden público de alternativas.
+- La auditoría predictiva usa `first_set` para omitir ramas exactas imposibles
+  en el token actual, conserva barreras opacas y cae al orden compilado si no
+  hay una predicción segura; se añadieron pruebas diferenciales de resultados,
+  cursor y diagnósticos entre `audit=False` y `audit=True`.
+- La caché predictiva detecta cambios en combinadores anidados, `entrypoint` y
+  sesiones con comprobación O(1) mientras no haya mutaciones; las conversiones
+  locales se resuelven dinámicamente sin reutilizar dispatch obsoleto.
 - El benchmark de alternativas redujo de `0.191345 s` a `0.045692 s` la
   mediana del caso auditado con 16 ramas y 128 sentencias.
 - El parser evita escaneos repetidos de indentación y trabajo vacío de hooks,
@@ -48,3 +55,19 @@
   parser, evitando mutaciones que sobrevivían a un rollback de `Alt` o `Seq`.
 - `trace="detailed"` conserva instrumentación completa y deliberadamente
   pesada para diseñar parsers y lexers dedicados.
+- Las expresiones usan despacho predictivo cacheado para omitir `Ref` imposibles,
+  conservando el orden y la prioridad de referencias sobre paréntesis.
+- `ArithmeticExpr`, `ConditionalExpr` y `DualExpr` respetan conversiones lógicas
+  del parser y evitan serializar árboles recursivos completos en el camino normal.
+- Las señales de control conservan sus clases compatibles y ahora exponen
+  `FlowKind`; `trace="detailed"` también registra esa clasificación para
+  distinguir secuencia, repetición, backtracking, commit y abort.
+
+## Runtime nativo C y DiagnosticsLite
+
+- Runtime léxico nativo C11 independiente (`native/gram_lexer/`), reentrante y con cero asignaciones dinámicas por token, operando sobre spans en memoria del buffer UTF-8 original.
+- Subsistema de diagnósticos desacoplado `DiagnosticsLite` (`gram_diagnostics_lite.h`, `diagnostics_lite.c`), sin objetos ni herencia, con soporte para sinks nulos, callbacks de usuario, buffers externos con arena para mensajes, límite máximo de diagnósticos, severidades personalizables y políticas `recover`, `stop_on_error` y `stop_on_fatal`.
+- Soporte léxico completo alineado al 100% con Python: identificadores y palabras clave, grupos semánticos, máxima coincidencia de símbolos (*maximal munch*), números decimales, flotantes, binarios, octales y hexadecimales (incluyendo `0x...p...` y punto inicial), cadenas con prefijos (`L`, `u`, `U`, `u8`) y escapes `\uXXXX`, docstrings multilínea, comentarios de línea y bloque (`/* ... */`), e indentación configurable (`spaces`, `tabs`, `mixed`).
+- Exportador determinista desde `Session` (`tools/export_lexer_tables.py`) que genera tablas C estáticas (`gram_lexer_config.h`, `gram_lexer_keywords.c`, `gram_lexer_groups.c`, `gram_lexer_symbols.c`, `gram_lexer_codes.h`) y manifiesto JSON con hash SHA-256 y versionado ABI 1.0.
+- Adaptador opcional en Python mediante `Lexer(source, backend="python" | "c")`, manteniendo `backend="python"` como valor predeterminado sin fallback silencioso ante fallos en C.
+- Comparador diferencial [`tools/compare_lexers.py`](file:///c:/Users/Kentucky/Desktop/Gram/tools/compare_lexers.py), suite de pruebas diferenciales y contratos con fixtures dorados (`tests/test_lexer_differential.py`, `tests/fixtures/lexer/golden_cases.json`) y suite de benchmarks de rendimiento y memoria (`benchmarks/lexer_python_vs_c.py`).

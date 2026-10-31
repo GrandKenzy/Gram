@@ -6,7 +6,7 @@ from __future__ import annotations
 from gram import errors
 from gram.core.ast.nodes import ASTNode, ASTRef, Identifier, LiteralNumber
 from gram.core.combinators.base import RuleItem
-from gram.core.combinators.sequence import Seq
+from gram.core.combinators.enclosed import Enclosed
 from gram.core.combinators.match import MatchToken
 from gram.core.combinators.expressions import (
     ASTBinaryOp,
@@ -16,7 +16,7 @@ from gram.core.combinators.expressions import (
     DualExpr,
 )
 from gram.core.combinators.reference import Ref
-from gram.core.lexer.tokens import Token
+from gram.core.lexer.tokens import Token, TokenType
 from tests.combinators.base import CombinatorTestCase
 
 
@@ -29,11 +29,18 @@ class ParenthesizedNumber(RuleItem):
     """Specialized atom used to guard Ref-before-native-grouping behavior."""
 
     nodeable = True
-    entrypoint = Seq(
-        MatchToken(Token.LPAREN),
-        MatchToken(Token.NUMBER),
-        MatchToken(Token.RPAREN),
+    entrypoint = Enclosed(
+        open=Token.LPAREN,
+        content=MatchToken(Token.NUMBER),
+        close=Token.RPAREN,
     )
+
+
+class IdentifierOnly(RuleItem):
+    """Operand that cannot begin with a parenthesized expression."""
+
+    nodeable = True
+    entrypoint = MatchToken(Token.IDENT)
 
 
 class TestExpressionCombinators(CombinatorTestCase):
@@ -114,13 +121,62 @@ class TestExpressionCombinators(CombinatorTestCase):
         class RefFirstDualExpr(DualExpr):
             refs_before_grouping = True
 
-        expr = RefFirstDualExpr(Ref(ParenthesizedNumber), Token.NUMBER)
+        expr = RefFirstDualExpr(
+            Ref(IdentifierOnly),
+            Ref(ParenthesizedNumber),
+            Token.NUMBER,
+        )
 
         result, analyzer = self.parse_with_analyzer(expr, "(42)")
 
         self.assertIsInstance(result, ASTRef)
         self.assertEqual(result.name, "ParenthesizedNumber")
         self.assertEqual(analyzer.parser.pos, 3)
+
+    def test_expression_uses_effective_tokens_from_parser_conversions(self) -> None:
+        tokens = [
+            TokenType(Token.IDENT, "PTR", 1, 0),
+            TokenType(Token.EOF, None, 1, 3),
+        ]
+        analyzer = self.create_analyzer(tokens)
+        analyzer.parser.register_conversion("PTR", Token.NUMBER)
+
+        result = analyzer.visitor(ArithmeticExpr(Token.NUMBER))
+
+        self.assertIsInstance(result, LiteralNumber)
+        self.assertEqual(result.token.token, Token.NUMBER)
+        self.assertEqual(analyzer.parser.pos, 1)
+
+        operator_tokens = [
+            TokenType(Token.NUMBER, 1, 1, 0),
+            TokenType(Token.IDENT, "PLUS", 1, 2),
+            TokenType(Token.NUMBER, 2, 1, 7),
+            TokenType(Token.EOF, None, 1, 8),
+        ]
+        operator_analyzer = self.create_analyzer(operator_tokens)
+        operator_analyzer.parser.register_conversion("PLUS", Token.PLUS)
+
+        operator_result = operator_analyzer.visitor(ArithmeticExpr(Token.NUMBER))
+
+        self.assertIsInstance(operator_result, ASTBinaryOp)
+        self.assertEqual(operator_result.operator.token, Token.PLUS)
+        self.assertEqual(operator_analyzer.parser.pos, 3)
+
+    def test_long_left_associative_expression_does_not_repr_recursively(self) -> None:
+        tokens: list[TokenType] = []
+        for index in range(1000):
+            if index:
+                tokens.append(TokenType(Token.PLUS, "+", 1, index * 4 - 1))
+            tokens.append(TokenType(Token.NUMBER, index, 1, index * 4))
+        tokens.append(TokenType(Token.EOF, None, 1, len(tokens)))
+
+        result, analyzer = self.parse_with_analyzer(
+            ArithmeticExpr(Token.NUMBER),
+            tokens,
+        )
+
+        self.assertIsInstance(result, ASTBinaryOp)
+        self.assertEqual(analyzer.parser.pos, len(tokens) - 1)
 
     # =========================================================================
     # 4. Errors

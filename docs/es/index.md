@@ -33,3 +33,13 @@ Guías prácticas para estructurar frontends de lenguajes, gestionar sesiones ai
 - **[03. Sesiones de Lenguaje](./03-Uso/03-sesiones.md)** — Aislamiento y alternancia entre múltiples frontends en el mismo proceso con `gram.sessions.Session`.
 - **[04. Sistema de Diagnósticos y Errores](./03-Uso/04-diagnosticos-y-errores.md)** — Telemetría jerárquica con `Diagnostics`, catálogo formal OSGDC, `StackError` e interceptores de error (`ErrorAction`).
 - **[05. VSIX y Tooling para Editores](./03-Uso/05-vsix-y-herramientas-editor.md)** — Mapas declarativos en `RuleItem`, previsualización ANSI TrueColor, generación de extensiones VS Code y servidor LSP por stdio.
+
+### [04. Analizador Léxico (Lexer)](./04-Lexer/index.md)
+Guía exhaustiva de referencia sobre el motor de análisis léxico, representación de tokens, visitors de literales, seguimiento de indentación y telemetría diagnóstica.
+- **[01. Arquitectura y Manejo de Estado](./04-Lexer/01-arquitectura-y-estado.md)** — Diseño de `Lexer` y `LexerState`, carga de código fuente, navegación por coordenadas, validación previa de palabras clave y bucle de escaneo en una pasada.
+- **[02. Catálogo de Tokens y Despacho de Símbolos](./04-Lexer/02-tokens-y-simbolos.md)** — Las 11 categorías formales de `Token`, lexemas `TokenType`, interpolación de coordenadas (`formatter`), tokens dinámicos `CustomToken`, banderas `TokenFlags` y maximal munch sobre `MAP_SYMBOLS`.
+- **[03. Literales y Visitors Especializados](./04-Lexer/03-literales-y-visitors.md)** — Arquitectura de despacho por visitors: literales numéricos (bases numéricas, flotantes, separadores, sufijos C), cadenas (secuencias de escape, Unicode `\uXXXX`, prefijos C) y precedencia de palabras.
+- **[04. Indentación, Comentarios y Delimitadores](./04-Lexer/04-indentacion-y-comentarios.md)** — Seguimiento semántico de espacios en blanco (pila `indents`, estilos de ancho de tabulación, errores de discordancia), comentarios unilínea, comentarios de bloque y registro de delimitadores multilínea (`add_multline`).
+- **[05. Navegación del Flujo de Tokens (`TokenStream`)](./04-Lexer/05-flujo-token-stream.md)** — Gestión del cursor, inspección anticipada (`peek`, `current`), comprobación condicional (`check`, `match`), consumo estricto con error (`consume`), corte en rebanadas y filtrado de exclusión.
+- **[06. Configuración y Diagnósticos](./04-Lexer/06-configuracion-y-diagnosticos.md)** — Matriz completa de ajustes en `config`, árboles de ejecución diagnóstica, políticas de terminación (`report_error`, `fail`, ganchos de error), catálogo de códigos OSGDC y aislamiento léxico por sesión.
+

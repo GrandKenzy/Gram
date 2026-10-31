@@ -69,7 +69,15 @@ class TraceRecord:
     cursor span it covered and how it finished.
     """
 
-    __slots__ = ("combinator", "depth", "start", "end", "outcome", "exception_type")
+    __slots__ = (
+        "combinator",
+        "depth",
+        "start",
+        "end",
+        "outcome",
+        "exception_type",
+        "flow_kind",
+    )
 
     def __init__(self, combinator: Combinator, depth: int, start: int) -> None:
         self.combinator = combinator
@@ -78,6 +86,7 @@ class TraceRecord:
         self.end: int | None = None
         self.outcome: str = "PENDING"
         self.exception_type: str | None = None
+        self.flow_kind: str | None = None
 
     def format(self) -> str:
         """Return a single indented line describing this record."""
@@ -229,11 +238,13 @@ class RayTracing:
         position: int | None = None,
         outcome: str = "SUCCESS",
         exception_type: str | None = None,
+        flow_kind: str | None = None,
     ) -> None:
         """Close `record` with the final cursor position and its outcome."""
         record.end = position
         record.outcome = outcome
         record.exception_type = exception_type
+        record.flow_kind = flow_kind
 
     def begin_alternative(
         self,

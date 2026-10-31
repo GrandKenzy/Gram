@@ -61,6 +61,13 @@ Each item passed in `*values` (or inside an iterable passed to `*values`) is val
 2. **`RuleItem` subclass with `nodeable = True`:** Automatically wrapped in `Ref(rule)`.
 3. **`Ref` combinator with a non-empty `.name`:** Evaluated speculatively inside `analyzer.failure_scope()` before falling back to token atoms. Passing a `Ref` with `name=None` and `nodeable=False` raises `UnnamedRefInExpr` (`GrammarError`).
 
+Expression references with an exact, non-nullable, side-effect-free static
+first-token set use a cached dispatch filter before speculative evaluation.
+Declared reference order is preserved, ambiguous references remain in the
+fallback path, and references that can begin with `LPAREN` are still tried
+before native grouping when `refs_before_grouping=True`. Parser-local logical
+token conversions are applied when classifying atoms and operators.
+
 Invalid string names raise `InvalidExprTokenName`; any other type raises `UnsupportedExprOperand`.
 
 ### Parenthesized Grouping

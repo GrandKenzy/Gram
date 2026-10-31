@@ -16,6 +16,7 @@ from gram import config, errors
 from gram.core.lexer import CustomToken, Token, TokenType
 from gram.core.parser.conversions import ConversionTarget
 from gram.core.parser import Checkpoint
+from gram.core.combinators.base import _touch_predictive_epoch
 from gram.utilities import Diagnostics, Format, error
 from gram.core.parser.hookr import Hookr
 
@@ -267,6 +268,7 @@ class ParseState(Diagnostics):
                 f"La conversión para {name!r} ya está registrada como {existing!r}."
             )
         self.conversions[name] = target
+        _touch_predictive_epoch()
 
     def export_conversions(self) -> dict[str, ConversionTarget]:
         """Return a detached snapshot of the parser's active conversions."""
@@ -286,6 +288,7 @@ class ParseState(Diagnostics):
                     f"La conversión para {name!r} ya está registrada como {existing!r}."
                 )
             self.conversions[name] = target
+        _touch_predictive_epoch()
 
     def track_external_storage(
         self,

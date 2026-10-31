@@ -1,0 +1,824 @@
+[
+  {
+    "name": "empty_source",
+    "source": "",
+    "tokens": [
+      {
+        "kind": "EOF",
+        "kind_id": 0,
+        "value": null,
+        "line": 1,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      }
+    ],
+    "comments": [],
+    "diagnostics": []
+  },
+  {
+    "name": "basic_function",
+    "source": "def calc(x, y):\n    if x >= y:\n        return x + y\n    return 0\n",
+    "tokens": [
+      {
+        "kind": "KEYWORD",
+        "kind_id": 6,
+        "value": "def",
+        "line": 1,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "calc",
+        "line": 1,
+        "col": 4,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "LPAREN",
+        "kind_id": 49,
+        "value": "(",
+        "line": 1,
+        "col": 8,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "x",
+        "line": 1,
+        "col": 9,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "COMMA",
+        "kind_id": 55,
+        "value": ",",
+        "line": 1,
+        "col": 10,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "y",
+        "line": 1,
+        "col": 12,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "RPAREN",
+        "kind_id": 50,
+        "value": ")",
+        "line": 1,
+        "col": 13,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "COLON",
+        "kind_id": 57,
+        "value": ":",
+        "line": 1,
+        "col": 14,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "INDENT",
+        "kind_id": 3,
+        "value": 4,
+        "line": 2,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "KEYWORD",
+        "kind_id": 6,
+        "value": "if",
+        "line": 2,
+        "col": 4,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "x",
+        "line": 2,
+        "col": 7,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "GREATER_EQUAL",
+        "kind_id": 39,
+        "value": ">=",
+        "line": 2,
+        "col": 9,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "y",
+        "line": 2,
+        "col": 12,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "COLON",
+        "kind_id": 57,
+        "value": ":",
+        "line": 2,
+        "col": 13,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "INDENT",
+        "kind_id": 3,
+        "value": 8,
+        "line": 3,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "KEYWORD",
+        "kind_id": 6,
+        "value": "return",
+        "line": 3,
+        "col": 8,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "x",
+        "line": 3,
+        "col": 15,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "PLUS",
+        "kind_id": 11,
+        "value": "+",
+        "line": 3,
+        "col": 17,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "y",
+        "line": 3,
+        "col": 19,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "DEDENT",
+        "kind_id": 4,
+        "value": 4,
+        "line": 4,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "KEYWORD",
+        "kind_id": 6,
+        "value": "return",
+        "line": 4,
+        "col": 4,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 0,
+        "line": 4,
+        "col": 11,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "DEDENT",
+        "kind_id": 4,
+        "value": 0,
+        "line": 5,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "EOF",
+        "kind_id": 0,
+        "value": null,
+        "line": 5,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      }
+    ],
+    "comments": [],
+    "diagnostics": []
+  },
+  {
+    "name": "numbers_and_suffixes",
+    "source": "0 42 1_000 0xFF 0b1010 0o77 .5 3.14 1e-9 0x1.8p+2 10ULL 3.14f",
+    "tokens": [
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 0,
+        "line": 1,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 42,
+        "line": 1,
+        "col": 2,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 1000,
+        "line": 1,
+        "col": 5,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 255,
+        "line": 1,
+        "col": 11,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 10,
+        "line": 1,
+        "col": 16,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 63,
+        "line": 1,
+        "col": 23,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "DECIMAL",
+        "kind_id": 84,
+        "value": 0.5,
+        "line": 1,
+        "col": 28,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "DECIMAL",
+        "kind_id": 84,
+        "value": 3.14,
+        "line": 1,
+        "col": 31,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "DECIMAL",
+        "kind_id": 84,
+        "value": 1e-09,
+        "line": 1,
+        "col": 36,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "DECIMAL",
+        "kind_id": 84,
+        "value": 6.0,
+        "line": 1,
+        "col": 41,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": "10ULL",
+        "line": 1,
+        "col": 50,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "DECIMAL",
+        "kind_id": 84,
+        "value": "3.14f",
+        "line": 1,
+        "col": 56,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "EOF",
+        "kind_id": 0,
+        "value": null,
+        "line": 2,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      }
+    ],
+    "comments": [],
+    "diagnostics": []
+  },
+  {
+    "name": "strings_and_escapes",
+    "source": "'a' '\\n' '\\u0041' \"hello\\tworld\" u8\"utf8\" L'w' \"\"\"multi\nline\"\"\"",
+    "tokens": [
+      {
+        "kind": "STRING",
+        "kind_id": 7,
+        "value": "a",
+        "line": 1,
+        "col": 0,
+        "flags": 3,
+        "description": ""
+      },
+      {
+        "kind": "STRING",
+        "kind_id": 7,
+        "value": "\n",
+        "line": 1,
+        "col": 4,
+        "flags": 3,
+        "description": ""
+      },
+      {
+        "kind": "STRING",
+        "kind_id": 7,
+        "value": "A",
+        "line": 1,
+        "col": 9,
+        "flags": 3,
+        "description": ""
+      },
+      {
+        "kind": "STRING",
+        "kind_id": 7,
+        "value": "hello\tworld",
+        "line": 1,
+        "col": 18,
+        "flags": 1,
+        "description": ""
+      },
+      {
+        "kind": "STRING",
+        "kind_id": 7,
+        "value": "utf8",
+        "line": 1,
+        "col": 33,
+        "flags": 1,
+        "description": "u8"
+      },
+      {
+        "kind": "STRING",
+        "kind_id": 7,
+        "value": "w",
+        "line": 1,
+        "col": 42,
+        "flags": 3,
+        "description": "L"
+      },
+      {
+        "kind": "STRING",
+        "kind_id": 7,
+        "value": "multi\nline",
+        "line": 1,
+        "col": 47,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "EOF",
+        "kind_id": 0,
+        "value": null,
+        "line": 3,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      }
+    ],
+    "comments": [],
+    "diagnostics": []
+  },
+  {
+    "name": "comments_and_operators",
+    "source": "# header\nx = 1 >>= 2 # inline\n/* block\ncomment */ y := x ...",
+    "tokens": [
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "x",
+        "line": 2,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "ASSIGN",
+        "kind_id": 20,
+        "value": "=",
+        "line": 2,
+        "col": 2,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 1,
+        "line": 2,
+        "col": 4,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "SHR_ASSIGN",
+        "kind_id": 32,
+        "value": ">>=",
+        "line": 2,
+        "col": 6,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 2,
+        "line": 2,
+        "col": 10,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "SLASH",
+        "kind_id": 14,
+        "value": "/",
+        "line": 3,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "STAR",
+        "kind_id": 13,
+        "value": "*",
+        "line": 3,
+        "col": 1,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "block",
+        "line": 3,
+        "col": 3,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "comment",
+        "line": 4,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "STAR",
+        "kind_id": 13,
+        "value": "*",
+        "line": 4,
+        "col": 8,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "SLASH",
+        "kind_id": 14,
+        "value": "/",
+        "line": 4,
+        "col": 9,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "y",
+        "line": 4,
+        "col": 11,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "WALRUS",
+        "kind_id": 33,
+        "value": ":=",
+        "line": 4,
+        "col": 13,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "x",
+        "line": 4,
+        "col": 16,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "THREE_DOTS",
+        "kind_id": 80,
+        "value": "...",
+        "line": 4,
+        "col": 18,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "EOF",
+        "kind_id": 0,
+        "value": null,
+        "line": 5,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      }
+    ],
+    "comments": [
+      {
+        "kind": "COMMENT",
+        "kind_id": 5,
+        "value": " header",
+        "line": 1,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "COMMENT",
+        "kind_id": 5,
+        "value": " inline",
+        "line": 2,
+        "col": 12,
+        "flags": 0,
+        "description": ""
+      }
+    ],
+    "diagnostics": []
+  },
+  {
+    "name": "unicode_identifiers",
+    "source": "let αβγ = café_1 + 变量\n",
+    "tokens": [
+      {
+        "kind": "KEYWORD",
+        "kind_id": 6,
+        "value": "let",
+        "line": 1,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "αβγ",
+        "line": 1,
+        "col": 4,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "ASSIGN",
+        "kind_id": 20,
+        "value": "=",
+        "line": 1,
+        "col": 8,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "café_1",
+        "line": 1,
+        "col": 10,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "PLUS",
+        "kind_id": 11,
+        "value": "+",
+        "line": 1,
+        "col": 17,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "变量",
+        "line": 1,
+        "col": 19,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "EOF",
+        "kind_id": 0,
+        "value": null,
+        "line": 2,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      }
+    ],
+    "comments": [],
+    "diagnostics": []
+  },
+  {
+    "name": "lexical_errors_recovery",
+    "source": "x = @\ny = 0x_1\nz = \"unclosed\nw = 1\n",
+    "tokens": [
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "x",
+        "line": 1,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "ASSIGN",
+        "kind_id": 20,
+        "value": "=",
+        "line": 1,
+        "col": 2,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "AT",
+        "kind_id": 59,
+        "value": "@",
+        "line": 1,
+        "col": 4,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "y",
+        "line": 2,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "ASSIGN",
+        "kind_id": 20,
+        "value": "=",
+        "line": 2,
+        "col": 2,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "ERROR",
+        "kind_id": 81,
+        "value": "0x_1",
+        "line": 2,
+        "col": 4,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "z",
+        "line": 3,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "ASSIGN",
+        "kind_id": 20,
+        "value": "=",
+        "line": 3,
+        "col": 2,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "ERROR",
+        "kind_id": 81,
+        "value": "unclosed",
+        "line": 3,
+        "col": 4,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "IDENT",
+        "kind_id": 2,
+        "value": "w",
+        "line": 4,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "ASSIGN",
+        "kind_id": 20,
+        "value": "=",
+        "line": 4,
+        "col": 2,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "NUMBER",
+        "kind_id": 8,
+        "value": 1,
+        "line": 4,
+        "col": 4,
+        "flags": 0,
+        "description": ""
+      },
+      {
+        "kind": "EOF",
+        "kind_id": 0,
+        "value": null,
+        "line": 5,
+        "col": 0,
+        "flags": 0,
+        "description": ""
+      }
+    ],
+    "comments": [],
+    "diagnostics": [
+      {
+        "osgdc_code": "11411",
+        "code_name": "Gram.Lexer.InvalidNumber"
+      },
+      {
+        "osgdc_code": "11411",
+        "code_name": "Gram.Lexer.UnclosedString"
+      }
+    ]
+  }
+]

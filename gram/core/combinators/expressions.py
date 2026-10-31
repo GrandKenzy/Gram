@@ -2,9 +2,10 @@
 Pratt Expression Combinators (`gram.core.combinators.expressions`).
 ===================================================================
 Provides `ArithmeticExpr`, `ConditionalExpr`, and `DualExpr` powered by a
-single-pass Top-Down Operator Precedence (Pratt) engine with native strict
-parenthesis grouping, $O(1)$ static binding-power tables, and strict operand
-validation (`Token` members, named `Ref` combinators, and `nodeable` `RuleItem` classes).
+Top-Down Operator Precedence (Pratt) engine with native strict parenthesis
+grouping, cached conservative dispatch for predictable `Ref` atoms, $O(1)$
+static binding-power tables, and strict operand validation (`Token` members,
+named `Ref` combinators, and `nodeable` `RuleItem` classes).
 """
 from __future__ import annotations
 
@@ -14,7 +15,12 @@ from typing import TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.ast.nodes import ASTNode, ASTRef
-from gram.core.combinators.base import Combinator, RuleItem
+from gram.core.combinators.base import (
+    Combinator,
+    RuleItem,
+    _predictive_epoch,
+)
+from gram.core.combinators.predictive import PredictivePlan, compile_predictive_plan
 from gram.core.combinators.reference import Ref
 from gram.core.lexer.tokens import Token, TokenType
 
@@ -249,6 +255,116 @@ class BaseExpr(Combinator):
 
         self._ref_values: tuple[Ref, ...] = tuple(ref_list)
         self._token_values: frozenset[Token] = frozenset(tok_set)
+        # This plan is intentionally private.  It only filters references that
+        # are provably unable to start with the current token; declaration order
+        # and all opaque/ambiguous references remain unchanged.
+        self._ref_predictive_plan: PredictivePlan | None = None
+        self._ref_predictive_source: tuple[Ref, ...] | None = None
+        self._ref_predictive_epoch: int = _predictive_epoch()
+        self._ref_candidate_cache: dict[
+            tuple[tuple[str, str | None], tuple[str, str | None]],
+            tuple[Ref, ...],
+        ] = {}
+
+    def _get_ref_predictive_plan(self) -> PredictivePlan | None:
+        """Return the cached conservative first-token plan for expression refs."""
+        if not self._ref_values:
+            return None
+
+        current_epoch = _predictive_epoch()
+        plan = self._ref_predictive_plan
+        if (
+            plan is not None
+            and self._ref_predictive_source is self._ref_values
+            and (
+                current_epoch == self._ref_predictive_epoch
+                or plan.dependencies_current()
+            )
+        ):
+            object.__setattr__(self, "_ref_predictive_epoch", current_epoch)
+            return plan
+
+        plan = compile_predictive_plan(self._ref_values)
+        object.__setattr__(self, "_ref_predictive_plan", plan)
+        object.__setattr__(self, "_ref_predictive_source", self._ref_values)
+        object.__setattr__(self, "_ref_predictive_epoch", current_epoch)
+        object.__setattr__(self, "_ref_candidate_cache", {})
+        return plan
+
+    @staticmethod
+    def _token_key(token: TokenType | None) -> tuple[str, str | None]:
+        """Return a compact predictive key for a physical or effective token."""
+        if token is None:
+            return ("", None)
+
+        token_type = getattr(getattr(token, "token", None), "name", None)
+        if token_type is None:
+            return ("", None)
+
+        value = getattr(token, "value", None)
+        keyword = (
+            str(value)
+            if str(token_type) == "KEYWORD" and value is not None
+            else None
+        )
+        return (str(token_type), keyword)
+
+    def _candidate_refs(
+        self,
+        raw_current: TokenType | None,
+        effective_current: TokenType | None,
+    ) -> tuple[Ref, ...]:
+        """Filter only statically impossible refs while preserving source order."""
+        plan = self._get_ref_predictive_plan()
+        if plan is None:
+            return self._ref_values
+
+        raw_key = self._token_key(raw_current)
+        effective_key = self._token_key(effective_current)
+        if not raw_key[0] and not effective_key[0]:
+            return self._ref_values
+
+        cache_key = (raw_key, effective_key)
+
+        cached = self._ref_candidate_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        candidates: list[Ref] = []
+        for ref_comb, profile in zip(self._ref_values, plan.profiles):
+            # ``reorderable`` is deliberately stricter than this optimization
+            # requires.  It guarantees an exact, non-nullable, pure first set,
+            # so skipping the branch cannot hide parser-side effects.
+            if not profile.reorderable or profile.first_set is None:
+                candidates.append(ref_comb)
+                continue
+
+            matches = False
+            for token_name, keyword in (raw_key, effective_key):
+                if not token_name:
+                    continue
+                if ("token", token_name) in profile.first_set:
+                    matches = True
+                    break
+                if keyword is not None and ("keyword", keyword) in profile.first_set:
+                    matches = True
+                    break
+            if matches:
+                candidates.append(ref_comb)
+        result = tuple(candidates)
+        self._ref_candidate_cache[cache_key] = result
+        return result
+
+    @staticmethod
+    def _effective_token(parser: Any, current: TokenType) -> TokenType:
+        """Resolve an IDENT conversion without paying for a copy when unused."""
+        conversions = getattr(parser, "conversions", None)
+        resolver = getattr(parser, "resolve_token_at", None)
+        if current.token == Token.IDENT and conversions and callable(resolver):
+            resolved = resolver(parser.pos)
+            if resolved is not None:
+                return resolved
+        return current
 
     def _parse_atom(self, analyzer: ASTAnalyzer, is_after_op: bool) -> ASTNode | None:
         """
@@ -283,9 +399,11 @@ class BaseExpr(Combinator):
                 )
             return None
 
-        curr = parser.peek()
-        if curr is None:
+        raw_curr = parser.peek()
+        if raw_curr is None:
             return None
+
+        curr = self._effective_token(parser, raw_curr)
 
         best_ref_failure = None
 
@@ -293,7 +411,11 @@ class BaseExpr(Combinator):
         # notably C casts and compound literals. They opt in explicitly so
         # the generic Gram expression parser keeps its original behavior.
         if self.refs_before_grouping and curr.token == Token.LPAREN:
-            best_ref_failure = self._try_ref_atoms(analyzer)
+            best_ref_failure = self._try_ref_atoms(
+                analyzer,
+                raw_current=raw_curr,
+                effective_current=curr,
+            )
             if best_ref_failure[0] is not None:
                 return best_ref_failure[0]
             best_ref_failure = best_ref_failure[1]
@@ -341,8 +463,8 @@ class BaseExpr(Combinator):
         # 2. Prefix unary operators
         if curr.token in self.unary_ops:
             right_bp = self.unary_ops[curr.token]
-            op_tok = parser.consume()
-            assert op_tok is not None
+            parser.consume()
+            op_tok = curr
             analyzer.discard_staged_failure(min_weight=parser.pos)
 
             operand = self._parse_expr(analyzer, min_bp=right_bp, is_after_op=True)
@@ -351,14 +473,18 @@ class BaseExpr(Combinator):
             return ASTUnaryOp(op_tok, operand)
 
         if not self.refs_before_grouping or curr.token != Token.LPAREN:
-            ref_node, best_ref_failure = self._try_ref_atoms(analyzer)
+            ref_node, best_ref_failure = self._try_ref_atoms(
+                analyzer,
+                raw_current=raw_curr,
+                effective_current=curr,
+            )
             if ref_node is not None:
                 return ref_node
 
         if curr.token in self._token_values and curr.token != Token.KEYWORD:
-            tok = parser.consume()
+            parser.consume()
             analyzer.discard_staged_failure(min_weight=parser.pos)
-            return analyzer.delegate_return_node(tok)
+            return analyzer.delegate_return_node(curr)
 
         if best_ref_failure is not None:
             analyzer.stage_failure(best_ref_failure[1], weight=best_ref_failure[0])
@@ -384,11 +510,20 @@ class BaseExpr(Combinator):
     def _try_ref_atoms(
         self,
         analyzer: ASTAnalyzer,
+        *,
+        raw_current: TokenType | None = None,
+        effective_current: TokenType | None = None,
     ) -> tuple[ASTNode | None, Any]:
         """Try specialized atom refs and return `(node, deepest_failure)`."""
         parser = analyzer.parser
         best_ref_failure = None
-        for ref_comb in self._ref_values:
+        if raw_current is None:
+            raw_current = parser.peek()
+        if effective_current is None and raw_current is not None:
+            effective_current = self._effective_token(parser, raw_current)
+
+        ref_values = self._candidate_refs(raw_current, effective_current)
+        for ref_comb in ref_values:
             chk = parser.savepoint("EXPR-RefAtom")
             try:
                 with analyzer.failure_scope() as ref_scope:
@@ -428,9 +563,11 @@ class BaseExpr(Combinator):
             return None
 
         while not parser.empty() and not parser.is_eof():
-            curr = parser.peek()
-            if curr is None:
+            raw_curr = parser.peek()
+            if raw_curr is None:
                 break
+
+            curr = self._effective_token(parser, raw_curr)
 
             bp_pair = self.binary_ops.get(curr.token)
             if bp_pair is None:
@@ -440,8 +577,8 @@ class BaseExpr(Combinator):
             if l_bp < min_bp:
                 break
 
-            op_tok = parser.consume()
-            assert op_tok is not None
+            parser.consume()
+            op_tok = curr
             analyzer.discard_staged_failure(min_weight=parser.pos)
 
             rhs = self._parse_expr(analyzer, min_bp=r_bp, is_after_op=True)
@@ -490,7 +627,18 @@ class BaseExpr(Combinator):
                     analyzer.flush_failure()
                 return None
 
-            father.note(f"{self.type()} completado exitosamente: {root!r}", "success")
+            consumed = parser.pos - checkpoint.pos
+            if (
+                getattr(analyzer, "trace_mode", "basic") == "detailed"
+                and consumed <= 128
+            ):
+                result_info = repr(root)
+            else:
+                result_info = f"{type(root).__name__} ({consumed} tokens consumidos)"
+            father.note(
+                f"{self.type()} completado exitosamente: {result_info}",
+                "success",
+            )
             return root
         finally:
             parser.down()

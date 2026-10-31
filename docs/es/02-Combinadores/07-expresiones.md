@@ -61,6 +61,14 @@ Cada elemento pasado en `*values` (o dentro de un iterable pasado a `*values`) s
 2. **Subclase de `RuleItem` con `nodeable = True`:** Envuelto automáticamente en `Ref(rule)`.
 3. **Combinador `Ref` con `.name` no vacío:** Evaluado especulativamente dentro de `analyzer.failure_scope()` antes de retroceder a átomos de token. Pasar un `Ref` con `name=None` y `nodeable=False` lanza `UnnamedRefInExpr` (`GrammarError`).
 
+Las referencias con un `first-set` estático exacto, no anulable y sin efectos
+laterales usan un filtro de despacho cacheado antes de la evaluación
+especulativa. Se conserva el orden declarado, las referencias ambiguas quedan
+en la ruta fallback y las referencias que pueden comenzar con `LPAREN` siguen
+probándose antes de la agrupación nativa cuando `refs_before_grouping=True`.
+Las conversiones lógicas locales del parser se aplican al clasificar átomos y
+operadores.
+
 Nombres de cadena no válidos lanzan `InvalidExprTokenName`; cualquier otro tipo lanza `UnsupportedExprOperand`.
 
 ### Agrupación Entre Paréntesis

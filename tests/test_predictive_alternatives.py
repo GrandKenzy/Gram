@@ -15,7 +15,9 @@ from gram.core.combinators import (
     audit_alternatives,
 )
 from gram.core.lexer import Token
+from gram.core.lexer import TokenType
 from gram.core.parser import Parser
+from gram.sessions import Session
 from tests.combinators.base import CombinatorTestCase
 
 
@@ -69,6 +71,81 @@ class TestPredictiveAlternatives(CombinatorTestCase):
         self.assertTrue(plan.profiles[0].reorderable)
         self.assertTrue(plan.profiles[1].reorderable)
 
+    def test_nested_combinator_mutation_rebuilds_the_plan(self) -> None:
+        branch = Seq(MatchKeyword("short"))
+        alternative = Alt(branch, audit=True)
+
+        first = alternative.get_predictive_plan()
+        branch.combinators = (MatchKeyword("short"), MatchToken(Token.IDENT))
+        second = alternative.get_predictive_plan()
+
+        self.assertIsNot(first, second)
+        self.assertEqual(second.profiles[0].min_tokens, 2)
+
+    def test_rule_entrypoint_mutation_rebuilds_the_plan(self) -> None:
+        rule = type(
+            "MutablePredictiveRule",
+            (RuleItem,),
+            {"entrypoint": MatchKeyword("short")},
+        )
+        alternative = Alt(Ref(rule), audit=True)
+        first = alternative.get_predictive_plan()
+        rule.entrypoint = Seq(MatchKeyword("short"), MatchToken(Token.IDENT))
+
+        second = alternative.get_predictive_plan()
+
+        self.assertIsNot(first, second)
+        self.assertEqual(second.profiles[0].min_tokens, 2)
+
+    def test_session_mutation_rebuilds_contextual_plan(self) -> None:
+        session = Session("predictive-cache", "Many")
+        parser = Parser(self.tokenize("short"), session=session)
+        alternative = Alt(MatchKeyword("short"), audit=True)
+
+        first = alternative.get_predictive_plan(parser)
+        session.add_group("cache_group")
+        session.add_keyword("cache_revision", group="cache_group")
+        second = alternative.get_predictive_plan(parser)
+
+        self.assertIsNot(first, second)
+
+    def test_conversion_changes_are_read_without_stale_dispatch(self) -> None:
+        alternative = Alt(
+            MatchToken(Token.NUMBER),
+            MatchToken(Token.STRING),
+            audit=True,
+        )
+
+        number_parser = Parser(
+            [TokenType(Token.IDENT, "value")],
+            conversions={"value": Token.NUMBER},
+        )
+        number_analyzer = ASTAnalyzer(
+            number_parser,
+            type("Entry", (RuleItem,), {"entrypoint": alternative}),
+            trace="detailed",
+        )
+        self.assertIsNotNone(number_analyzer.visitor(alternative))
+        self.assertEqual(
+            [record.branch_index for record in number_analyzer.raytracing.alternative_records],
+            [0],
+        )
+
+        string_parser = Parser(
+            [TokenType(Token.IDENT, "value")],
+            conversions={"value": Token.STRING},
+        )
+        string_analyzer = ASTAnalyzer(
+            string_parser,
+            type("Entry", (RuleItem,), {"entrypoint": alternative}),
+            trace="detailed",
+        )
+        self.assertIsNotNone(string_analyzer.visitor(alternative))
+        self.assertEqual(
+            [record.branch_index for record in string_analyzer.raytracing.alternative_records],
+            [1],
+        )
+
     def test_audit_keeps_declared_order_public_but_uses_planned_order(self) -> None:
         alternative = self.alternatives(audit=True)
         parser = Parser(self.tokenize("long value = 1;"))
@@ -94,6 +171,66 @@ class TestPredictiveAlternatives(CombinatorTestCase):
         self.assertGreaterEqual(len(records), 2)
         self.assertEqual(records[0].branch_index, 0)
         self.assertEqual(records[1].branch_index, 1)
+
+    def test_first_set_dispatch_skips_impossible_exact_branches(self) -> None:
+        alternative = Alt(
+            MatchKeyword("short"),
+            MatchKeyword("long"),
+            audit=True,
+        )
+        parser = Parser(self.tokenize("long"))
+        analyzer = ASTAnalyzer(
+            parser,
+            type("Entry", (RuleItem,), {"entrypoint": alternative}),
+            trace="detailed",
+        )
+
+        self.assertIsNotNone(analyzer.visitor(alternative))
+
+        records = analyzer.raytracing.alternative_records
+        self.assertEqual([record.branch_index for record in records], [1])
+
+    def test_first_set_dispatch_preserves_opaque_barriers(self) -> None:
+        alternative = Alt(
+            MatchKeyword("short"),
+            OpaquePredictiveBranch(),
+            MatchKeyword("long"),
+            audit=True,
+        )
+        parser = Parser(self.tokenize("long"))
+        analyzer = ASTAnalyzer(
+            parser,
+            type("Entry", (RuleItem,), {"entrypoint": alternative}),
+            trace="detailed",
+        )
+
+        self.assertIsNotNone(analyzer.visitor(alternative))
+        records = analyzer.raytracing.alternative_records
+        self.assertEqual([record.branch_index for record in records], [1, 2])
+
+    def test_first_set_dispatch_falls_back_when_no_branch_predicts(self) -> None:
+        alternative = self.alternatives(audit=True)
+        parser = Parser(self.tokenize("unknown"))
+        analyzer = ASTAnalyzer(
+            parser,
+            type("Entry", (RuleItem,), {"entrypoint": alternative}),
+            trace="detailed",
+        )
+
+        self.assertIsNone(analyzer.visitor(alternative))
+        records = analyzer.raytracing.alternative_records
+        self.assertEqual([record.branch_index for record in records], [1, 0])
+
+    def test_audit_false_and_true_preserve_parse_observables(self) -> None:
+        def run(audit: bool, source: str) -> tuple[object, int, bool, list[tuple[str, str]]]:
+            analyzer = self.create_analyzer(source)
+            result = analyzer.visitor(self.alternatives(audit=audit))
+            errors = [(item.name, str(item.code)) for item in analyzer._errors]
+            return repr(result), analyzer.parser.pos, analyzer.parser.is_eof(), errors
+
+        for source in ("long value = 1;", "long value ="):
+            with self.subTest(source=source):
+                self.assertEqual(run(False, source), run(True, source))
 
     def test_opaque_branch_is_a_reordering_barrier(self) -> None:
         alternative = Alt(
