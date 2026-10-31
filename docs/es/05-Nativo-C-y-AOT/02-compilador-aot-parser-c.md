@@ -1,7 +1,7 @@
 # Compilador AOT de Parser en C
 
 > **Módulo:** `gram.core.parser.c_generator`  
-> **Estado:** Estable (Versión `2.1.0`)
+> **Estado:** Estable (Versión `3.0.0`)
 
 El compilador Ahead-Of-Time (AOT) de Gram analiza la gramática de una `Session` a partir de su regla raíz `entrypoint`, calcula conjuntos estáticos de lookahead y genera archivos C11 autónomos y descendentes recursivos para el parser y el AST (`gram_parser.h`, `gram_parser.c`, `gram_ast.h`, `gram_ast.c`).
 

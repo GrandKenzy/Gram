@@ -2,7 +2,7 @@
 
 > **Module:** `gram.core.parser.c_driver`  
 > **Format Version:** `1.0` (`GIR\0`)  
-> **Status:** Stable (Version `2.1.0`)
+> **Status:** Stable (Version `3.0.0`)
 
 Gram Binary IR (`GIR`) is a compact, relocatable, zero-copy binary serialization format for Abstract Syntax Trees produced by the native C parser. It allows compilers, linters, and analysis tools to stream, cache, and traverse parsed ASTs without paying the serialization or deserialization costs of JSON, XML, or protobufs.
 
@@ -35,22 +35,22 @@ A `.gir` binary buffer consists of three contiguous, 8-byte aligned sections:
 
 ```c
 typedef struct GramIrHeader {
-    char     magic[4];       /* Always "GIR\0" (0x00524947) */
-    uint16_t major;          /* Format major version (1) */
-    uint16_t minor;          /* Format minor version (0) */
-    uint32_t flags;          /* Format flags (bit 0: little-endian) */
-    uint32_t header_size;    /* Size of this header in bytes (72) */
-    uint64_t grammar_id;     /* 64-bit FNV-1a fingerprint of the grammar */
-    uint64_t source_hash;    /* 64-bit FNV-1a hash of the source text */
-    uint64_t source_size;    /* Original source size in bytes */
-    uint32_t string_count;   /* Number of unique strings in the pool */
-    uint32_t offsets_off;    /* File offset of the string offsets table */
-    uint32_t pool_off;       /* File offset of the string byte buffer */
-    uint32_t pool_bytes;     /* Total size of the string pool in bytes */
-    uint32_t nodes_off;      /* File offset of the node table (8-byte aligned) */
-    uint32_t node_count;     /* Total node count (including dummy node 0) */
-    uint32_t root_index;     /* Index of the root AST node in the node table */
-    uint64_t total_size;     /* Total file size in bytes */
+    char     magic[4];                /* Always "GIR\0" (0x00524947) */
+    uint16_t version_major;           /* Format major version (1) */
+    uint16_t version_minor;           /* Format minor version (0) */
+    uint32_t flags;                   /* Format flags (bit 0: little-endian) */
+    uint32_t header_size;             /* Size of this header in bytes (72) */
+    uint64_t grammar_id;              /* 64-bit SHA-256 fingerprint of the grammar & lexicon */
+    uint64_t source_hash;             /* 64-bit FNV-1a hash of the source text */
+    uint32_t source_size;             /* Original source size in bytes */
+    uint32_t string_count;            /* Number of unique strings in the pool */
+    uint32_t string_offsets_offset;   /* File offset of the string offsets table */
+    uint32_t string_pool_offset;      /* File offset of the string byte buffer */
+    uint32_t string_pool_bytes;       /* Total size of the string pool in bytes */
+    uint32_t nodes_offset;            /* File offset of the node table (8-byte aligned) */
+    uint32_t node_count;              /* Total node count (including dummy sentinel node 0) */
+    uint32_t root_index;              /* Index of the root AST node in the node table */
+    uint64_t total_size;              /* Total file size in bytes */
 } GramIrHeader;
 ```
 
@@ -62,10 +62,10 @@ Nodes use array indices rather than machine memory pointers, making the entire f
 
 ```c
 typedef struct GramIrNode {
-    uint16_t kind;           /* Node kind identifier */
+    uint16_t kind;           /* Node kind identifier (GramAstKind) */
     uint16_t flags;          /* Classification flags (see table below) */
-    uint32_t symbol_index;   /* Index into string pool (rule name / lexeme) */
-    uint32_t value;          /* Extra metadata payload */
+    uint32_t symbol_id;      /* Index into string pool (rule name / lexeme) */
+    uint32_t value;          /* Extra metadata payload (rule ID or token kind) */
     uint32_t src_start;      /* Byte offset in original UTF-8 source text */
     uint32_t src_length;     /* Byte length in original UTF-8 source text */
     uint32_t line;           /* 1-based line number */

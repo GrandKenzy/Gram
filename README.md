@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12%2B-blue.svg" alt="Python 3.12+"></a>
   <img src="https://img.shields.io/badge/c-standard--c11-00599C.svg" alt="C11 Standard">
-  <img src="https://img.shields.io/badge/version-2.1.0-informational.svg" alt="Version 2.1.0">
+  <img src="https://img.shields.io/badge/version-3.0.0-informational.svg" alt="Version 3.0.0">
   <a href="tests/"><img src="https://img.shields.io/badge/tests-300%20passed-success.svg" alt="Tests: 300 passed"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Free%20Use%20%26%20Commercial%20Output-brightgreen.svg" alt="License"></a>
   <a href="https://github.com/GrandKenzy/Gram"><img src="https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg" alt="Zero External Dependencies"></a>
@@ -71,7 +71,7 @@ Gram requires Python 3.12+ and has zero external dependencies for its Python run
 git clone https://github.com/GrandKenzy/Gram.git
 cd Gram
 python -m gram
-# Output: Gram Framework v2.1.0
+# Output: Gram Framework v3.0.0
 ```
 
 ### 2. Optional VNMA Integration
@@ -82,7 +82,7 @@ name = "my-compiler"
 version = "0.1.0"
 
 [dependencies]
-gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v2.1.0" }
+gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", tag = "v3.0.0" }
 ```
 
 ---

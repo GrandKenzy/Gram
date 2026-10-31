@@ -2,7 +2,7 @@
 
 > **Location:** `native/gram_lexer/`  
 > **Standard:** C11 (`-std=c11`)  
-> **Status:** Stable (Version `2.1.0`)
+> **Status:** Stable (Version `3.0.0`)
 
 The native Gram C lexer is a standalone, reentrant tokenizer written in clean C11. It delivers 100% lexical equivalence with the Python reference lexer while operating with zero dynamic allocations per token.
 

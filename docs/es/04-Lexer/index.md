@@ -2,7 +2,7 @@
 
 > **Subsistema:** `gram.core.lexer`  
 > **Runtime:** Python 3.12+ puro (Cero dependencias externas en tiempo de ejecución)  
-> **Estado:** Estable (Versión `2.1.0`)
+> **Estado:** Estable (Versión `3.0.0`)
 
 El **Subsistema de Análisis Léxico** es el motor frontal de escaneo de Gram. Procesa código fuente a partir de cadenas de texto, secuencias de líneas o rutas de archivos en disco, transformando flujos de caracteres crudos en secuencias ordenadas de lexemas fuertemente tipados (`TokenType`), culminando siempre con un token terminal `Token.EOF`.
 

@@ -334,7 +334,7 @@ class TestCDriverAndIrEndToEnd(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls._tmp = tempfile.TemporaryDirectory()
+        cls._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.work = Path(cls._tmp.name)
 
         session = sessions.Session("DriverSession", "Many")
@@ -1077,6 +1077,54 @@ class TestCaptureRawPython(unittest.TestCase):
         tokens = session.tokenize("asm { mov eax, 1", "test")
         with self.assertRaises(SystemExit):
             session.parse(tokens, "test")
+
+    def test_capture_raw_exact_source_slice_and_max_tokens(self) -> None:
+        class AsmBlock(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("asm"),
+                MatchToken(Token.LBRACE),
+                CaptureRaw(MatchToken(Token.RBRACE), balance_delimiters=(Token.LBRACE, Token.RBRACE)),
+                MatchToken(Token.RBRACE),
+            )
+
+        class CappedBlock(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("capped"),
+                CaptureRaw(MatchKeyword("end"), max_tokens=2),
+                MatchKeyword("end"),
+            )
+
+        class RootRule(RuleItem):
+            nodeable = True
+            entrypoint = Alt(Ref(AsmBlock), Ref(CappedBlock))
+
+        session = sessions.Session("AsmExactSession", "Some")
+        for kw in ("asm", "capped", "end"):
+            session.add_keyword(kw)
+        session.entrypoint = RootRule
+
+        # 1. Multiline source with comments and spaces:
+        multiline_src = "asm {\n    mov eax, 0x10;  # assembly comment\n    nop;\n}"
+        toks = session.tokenize(multiline_src, "test")
+        ast = session.parse(toks, "test")
+        self.assertIsNotNone(ast)
+        raw_node = ast[0].nodes[2]  # asm, {, RawNode, }
+        self.assertIsInstance(raw_node, RawNode)
+        # Sliced directly from source text:
+        self.assertEqual(raw_node.text, "mov eax, 0x10;  # assembly comment\n    nop;")
+
+        # 2. max_tokens parity: counts non-layout tokens
+        # "capped tok1 tok2 end" has 2 non-layout tokens -> succeeds
+        toks_ok = session.tokenize("capped tok1 tok2 end", "test")
+        ast_ok = session.parse(toks_ok, "test")
+        self.assertIsNotNone(ast_ok)
+
+        # "capped tok1 tok2 tok3 end" has 3 non-layout tokens -> exceeds max_tokens(2) -> fails
+        toks_fail = session.tokenize("capped tok1 tok2 tok3 end", "test")
+        with self.assertRaises(SystemExit):
+            session.parse(toks_fail, "test")
 
 
 

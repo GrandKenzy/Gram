@@ -1,14 +1,14 @@
-# Estado de la Versión y Estabilidad (`v2.1.0`)
+# Estado de la Versión y Estabilidad (`v3.0.0`)
 
-> **Versión Actual:** `2.1.0` (Versión Estable para Producción)
+> **Versión Actual:** `3.0.0` (Versión Estable para Producción)
 
-Gram `2.1.0` es la versión activa y estable de Gram Framework. Todos los subsistemas centrales (análisis léxico, combinadores transaccionales con backtracking, motores de expresiones Pratt, construcción del Árbol de Sintaxis Abstracta, sesiones de lenguaje aisladas y el compilador nativo AOT en C con IR binario) se encuentran implementados, documentados y verificados mediante una suite automatizada de **300 pruebas unitarias, diferenciales y de fuzzing**.
+Gram `3.0.0` es la versión activa y estable de Gram Framework. Todos los subsistemas centrales (análisis léxico, combinadores transaccionales con backtracking, motores de expresiones Pratt, construcción del Árbol de Sintaxis Abstracta, sesiones de lenguaje aisladas y el compilador nativo AOT en C con IR binario) se encuentran implementados, documentados y verificados mediante una suite automatizada de **300 pruebas unitarias, diferenciales y de fuzzing**.
 
 ---
 
 ## 1. Matriz de Madurez de Subsistemas
 
-La tabla siguiente refleja el estado de implementación y estabilidad de cada subsistema en Gram `2.1.0`:
+La tabla siguiente refleja el estado de implementación y estabilidad de cada subsistema en Gram `3.0.0`:
 
 | Subsistema | Módulo | Estado | Notas |
 | :--- | :--- | :--- | :--- |

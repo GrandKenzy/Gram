@@ -110,7 +110,11 @@ class CaptureRaw(Combinator):
                         else:
                             parser.restore(chk)
 
-                        raw_text = self._tokens_to_string(consumed)
+                        source_text = getattr(parser, "source", None)
+                        if source_text and consumed:
+                            raw_text = self._slice_source(source_text, consumed)
+                        else:
+                            raw_text = self._tokens_to_string(consumed)
                         father.note(
                             f"CaptureRaw({self.target!r}) capturó {len(consumed)} tokens en crudo.",
                             "success",
@@ -120,7 +124,10 @@ class CaptureRaw(Combinator):
                     # Target did not match at depth 0
                     parser.restore(chk)
 
-                if self.max_tokens is not None and len(consumed) >= self.max_tokens:
+                non_layout_count = sum(
+                    1 for t in consumed if t.token not in (Token.NEWLINE, Token.INDENT, Token.DEDENT, Token.EOF)
+                )
+                if self.max_tokens is not None and non_layout_count >= self.max_tokens:
                     break
 
                 tok = parser.consume()
@@ -154,6 +161,29 @@ class CaptureRaw(Combinator):
             return None
         finally:
             parser.down()
+
+    @staticmethod
+    def _slice_source(source_text: str, tokens: Sequence[TokenType]) -> str:
+        layout_kinds = {Token.NEWLINE, Token.INDENT, Token.DEDENT, Token.EOF}
+        content_toks = [t for t in tokens if t.token not in layout_kinds]
+        if not content_toks:
+            return ""
+        first_tok = content_toks[0]
+        last_tok = content_toks[-1]
+        lines = source_text.splitlines(keepends=True)
+        if not lines:
+            return ""
+        first_line_idx = max(0, first_tok.line - 1)
+        start_char = sum(len(lines[i]) for i in range(min(first_line_idx, len(lines)))) + first_tok.col
+
+        last_line_idx = max(0, last_tok.line - 1)
+        last_val_len = (
+            len(str(last_tok.value))
+            if last_tok.value is not None
+            else len(getattr(last_tok.token, "name", ""))
+        )
+        end_char = sum(len(lines[i]) for i in range(min(last_line_idx, len(lines)))) + last_tok.col + last_val_len
+        return source_text[start_char:end_char]
 
     @staticmethod
     def _tokens_to_string(tokens: Sequence[TokenType]) -> str:

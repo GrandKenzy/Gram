@@ -52,7 +52,7 @@ from gram.core.lexer.words import (
 
 def Version() -> str:
     """Return the version string of the Gram lexer subsystem."""
-    return "2.1.0"
+    return "3.0.0"
 
 
 __all__ = [

@@ -1,7 +1,7 @@
 # Sesiones de Lenguaje (`gram.sessions.Session`)
 
 > **Módulo:** `gram.sessions`  
-> **Estado:** Estable (Versión `2.1.0`)  
+> **Estado:** Estable (Versión `3.0.0`)  
 > **Runtime:** Python 3.12+ puro (Cero dependencias externas en tiempo de ejecución)
 
 En frontends de compiladores para múltiples lenguajes, DSLs incrustados o suites de pruebas paralelas, compartir estado global es un antipatrón. Los diccionarios globales de palabras clave, tablas mutables de símbolos y banderas de configuración como singletons provocan condiciones de carrera, contaminación cruzada entre pruebas y colisiones sintácticas accidentales.

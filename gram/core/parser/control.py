@@ -50,6 +50,7 @@ class ParseState(Diagnostics):
         self.vpos: int = 0
         self.bracket_depth: int = 0
         self.tokens: list[TokenType] = []
+        self.source: str | None = None
         # Prefix cache for indentation queries. It is extended lazily and
         # invalidated when token contents or the token stream changes.
         self._indent_levels: list[int] = [0]

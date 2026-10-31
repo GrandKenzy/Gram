@@ -9,9 +9,9 @@
 
 ## Current release
 
-### [`2.1.0`](changelog_2.1.0.md) · Stable
+### [`3.0.0`](changelog_3.0.0.md) · Stable
 
-The current stable release is `2.1.0`. Its release notes are kept in one file
+The current stable release is `3.0.0`. Its release notes are kept in one file
 and are extended as changes are made during the release cycle.
 
 > [!IMPORTANT]
@@ -22,7 +22,7 @@ and are extended as changes are made during the release cycle.
 
 | Version | Date | Main focus | Notes |
 | --- | --- | --- | --- |
-| [`2.1.0`](changelog_2.1.0.md) | 2026-10-30 | Stable maintenance and ongoing release notes | Current |
+| [`3.0.0`](changelog_3.0.0.md) | 2026-10-31 | C AOT compiler, GIR 1.0 IR format, CaptureRaw, and multi-backend engine | Current |
 | [`2.0.0b3`](changelog_2.0.0b3.md) | 2026-10-26 | Parser performance and telemetry | Historical |
 | [`2.0.0b2`](changelog_2.0.0b2.md) | 2026-10-25 | Configurable lexer and preprocessing | Historical Beta 2 |
 | [`2.0.0b1`](changelog_2.0.0b1.md) | 2026-10-23 | Diagnostics, sessions, and checkpoints | Historical Beta 1 |

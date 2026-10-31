@@ -2,7 +2,7 @@
 
 > **Módulo:** `gram.core.parser.c_driver`  
 > **Estándar:** C11 (`-std=c11`)  
-> **Estado:** Estable (Versión `2.1.0`)
+> **Estado:** Estable (Versión `3.0.0`)
 
 El Driver en C de Gram (`gram_driver.h`, `gram_driver.c`) unifica la lectura de archivos, el escaneo léxico, el análisis sintáctico, la construcción del AST, la serialización de IR binario y el reporte de errores en una API de C ergonómica y sin dependencias externas.
 

@@ -1,4 +1,4 @@
-# Gram `2.1.0`
+# Gram `3.0.0`
 
 ## Diagnostics Subsystem
 

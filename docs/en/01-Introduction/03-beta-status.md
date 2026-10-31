@@ -1,14 +1,14 @@
-# Release Status & Stability (`v2.1.0`)
+# Release Status & Stability (`v3.0.0`)
 
-> **Current Version:** `2.1.0` (Stable Production Release)
+> **Current Version:** `3.0.0` (Stable Production Release)
 
-Gram `2.1.0` is the active, stable release of the Gram Framework. All core subsystems—lexical analysis, transactional backtracking parser combinators, Pratt expression engines, Abstract Syntax Tree construction, isolated language sessions, and the native C AOT compiler with binary IR—are fully implemented, documented, and verified by an automated test suite of **300 passing unit, differential, and fuzz tests**.
+Gram `3.0.0` is the active, stable release of the Gram Framework. All core subsystems—lexical analysis, transactional backtracking parser combinators, Pratt expression engines, Abstract Syntax Tree construction, isolated language sessions, and the native C AOT compiler with binary IR—are fully implemented, documented, and verified by an automated test suite of **300 passing unit, differential, and fuzz tests**.
 
 ---
 
 ## 1. Subsystem Maturity Matrix
 
-The table below reflects the implementation and stability status of each subsystem in Gram `2.1.0`:
+The table below reflects the implementation and stability status of each subsystem in Gram `3.0.0`:
 
 | Subsystem | Module | Status | Notes |
 | :--- | :--- | :--- | :--- |

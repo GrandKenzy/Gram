@@ -2,7 +2,7 @@
 
 > **Módulos:** `native/gram_lexer/`, `gram.core.parser.c_generator`, `gram.core.parser.c_driver`  
 > **Estándar:** C11 (`-std=c11`, cero dependencias externas)  
-> **Estado:** Estable (Versión `2.1.0`)
+> **Estado:** Estable (Versión `3.0.0`)
 
 Gram proporciona una arquitectura de compilación dual completa:
 1. **Motor de Prototipado en Python:** Diseño flexible e interactivo de gramáticas con telemetría rica, raytracing y validaciones dinámicas.

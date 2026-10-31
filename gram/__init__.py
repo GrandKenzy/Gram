@@ -31,8 +31,8 @@ from gram.core.process import (
     process,
 )
 
-__version__ = "2.1.0"
-__version_info__ = (2, 1, 0, "final", 0)
+__version__ = "3.0.0"
+__version_info__ = (3, 0, 0, "final", 0)
 
 
 def version() -> str:

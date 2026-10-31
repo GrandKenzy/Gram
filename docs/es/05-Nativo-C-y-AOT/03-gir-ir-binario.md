@@ -2,7 +2,7 @@
 
 > **Módulo:** `gram.core.parser.c_driver`  
 > **Versión de Formato:** `1.0` (`GIR\0`)  
-> **Estado:** Estable (Versión `2.1.0`)
+> **Estado:** Estable (Versión `3.0.0`)
 
 Gram Binary IR (`GIR`) es un formato de serialización binaria compacto, relocalizable y sin copias (*zero-copy*) para Árboles de Sintaxis Abstracta producidos por el parser nativo en C. Permite a compiladores, linters y herramientas de análisis recorrer, cachear e inspeccionar ASTs en disco o memoria sin pagar los costos de serialización de formatos como JSON, XML o protobufs.
 
@@ -35,22 +35,22 @@ Un búfer binario `.gir` consta de tres secciones contiguas alineadas a 8 bytes:
 
 ```c
 typedef struct GramIrHeader {
-    char     magic[4];       /* Siempre "GIR\0" (0x00524947) */
-    uint16_t major;          /* Versión mayor de formato (1) */
-    uint16_t minor;          /* Versión menor de formato (0) */
-    uint32_t flags;          /* Banderas (bit 0: little-endian) */
-    uint32_t header_size;    /* Tamaño de este encabezado en bytes (72) */
-    uint64_t grammar_id;     /* Fingerprint FNV-1a de 64 bits de la gramática */
-    uint64_t source_hash;    /* Hash FNV-1a de 64 bits del texto fuente */
-    uint64_t source_size;    /* Tamaño del código fuente original en bytes */
-    uint32_t string_count;   /* Cantidad de cadenas únicas en el pool */
-    uint32_t offsets_off;    /* Offset a la tabla de offsets de cadenas */
-    uint32_t pool_off;       /* Offset al búfer de bytes de cadenas */
-    uint32_t pool_bytes;     /* Tamaño total del pool de cadenas en bytes */
-    uint32_t nodes_off;      /* Offset a la tabla de nodos (alineado a 8 bytes) */
-    uint32_t node_count;     /* Cantidad total de nodos (incluyendo el nodo 0) */
-    uint32_t root_index;     /* Índice del nodo raíz en la tabla de nodos */
-    uint64_t total_size;     /* Tamaño total del archivo en bytes */
+    char     magic[4];                /* Siempre "GIR\0" (0x00524947) */
+    uint16_t version_major;           /* Versión mayor de formato (1) */
+    uint16_t version_minor;           /* Versión menor de formato (0) */
+    uint32_t flags;                   /* Banderas (bit 0: little-endian) */
+    uint32_t header_size;             /* Tamaño de este encabezado en bytes (72) */
+    uint64_t grammar_id;              /* Fingerprint SHA-256 de 64 bits de la gramática y léxico */
+    uint64_t source_hash;             /* Hash FNV-1a de 64 bits del texto fuente */
+    uint32_t source_size;             /* Tamaño del código fuente original en bytes */
+    uint32_t string_count;            /* Cantidad de cadenas únicas en el pool */
+    uint32_t string_offsets_offset;   /* Offset a la tabla de offsets de cadenas */
+    uint32_t string_pool_offset;      /* Offset al búfer de bytes de cadenas */
+    uint32_t string_pool_bytes;       /* Tamaño total del pool de cadenas en bytes */
+    uint32_t nodes_offset;            /* Offset a la tabla de nodos (alineado a 8 bytes) */
+    uint32_t node_count;              /* Cantidad total de nodos (incluyendo el centinela 0) */
+    uint32_t root_index;              /* Índice del nodo raíz en la tabla de nodos */
+    uint64_t total_size;              /* Tamaño total del archivo en bytes */
 } GramIrHeader;
 ```
 
@@ -62,10 +62,10 @@ Los nodos utilizan índices de arreglo en lugar de punteros de memoria, lo que h
 
 ```c
 typedef struct GramIrNode {
-    uint16_t kind;           /* Identificador de tipo de nodo */
+    uint16_t kind;           /* Identificador de tipo de nodo (GramAstKind) */
     uint16_t flags;          /* Banderas de clasificación (ver tabla) */
-    uint32_t symbol_index;   /* Índice en el pool de cadenas (nombre de regla o lexema) */
-    uint32_t value;          /* Carga útil de metadatos */
+    uint32_t symbol_id;      /* Índice en el pool de cadenas (nombre de regla o lexema) */
+    uint32_t value;          /* Carga útil de metadatos (ID de regla o tipo de token) */
     uint32_t src_start;      /* Byte offset en el texto fuente original UTF-8 */
     uint32_t src_length;     /* Longitud en bytes en el texto fuente original */
     uint32_t line;           /* Número de línea (base 1) */

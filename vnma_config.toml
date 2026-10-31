@@ -1,9 +1,9 @@
 # VNMA Package Configuration (vnma_config.toml)
 
 [package]
-name = "gram-framework2.1.0"
+name = "gram-framework3.0.0"
 packname = "gram"
-version = "2.1.0"
+version = "3.0.0"
 type = "pure-python"
 
 [runtime]

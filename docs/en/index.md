@@ -1,6 +1,6 @@
 # Gram Framework Documentation
 
-> **Version:** `2.1.0` (Stable Production Release)  
+> **Version:** `3.0.0` (Stable Production Release)  
 > **Runtime:** Pure Python 3.12+ (Zero external runtime dependencies) & Standard C11 AOT Compiler
 
 Welcome to the official documentation for **Gram**, a dual-target lexical analysis, parser combinator, Abstract Syntax Tree (`AST`) generation, and ahead-of-time C11 compiler framework for building Domain-Specific Languages (DSLs), transpilers, and compiler frontends.
@@ -13,7 +13,7 @@ Welcome to the official documentation for **Gram**, a dual-target lexical analys
 High-level overview of the framework, its design goals, installation instructions, and stability guarantees.
 - **[01. What is Gram?](./01-Introduction/01-what-is-gram.md)** — Core architecture, strict separation between syntactic and semantic phases, and design objectives.
 - **[02. Installation](./01-Introduction/02-installation.md)** — Installing Gram via **VNMA** (`vnma.toml`, Git branches, tags, and live editable links) or directly via Git and `PYTHONPATH`.
-- **[03. Release Status & Stability](./01-Introduction/03-beta-status.md)** — Component maturity review, 300 passing automated tests, and stability contracts in `2.1.0`.
+- **[03. Release Status & Stability](./01-Introduction/03-beta-status.md)** — Component maturity review, 300 passing automated tests, and stability contracts in `3.0.0`.
 
 ### [02. Combinators](./02-Combinators/index.md)
 Reference guide for all 32 syntactic combinators in `gram.core.combinators`, formal semantic kinds (`CombinatorKind`), execution contracts, and Pratt expression engines.

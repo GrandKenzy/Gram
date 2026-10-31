@@ -1,7 +1,7 @@
 # Language Sessions (`gram.sessions.Session`)
 
 > **Module:** `gram.sessions`  
-> **Status:** Stable (Version `2.1.0`)  
+> **Status:** Stable (Version `3.0.0`)  
 > **Runtime:** Pure Python 3.12+ (Zero external runtime dependencies)
 
 In multi-language compiler frontends, embedded DSLs, or parallel test suites, sharing global state is an anti-pattern. Global keyword dictionaries, mutable symbol tables, and configuration singletons introduce race conditions, test cross-talk, and unintended syntactic collisions.

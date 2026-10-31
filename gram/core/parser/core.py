@@ -42,6 +42,7 @@ class Parser(ParseState):
         *,
         conversions: Mapping[str, ConversionTarget] | None = None,
         session: "Session | None" = None,
+        source: str | Sequence[str] | None = None,
     ) -> None:
         """
         Initialize the parser with a list of lexed tokens.
@@ -52,9 +53,11 @@ class Parser(ParseState):
             conversions (Mapping[str, ConversionTarget] | None): Initial logical
                 token conversions.
             session (Session | None): Optional session providing parser settings.
+            source (str | Sequence[str] | None): Optional original source code string or lines.
         """
         super().__init__(log_file, conversions=conversions, session=session)
         self.tokens = tokens
+        self.source = source if isinstance(source, str) else ("\n".join(source) if isinstance(source, (list, tuple)) else None)
         self._reset_indent_levels()
         self.analyzer_ast_instance: ASTAnalyzer | None = None
 
@@ -64,6 +67,7 @@ class Parser(ParseState):
         log_file: str | None = None,
         *,
         conversions: Mapping[str, ConversionTarget] | None = None,
+        source: str | Sequence[str] | None = None,
     ) -> "Parser":
         """Reuse this parser instance for a fresh token stream.
 
@@ -72,6 +76,7 @@ class Parser(ParseState):
         values. Existing callers that instantiate ``Parser`` directly are
         unaffected.
         """
+        prev_source = self.source
         ParseState.__init__(
             self,
             log_file,
@@ -79,6 +84,10 @@ class Parser(ParseState):
             session=self.session,
         )
         self.tokens = tokens
+        if source is not None:
+            self.source = source if isinstance(source, str) else "\n".join(source)
+        else:
+            self.source = prev_source
         self._reset_indent_levels()
         self.analyzer_ast_instance = None
         return self

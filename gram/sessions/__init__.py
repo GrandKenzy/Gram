@@ -286,6 +286,8 @@ class Session:
 
     def tokenize(self, source: list[str] | str, name: str):
         """Tokenize ``source`` with this session's lexer configuration."""
+        raw_source = "\n".join(source) if isinstance(source, (list, tuple)) else str(source)
+        self.parser.source = raw_source
         return self.lexer.tokenize(source, name)
 
     def new_conversion_state(self) -> ConversionState:

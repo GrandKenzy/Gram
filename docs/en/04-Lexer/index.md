@@ -2,7 +2,7 @@
 
 > **Subsystem:** `gram.core.lexer`  
 > **Runtime:** Pure Python 3.12+ (Zero external runtime dependencies)  
-> **Status:** Stable (Version `2.1.0`)
+> **Status:** Stable (Version `3.0.0`)
 
 The **Lexical Analysis Subsystem** is Gram's front-line scanning engine. It ingests source code from strings, line sequences, or file paths and converts raw character streams into an ordered sequence of strongly-typed lexeme tokens (`TokenType`) ending with a terminal `Token.EOF`.
 

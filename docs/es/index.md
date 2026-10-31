@@ -1,6 +1,6 @@
 # Documentación del Framework Gram
 
-> **Versión:** `2.1.0` (Versión Estable para Producción)  
+> **Versión:** `3.0.0` (Versión Estable para Producción)  
 > **Entorno:** Python puro 3.12+ (Cero dependencias externas en runtime) y Compilador AOT en C11 Estándar
 
 Bienvenido a la documentación oficial en español de **Gram**, un framework de doble objetivo para análisis léxico, combinadores sintácticos, generación de Árboles de Sintaxis Abstracta (`AST`) y compilación Ahead-Of-Time (AOT) en C11, concebido para diseñar lenguajes de dominio específico (DSLs), transpiladores y frontends de compiladores.
@@ -13,7 +13,7 @@ Bienvenido a la documentación oficial en español de **Gram**, un framework de 
 Visión general del framework, objetivos de diseño, instrucciones de instalación y garantías de estabilidad.
 - **[01. ¿Qué es Gram?](./01-Introduccion/01-que-es-gram.md)** — Arquitectura central, separación estricta entre fases sintácticas y semánticas, y objetivos de diseño.
 - **[02. Instalación](./01-Introduccion/02-instalacion.md)** — Cómo instalar y gestionar Gram mediante **VNMA** (`vnma.toml`, ramas de Git, tags y enlaces editables) o directamente mediante Git y `PYTHONPATH`.
-- **[03. Estado de la Versión y Estabilidad](./01-Introduccion/03-estado-beta.md)** — Madurez de componentes, suite de 300 pruebas automatizadas y contratos de estabilidad en `2.1.0`.
+- **[03. Estado de la Versión y Estabilidad](./01-Introduccion/03-estado-beta.md)** — Madurez de componentes, suite de 300 pruebas automatizadas y contratos de estabilidad en `3.0.0`.
 
 ### [02. Combinadores](./02-Combinadores/index.md)
 Guía de referencia para los 32 combinadores sintácticos disponibles en `gram.core.combinators`, firmas semánticas formales (`CombinatorKind`), contratos de ejecución y motores de expresiones Pratt.

@@ -362,7 +362,7 @@ static void gram_ir_fill_span(GramIrNode *n, const GramToken *tokens, size_t tok
     size_t first_idx = (size_t)tok_start;
     size_t end_idx = first_idx + tok_count;
     if (end_idx > token_count) end_idx = token_count;
-    if (tok_count > 0 && end_idx > first_idx) {
+    if (!(n->flags & GRAM_IR_NODE_RAW) && tok_count > 0 && end_idx > first_idx) {
         size_t s = first_idx;
         size_t e = end_idx;
         while (s < e && gram_ir_is_layout_token(tokens[s].kind)) s++;

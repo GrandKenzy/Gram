@@ -2,7 +2,7 @@
 
 > **Module:** `native/gram_lexer/`, `gram.core.parser.c_generator`, `gram.core.parser.c_driver`  
 > **Standard:** C11 (`-std=c11`, zero external dependencies)  
-> **Status:** Stable (Version `2.1.0`)
+> **Status:** Stable (Version `3.0.0`)
 
 Gram provides a complete, dual-layer compilation architecture:
 1. **Python Prototype Engine:** Flexible, interactive grammar design with rich telemetry, tracing, and dynamic validation.
