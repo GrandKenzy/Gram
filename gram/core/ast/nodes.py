@@ -160,6 +160,11 @@ class RawNode(ASTNode):
         """0-based ending column of the raw block (0 if empty)."""
         return self.tokens[-1].long() if self.tokens else 0
 
+    @property
+    def token_count(self) -> int:
+        """Total number of tokens captured in this raw block."""
+        return len(self.tokens)
+
     def __len__(self) -> int:
         return len(self.tokens)
 

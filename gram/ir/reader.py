@@ -72,6 +72,61 @@ class GirHeader:
         return bool(self.flags & 0x1)
 
 
+def _decode_string_literal(text: str) -> str:
+    s = text.lstrip("LuU8r")
+    if len(s) >= 6 and (
+        (s.startswith('"""') and s.endswith('"""'))
+        or (s.startswith("'''") and s.endswith("'''"))
+    ):
+        inner = s[3:-3]
+    elif len(s) >= 2 and (
+        (s.startswith('"') and s.endswith('"'))
+        or (s.startswith("'") and s.endswith("'"))
+    ):
+        inner = s[1:-1]
+    else:
+        return text
+
+    replacements = {
+        "\\n": "\n",
+        "\\r": "\r",
+        "\\t": "\t",
+        "\\0": "\0",
+        "\\\\": "\\",
+        '\\"': '"',
+        "\\'": "'",
+    }
+    for esc, rep in replacements.items():
+        inner = inner.replace(esc, rep)
+    return inner
+
+
+def _parse_typed_value(tok: Token | None, text: str) -> Any:
+    if tok is None:
+        return text
+    if tok == Token.NUMBER:
+        clean = text.replace("_", "")
+        try:
+            return int(clean, 0)
+        except ValueError:
+            return text
+    if tok == Token.DECIMAL:
+        clean = text.replace("_", "")
+        try:
+            if clean.startswith(("0x", "0X")):
+                return float.fromhex(clean)
+            return float(clean)
+        except ValueError:
+            return text
+    if tok == Token.BOOL:
+        return text.lower() in ("true", "1")
+    if tok == Token.NULL:
+        return None
+    if tok == Token.STRING:
+        return _decode_string_literal(text)
+    return text
+
+
 class GirNode:
     """An individual AST node within a parsed GIR buffer."""
 
@@ -172,16 +227,35 @@ class GirNode:
 
     @property
     def text(self) -> str:
-        """Source text or captured lexeme corresponding to this node."""
+        """
+        Source text or captured lexeme corresponding to this node.
+
+        When source bytes are attached to the view and this node has a non-empty span,
+        extracts the exact byte slice from the authoritative source buffer.
+        If this is an empty raw node, returns empty string `""`.
+        Falls back to the GIR string pool symbol_name if unattached to source.
+        """
         if self._text_override is not None:
             return self._text_override
-        if self.is_terminal:
-            return self.symbol_name
+        if self.is_raw and self.src_length == 0:
+            return ""
         if self.view.source_bytes is not None and self.src_length > 0:
             end = self.src_start + self.src_length
             raw = self.view.source_bytes[self.src_start : end]
             return raw.decode("utf-8", errors="replace")
-        return self.symbol_name
+        return "" if self.is_raw else self.symbol_name
+
+    @property
+    def typed_value(self) -> Any:
+        """
+        Typed Python value corresponding to this terminal node (e.g. `int` for `Token.NUMBER`,
+        `float` for `Token.DECIMAL`, `bool` for `Token.BOOL`, `None` for `Token.NULL`, unescaped `str`
+        for `Token.STRING`). For non-terminals, rules, or unparsed blocks, returns `self.text`.
+        """
+        if not self.is_terminal:
+            return self.text
+        tok = Token.from_code(self.value)
+        return _parse_typed_value(tok, self.text)
 
     @property
     def span(self) -> tuple[int, int]:
@@ -220,18 +294,34 @@ class GirNode:
         """
         Tuple of tokens captured inside this CaptureRaw block.
 
-        Uses the native C lexer to tokenize the verbatim block text without requiring
-        the Python lexer. If a Session is attached to the view, custom keywords and
-        word groups are respected.
+        Returns the exact tokens stored directly in GIR as child terminal nodes.
+        If no child tokens were serialized in the buffer (legacy GIR format), falls back
+        to tokenizing the raw text using the C lexer backend without requiring the Python lexer.
         """
         if self._tokens is not None:
             return self._tokens
-        if not self.is_raw:
+        if not self.is_raw or self.src_length == 0 or self.value == 0:
+            self._tokens = ()
+            return self._tokens
+
+        # 1. Preferred: Return the exact tokens serialized in GIR
+        if self.children:
+            res = []
+            for ch in self.children:
+                if ch.is_terminal:
+                    tok = Token.from_code(ch.value)
+                    line_0 = max(0, ch.line - 1)
+                    res.append(TokenType(tok, ch.typed_value, line_0, ch.column))
+            self._tokens = tuple(res)
+            return self._tokens
+
+        # 2. Fallback: Only if source_bytes are attached and text is present
+        if self.view.source_bytes is None:
             self._tokens = ()
             return self._tokens
 
         raw_text = self.text
-        if not raw_text:
+        if not raw_text or raw_text == self.symbol_name:
             self._tokens = ()
             return self._tokens
 
@@ -240,25 +330,37 @@ class GirNode:
         if session is not None:
             raw_toks = session.tokenize(raw_text, name=f"raw_span_{self.index}", backend="c")
         else:
-            raw_toks = Lexer(raw_text, backend="c").tokens()
+            lexer = Lexer(raw_text, backend="c")
+            raw_toks = lexer.process()
 
         clean_toks: list[TokenType] = []
-        base_line = self.line
+        base_line_0 = max(0, self.line - 1)
         base_col = self.column
         for t in raw_toks:
             if t.token == Token.EOF:
                 continue
-            tok_line = base_line + (t.line - 1) if base_line > 0 else t.line
-            tok_col = (base_col + t.col) if t.line == 1 and base_col > 0 else t.col
-            clean_toks.append(TokenType(t.token, t.value, tok_line, tok_col))
+            # t.line is 1-based on TokenType (since TokenType.__init__ added 1 to line_0)
+            snippet_line_0 = max(0, t.line - 1)
+            target_line_0 = base_line_0 + snippet_line_0
+            target_col = (base_col + t.col) if snippet_line_0 == 0 else t.col
+            clean_toks.append(TokenType(t.token, t.value, target_line_0, target_col))
 
         self._tokens = tuple(clean_toks)
         return self._tokens
 
     def __len__(self) -> int:
         if self.is_raw:
-            return len(self.tokens)
+            if self._tokens is not None:
+                return len(self._tokens)
+            if self.src_length == 0 or self.value == 0:
+                return 0
+            return self.child_count if self.child_count else self.value
         return len(self.children)
+
+    def __bool__(self) -> bool:
+        if self.is_raw:
+            return len(self) > 0 or bool(self.text)
+        return True
 
     def __iter__(self) -> Iterator[Any]:
         if self.is_raw:
@@ -487,7 +589,7 @@ class GirView:
             ) = node_fields
             if symbol_id >= string_count or first_child >= node_count or next_sibling >= node_count:
                 raise ValueError(f"Corrupt GIR node #{idx}: field exceeds table bounds.")
-            if source_size > 0 and (src_start + src_length > source_size):
+            if src_start + src_length > source_size:
                 raise ValueError(
                     f"Corrupt GIR node #{idx}: span [{src_start}, {src_start + src_length}] "
                     f"exceeds header source_size ({source_size} bytes)."

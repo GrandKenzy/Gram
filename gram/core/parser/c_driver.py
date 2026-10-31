@@ -368,7 +368,21 @@ static bool gram_ir_is_layout_token(uint32_t kind) {
 
 static void gram_ir_fill_span(GramIrNode *n, const GramToken *tokens, size_t token_count,
                               uint32_t tok_start, uint32_t tok_count, size_t source_len) {
-    if (tok_start >= token_count) return;
+    if (!tokens || token_count == 0) {
+        n->src_start = 0;
+        n->src_length = 0;
+        n->line = 1;
+        n->column = 0;
+        return;
+    }
+    if (tok_start >= token_count) {
+        const GramToken *last = &tokens[token_count - 1u];
+        n->src_start = (uint32_t)source_len;
+        n->src_length = 0;
+        n->line = last->line;
+        n->column = last->column;
+        return;
+    }
     size_t first_idx = (size_t)tok_start;
     size_t end_idx = first_idx + tok_count;
     if (end_idx > token_count) end_idx = token_count;
@@ -438,6 +452,7 @@ GramIrStatus gram_ir_build(const GramAstArena *arena, uint32_t root,
         if (an->next_sibling && old != root) stack[sp++] = an->next_sibling;
         if (an->first_child) stack[sp++] = an->first_child;
     }
+
     uint32_t node_count = visited + 1u;
 
     st = gram_ir_strings_init(&strings);
@@ -448,7 +463,7 @@ GramIrStatus gram_ir_build(const GramAstArena *arena, uint32_t root,
     if (!nodes) { st = GRAM_IR_ERR_NOMEM; goto done; }
 
     /* Pass 2: fill dense nodes. */
-    for (uint32_t i = 1; i < node_count; i++) {
+    for (uint32_t i = 1; i <= visited; i++) {
         const GramAstNode *an = &arena->nodes[order[i]];
         GramIrNode *n = &nodes[i];
         n->kind = an->kind;
@@ -601,7 +616,7 @@ GramIrStatus gram_ir_view_init(GramIrView *view, const void *data, size_t size) 
         if (n->symbol_id >= h->string_count || n->first_child >= h->node_count || n->next_sibling >= h->node_count) {
             return GRAM_IR_ERR_FORMAT;
         }
-        if (h->source_size > 0u && ((uint64_t)n->src_start + (uint64_t)n->src_length > (uint64_t)h->source_size)) {
+        if ((uint64_t)n->src_start + (uint64_t)n->src_length > (uint64_t)h->source_size) {
             return GRAM_IR_ERR_FORMAT;
         }
     }

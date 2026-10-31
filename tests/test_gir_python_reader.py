@@ -364,6 +364,14 @@ class TestGirPythonReader(unittest.TestCase):
                 ir.load_gir(corrupt)
             self.assertIn("source_size", str(ctx.exception).lower())
 
+            # Also verify source_size == 0 rejects positive span
+            corrupt_zero = bytearray(gir_bytes)
+            # source_size is at offset 32 in header (<4sHHIIQQIIIIIIIIQ)
+            struct.pack_into("<I", corrupt_zero, 32, 0)
+            with self.assertRaises(ValueError) as ctx:
+                ir.load_gir(corrupt_zero)
+            self.assertIn("source_size", str(ctx.exception).lower())
+
     def test_capture_raw_tokens_exposure_in_gir(self) -> None:
         from gram.core.combinators import CaptureRaw
 
@@ -426,20 +434,214 @@ class TestGirPythonReader(unittest.TestCase):
             self.assertTrue(raw_node.is_raw)
             self.assertEqual(raw_node.text, "mov eax, 42; nop;")
 
-            # 1. Verify tokens exposure without requiring the Python lexer
+            # 1. CaptureRaw in GIR is an O(1) leaf node with 0 children in the AST arena
+            self.assertEqual(raw_node.child_count, 0)
+            self.assertEqual(len(raw_node.children), 0)
+            self.assertGreater(raw_node.token_count, 0)
+
+            # 2. Check RawNode protocol compatibility (len in O(1))
+            self.assertEqual(len(raw_node), raw_node.token_count)
+
+            # 3. Verify on-demand tokens exposure via C lexer backend
             toks = raw_node.tokens
             self.assertIsInstance(toks, tuple)
-            self.assertGreater(len(toks), 0)
-            token_values = [t.value for t in toks]
+            self.assertEqual(len(toks), raw_node.token_count)
+            token_values = [str(t.value) for t in toks]
             self.assertIn("mov", token_values)
             self.assertIn("eax", token_values)
-            self.assertIn(42, token_values)
+            self.assertIn("42", token_values)
 
-            # 2. Check RawNode protocol compatibility
-            self.assertEqual(len(raw_node), len(toks))
             self.assertEqual(list(iter(raw_node)), list(toks))
             self.assertEqual(raw_node[0], toks[0])
-            self.assertGreater(raw_node.token_count, 0)
+
+    def test_typed_value_and_authoritative_span_text(self) -> None:
+        from gram.core.lexer.tokens import Token
+
+        source_bytes = b"let wordsize = 64; let pi = 3.14; let active = true; let empty = null; let msg = \"hi\\n\";"
+        view = ir.GirView.__new__(ir.GirView)
+        view._source_bytes = source_bytes
+        view.strings = ("let", "wordsize", "=", "64_CORRUPT_IN_POOL")
+
+        # 1. Terminal number node with authoritative span over source_bytes
+        # Span covering "64" in source_bytes: offset 15, length 2
+        num_node = ir.GirNode(
+            view=view,
+            index=1,
+            kind=1,  # GRAM_AST_TERMINAL_TOKEN
+            flags=ir.reader.GIR_NODE_TERMINAL,
+            symbol_id=3,  # Points to "64_CORRUPT_IN_POOL"
+            value=Token.NUMBER.value,
+            src_start=15,
+            src_length=2,
+            line=1,
+            column=15,
+            first_child_index=0,
+            next_sibling_index=0,
+            child_count=0,
+        )
+        # text must be authoritative from source_bytes, not the pool
+        self.assertEqual(num_node.text, "64")
+        # typed_value must be int 64, not string
+        self.assertEqual(num_node.typed_value, 64)
+        self.assertIsInstance(num_node.typed_value, int)
+
+        # 2. When source_bytes is None, text falls back to symbol_name
+        view_no_src = ir.GirView.__new__(ir.GirView)
+        view_no_src._source_bytes = None
+        view_no_src.strings = ("let", "64")
+        num_node_no_src = ir.GirNode(
+            view=view_no_src,
+            index=1,
+            kind=1,
+            flags=ir.reader.GIR_NODE_TERMINAL,
+            symbol_id=1,
+            value=Token.NUMBER.value,
+            src_start=0,
+            src_length=2,
+            line=1,
+            column=0,
+            first_child_index=0,
+            next_sibling_index=0,
+            child_count=0,
+        )
+        self.assertEqual(num_node_no_src.text, "64")
+        self.assertEqual(num_node_no_src.typed_value, 64)
+
+        # 3. Test other literal types: decimal, bool, null, string, ident
+        def node_for(idx: int, tok: Token, sub: bytes, sym_id: int = 0) -> ir.GirNode:
+            pos = source_bytes.find(sub)
+            return ir.GirNode(
+                view=view,
+                index=idx,
+                kind=1,
+                flags=ir.reader.GIR_NODE_TERMINAL,
+                symbol_id=sym_id,
+                value=tok.value,
+                src_start=pos,
+                src_length=len(sub),
+                line=1,
+                column=pos,
+                first_child_index=0,
+                next_sibling_index=0,
+                child_count=0,
+            )
+
+        dec_node = node_for(2, Token.DECIMAL, b"3.14")
+        self.assertEqual(dec_node.text, "3.14")
+        self.assertEqual(dec_node.typed_value, 3.14)
+        self.assertIsInstance(dec_node.typed_value, float)
+
+        bool_node = node_for(3, Token.BOOL, b"true")
+        self.assertEqual(bool_node.text, "true")
+        self.assertEqual(bool_node.typed_value, True)
+        self.assertIsInstance(bool_node.typed_value, bool)
+
+        null_node = node_for(4, Token.NULL, b"null")
+        self.assertEqual(null_node.text, "null")
+        self.assertIsNone(null_node.typed_value)
+
+        str_node = node_for(5, Token.STRING, b'"hi\\n"')
+        self.assertEqual(str_node.text, '"hi\\n"')
+        self.assertEqual(str_node.typed_value, "hi\n")
+
+        ident_node = node_for(6, Token.IDENT, b"wordsize", sym_id=1)
+        self.assertEqual(ident_node.text, "wordsize")
+        self.assertEqual(ident_node.typed_value, "wordsize")
+
+    def test_empty_capture_raw_in_gir_and_ast(self) -> None:
+        from gram.core.ast.nodes import RawNode
+
+        # 1. Python in-memory AST RawNode parity
+        empty_raw_ast = RawNode([], "")
+        self.assertEqual(empty_raw_ast.text, "")
+        self.assertEqual(empty_raw_ast.tokens, ())
+        self.assertEqual(empty_raw_ast.token_count, 0)
+        self.assertEqual(len(empty_raw_ast), 0)
+
+        # 2. GIR binary reader node parity for empty raw block
+        view = ir.GirView.__new__(ir.GirView)
+        view._source_bytes = b"raw end"
+        view.strings = ("RAW",)
+        empty_gir_node = ir.GirNode(
+            view=view,
+            index=1,
+            kind=9,  # GRAM_AST_RAW
+            flags=ir.reader.GIR_NODE_RAW,
+            symbol_id=0,
+            value=0,  # token_count = 0
+            src_start=4,
+            src_length=0,  # empty body
+            line=1,
+            column=4,
+            first_child_index=0,
+            next_sibling_index=0,
+            child_count=0,
+        )
+        self.assertTrue(empty_gir_node.is_raw)
+        self.assertEqual(empty_gir_node.text, "")  # Must be empty string, never "RAW"
+        self.assertEqual(empty_gir_node.tokens, ())
+        self.assertEqual(empty_gir_node.token_count, 0)
+        self.assertEqual(len(empty_gir_node), 0)
+        self.assertFalse(bool(empty_gir_node))
+
+    def test_raw_node_serialized_children_tokens_typed(self) -> None:
+        from gram.core.lexer.tokens import Token
+
+        source_bytes = b'raw 64 "cadena" true end'
+        view = ir.GirView.__new__(ir.GirView)
+        view._source_bytes = source_bytes
+        view.strings = ("RAW", "64", '"cadena"', "true")
+
+        raw_parent = ir.GirNode(
+            view=view,
+            index=1,
+            kind=9,  # GRAM_AST_RAW
+            flags=ir.reader.GIR_NODE_RAW,
+            symbol_id=0,
+            value=3,  # 3 tokens
+            src_start=4,
+            src_length=len(source_bytes) - 8,
+            line=1,
+            column=4,
+            first_child_index=2,
+            next_sibling_index=0,
+            child_count=3,
+        )
+
+        child_num = ir.GirNode(
+            view=view, index=2, kind=1, flags=ir.reader.GIR_NODE_TERMINAL,
+            symbol_id=1, value=Token.NUMBER.value, src_start=source_bytes.find(b"64"), src_length=2,
+            line=1, column=4, first_child_index=0, next_sibling_index=3, child_count=0,
+        )
+        child_str = ir.GirNode(
+            view=view, index=3, kind=1, flags=ir.reader.GIR_NODE_TERMINAL,
+            symbol_id=2, value=Token.STRING.value, src_start=source_bytes.find(b'"cadena"'), src_length=8,
+            line=1, column=7, first_child_index=0, next_sibling_index=4, child_count=0,
+        )
+        child_bool = ir.GirNode(
+            view=view, index=4, kind=1, flags=ir.reader.GIR_NODE_TERMINAL,
+            symbol_id=3, value=Token.BOOL.value, src_start=source_bytes.find(b"true"), src_length=4,
+            line=1, column=16, first_child_index=0, next_sibling_index=0, child_count=0,
+        )
+
+        raw_parent._children = [child_num, child_str, child_bool]
+
+        toks = raw_parent.tokens
+        self.assertEqual(len(toks), 3)
+
+        # NUMBER -> typed int 64 (not string "64")
+        self.assertEqual(toks[0].token, Token.NUMBER)
+        self.assertEqual(toks[0].value, 64)
+        self.assertIsInstance(toks[0].value, int)
+
+        # STRING -> unescaped "cadena" (not "\"cadena\"")
+        self.assertEqual(toks[1].token, Token.STRING)
+        self.assertEqual(toks[1].value, "cadena")
+        self.assertIsInstance(toks[1].value, str)
+
+        # BOOL -> bool True (not string "true")
+        self.assertEqual(toks[2].token, Token.BOOL)
+        self.assertIs(toks[2].value, True)
 
 
 if __name__ == "__main__":

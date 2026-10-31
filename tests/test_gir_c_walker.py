@@ -236,6 +236,14 @@ int main(int argc, char **argv) {
     GramIrView bad_view;
     GramIrStatus bad_st = gram_ir_view_init(&bad_view, corrupt_buf, blob.size);
     assert(bad_st == GRAM_IR_ERR_FORMAT);
+
+    /* Also verify source_size == 0 rejects node with positive span */
+    corrupt_nodes[1].src_length = 5u;
+    GramIrHeader *mut_h = (GramIrHeader *)corrupt_buf;
+    mut_h->source_size = 0u;
+    bad_st = gram_ir_view_init(&bad_view, corrupt_buf, blob.size);
+    assert(bad_st == GRAM_IR_ERR_FORMAT);
+
     free(corrupt_buf);
 
     gram_ir_view_free(&view);

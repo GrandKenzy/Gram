@@ -1126,6 +1126,39 @@ class TestCaptureRawPython(unittest.TestCase):
         with self.assertRaises(SystemExit):
             session.parse(toks_fail, "test")
 
+    def test_capture_raw_empty_body(self) -> None:
+        class AsmBlock(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("asm"),
+                MatchToken(Token.LBRACE),
+                CaptureRaw(MatchToken(Token.RBRACE), balance_delimiters=(Token.LBRACE, Token.RBRACE)),
+                MatchToken(Token.RBRACE),
+            )
+
+        class RootRule(RuleItem):
+            nodeable = True
+            entrypoint = Alt(Ref(AsmBlock))
+
+        session = sessions.Session("AsmEmptySession", "Some")
+        session.add_keyword("asm")
+        session.entrypoint = RootRule
+
+        # Empty body with only whitespace
+        toks = session.tokenize("asm { }", "test")
+        ast = session.parse(toks, "test")
+        self.assertIsNotNone(ast)
+        raw_node = ast[0].nodes[2]
+        self.assertIsInstance(raw_node, RawNode)
+        self.assertEqual(raw_node.text, "")
+        self.assertEqual(raw_node.tokens, ())
+        self.assertEqual(raw_node.token_count, 0)
+        self.assertEqual(len(raw_node), 0)
+        self.assertIsInstance(raw_node, RawNode)
+        self.assertEqual(raw_node.text, "")
+        self.assertEqual(raw_node.tokens, ())
+        self.assertEqual(raw_node.token_count, 0)
+        self.assertEqual(len(raw_node), 0)
 
 
 if __name__ == "__main__":
