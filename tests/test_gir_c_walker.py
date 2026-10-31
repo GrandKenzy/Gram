@@ -226,6 +226,18 @@ int main(int argc, char **argv) {
     uint32_t c1 = gram_ir_node_child_at(&view, rule_idx, 1);
     assert(c1 == ident_idx);
 
+    /* Test 5: Span bounds validation against source_size */
+    uint8_t *corrupt_buf = (uint8_t *)malloc(blob.size);
+    assert(corrupt_buf != NULL);
+    memcpy(corrupt_buf, blob.data, blob.size);
+    const GramIrHeader *orig_h = (const GramIrHeader *)corrupt_buf;
+    GramIrNode *corrupt_nodes = (GramIrNode *)(corrupt_buf + orig_h->nodes_offset);
+    corrupt_nodes[1].src_length = (uint32_t)orig_h->source_size + 100u;
+    GramIrView bad_view;
+    GramIrStatus bad_st = gram_ir_view_init(&bad_view, corrupt_buf, blob.size);
+    assert(bad_st == GRAM_IR_ERR_FORMAT);
+    free(corrupt_buf);
+
     gram_ir_view_free(&view);
     gram_ir_blob_free(&blob);
     printf("ALL_C_WALKER_TESTS_PASSED\n");

@@ -12,7 +12,7 @@ from pathlib import Path
 import struct
 from typing import IO, Any, Iterator, Literal
 
-from gram.core.lexer.tokens import Token
+from gram.core.lexer.tokens import Token, TokenType
 
 # Binary layout constants matching gram_ir.h
 GIR_MAGIC = b"GIR\0"
@@ -79,6 +79,7 @@ class GirNode:
         "_children",
         "_parent",
         "_text_override",
+        "_tokens",
         "child_count",
         "column",
         "depth",
@@ -129,6 +130,7 @@ class GirNode:
         self._children: list[GirNode] | None = None
         self._parent: GirNode | None = None
         self._text_override: str | None = None
+        self._tokens: tuple[TokenType, ...] | None = None
 
     @property
     def is_terminal(self) -> bool:
@@ -206,6 +208,68 @@ class GirNode:
             self._children = res
         return self._children
 
+    @property
+    def token_count(self) -> int:
+        """For raw nodes (CaptureRaw), the number of captured tokens; otherwise child_count."""
+        if self.is_raw:
+            return self.value
+        return self.child_count
+
+    @property
+    def tokens(self) -> tuple[TokenType, ...]:
+        """
+        Tuple of tokens captured inside this CaptureRaw block.
+
+        Uses the native C lexer to tokenize the verbatim block text without requiring
+        the Python lexer. If a Session is attached to the view, custom keywords and
+        word groups are respected.
+        """
+        if self._tokens is not None:
+            return self._tokens
+        if not self.is_raw:
+            self._tokens = ()
+            return self._tokens
+
+        raw_text = self.text
+        if not raw_text:
+            self._tokens = ()
+            return self._tokens
+
+        from gram.core.lexer.core import Lexer
+        session = getattr(self.view, "session", None)
+        if session is not None:
+            raw_toks = session.tokenize(raw_text, name=f"raw_span_{self.index}", backend="c")
+        else:
+            raw_toks = Lexer(raw_text, backend="c").tokens()
+
+        clean_toks: list[TokenType] = []
+        base_line = self.line
+        base_col = self.column
+        for t in raw_toks:
+            if t.token == Token.EOF:
+                continue
+            tok_line = base_line + (t.line - 1) if base_line > 0 else t.line
+            tok_col = (base_col + t.col) if t.line == 1 and base_col > 0 else t.col
+            clean_toks.append(TokenType(t.token, t.value, tok_line, tok_col))
+
+        self._tokens = tuple(clean_toks)
+        return self._tokens
+
+    def __len__(self) -> int:
+        if self.is_raw:
+            return len(self.tokens)
+        return len(self.children)
+
+    def __iter__(self) -> Iterator[Any]:
+        if self.is_raw:
+            return iter(self.tokens)
+        return iter(self.children)
+
+    def __getitem__(self, idx: int) -> Any:
+        if self.is_raw:
+            return self.tokens[idx]
+        return self.children[idx]
+
     def walk(self, order: Literal["pre", "post"] = "pre") -> Iterator[GirNode]:
         """
         Iteratively traverse all descendant nodes in either preorder or postorder.
@@ -273,6 +337,7 @@ class GirView:
         "_source_bytes",
         "header",
         "nodes",
+        "session",
         "strings",
     )
 
@@ -280,6 +345,7 @@ class GirView:
         self,
         data: bytes | bytearray | memoryview,
         source: str | bytes | None = None,
+        session: Any | None = None,
     ) -> None:
         if isinstance(data, memoryview):
             raw = data.tobytes()
@@ -368,6 +434,7 @@ class GirView:
             total_size=total_size,
         )
         self._data = raw
+        self.session = session
 
         # Source buffer for span slicing
         if isinstance(source, str):
@@ -420,6 +487,11 @@ class GirView:
             ) = node_fields
             if symbol_id >= string_count or first_child >= node_count or next_sibling >= node_count:
                 raise ValueError(f"Corrupt GIR node #{idx}: field exceeds table bounds.")
+            if source_size > 0 and (src_start + src_length > source_size):
+                raise ValueError(
+                    f"Corrupt GIR node #{idx}: span [{src_start}, {src_start + src_length}] "
+                    f"exceeds header source_size ({source_size} bytes)."
+                )
             node = GirNode(
                 view=self,
                 index=idx,
@@ -568,29 +640,36 @@ class GirView:
             file.write(result + "\n")
         return result
 
+    def attach_session(self, session: Any) -> None:
+        """Attach an active Gram Session to power context-aware lexical tokenization on raw nodes."""
+        self.session = session
+
     @classmethod
     def from_bytes(
         cls,
         data: bytes | bytearray | memoryview,
         source: str | bytes | None = None,
+        session: Any | None = None,
     ) -> GirView:
         """Construct a `GirView` from an in-memory byte buffer."""
-        return cls(data, source=source)
+        return cls(data, source=source, session=session)
 
     @classmethod
     def from_file(
         cls,
         path: str | Path,
         source: str | bytes | None = None,
+        session: Any | None = None,
     ) -> GirView:
         """Read and construct a `GirView` from a `.gir` file on disk."""
         data = Path(path).read_bytes()
-        return cls(data, source=source)
+        return cls(data, source=source, session=session)
 
 
 def load_gir(
     source: str | Path | bytes | bytearray | memoryview,
     source_text: str | bytes | None = None,
+    session: Any | None = None,
 ) -> GirView:
     """
     Load and parse a Gram Binary IR (`.gir`) representation from a file path or in-memory byte buffer.
@@ -598,17 +677,18 @@ def load_gir(
     Args:
         source: A file path (`str` or `Path`) pointing to a `.gir` file, or raw bytes.
         source_text: Optional original source code string or bytes for span text extraction.
+        session: Optional Gram Session to power custom lexer configurations for CaptureRaw nodes.
 
     Returns:
         GirView: Parsed, navigable zero-dependency GIR representation.
     """
     if isinstance(source, (str, Path)) and (isinstance(source, Path) or os.path.exists(source)):
-        return GirView.from_file(source, source=source_text)
+        return GirView.from_file(source, source=source_text, session=session)
     if isinstance(source, (bytes, bytearray, memoryview)):
-        return GirView.from_bytes(source, source=source_text)
+        return GirView.from_bytes(source, source=source_text, session=session)
     if isinstance(source, str):
         # Path string that does not exist on disk
-        return GirView.from_file(source, source=source_text)
+        return GirView.from_file(source, source=source_text, session=session)
     raise TypeError(f"Expected file path or bytes, got {type(source).__name__}")
 
 

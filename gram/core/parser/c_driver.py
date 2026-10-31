@@ -467,7 +467,7 @@ GramIrStatus gram_ir_build(const GramAstArena *arena, uint32_t root,
             else if (an->kind == GRAM_AST_RAW) n->flags = GRAM_IR_NODE_RAW;
             else if (an->kind == GRAM_AST_EXPR_BINARY || an->kind == GRAM_AST_EXPR_UNARY) n->flags = GRAM_IR_NODE_EXPR;
             else n->flags = GRAM_IR_NODE_RULE;
-            n->value = an->rule_id;
+            n->value = (an->kind == GRAM_AST_RAW) ? an->token_count : an->rule_id;
             gram_ir_fill_span(n, tokens, token_count, an->token_start, an->token_count, source_len);
             const char *kind_name = gram_ast_kind_name((GramAstKind)an->kind);
             st = gram_ir_intern(&strings, kind_name, strlen(kind_name), &n->symbol_id);
@@ -599,6 +599,9 @@ GramIrStatus gram_ir_view_init(GramIrView *view, const void *data, size_t size) 
     for (uint32_t i = 0; i < h->node_count; i++) {
         const GramIrNode *n = &nodes[i];
         if (n->symbol_id >= h->string_count || n->first_child >= h->node_count || n->next_sibling >= h->node_count) {
+            return GRAM_IR_ERR_FORMAT;
+        }
+        if (h->source_size > 0u && ((uint64_t)n->src_start + (uint64_t)n->src_length > (uint64_t)h->source_size)) {
             return GRAM_IR_ERR_FORMAT;
         }
     }
@@ -865,6 +868,8 @@ GramDriverStatus gram_compile_source_to_ir(const char *source, size_t len, GramI
 GramDriverStatus gram_compile_file_to_ir(const char *path, GramIrBlob *out, GramDriverError *err);
 GramDriverStatus gram_compile_file_to_ir_file(const char *src_path, const char *dst_path, GramDriverError *err);
 
+const GramToken *gram_ast_raw_tokens(const GramParseResult *r, uint32_t raw_node_idx, uint32_t *out_count);
+
 const char *gram_driver_status_name(GramDriverStatus status);
 
 #ifdef __cplusplus
@@ -1127,6 +1132,23 @@ void gram_parse_result_free(GramParseResult *result) {
     memset(result, 0, sizeof(*result));
 }
 
+const GramToken *gram_ast_raw_tokens(const GramParseResult *r, uint32_t raw_node_idx, uint32_t *out_count) {
+    if (!r || !r->tokens || raw_node_idx == 0 || raw_node_idx >= r->arena.count) {
+        if (out_count) *out_count = 0;
+        return NULL;
+    }
+    const GramAstNode *an = &r->arena.nodes[raw_node_idx];
+    if (an->kind != GRAM_AST_RAW) {
+        if (out_count) *out_count = 0;
+        return NULL;
+    }
+    if (out_count) *out_count = an->token_count;
+    if (an->token_start < r->token_count) {
+        return &r->tokens[an->token_start];
+    }
+    return NULL;
+}
+
 static GramDriverStatus gram_driver_to_ir(GramParseResult *r, GramIrBlob *out, GramDriverError *err) {
     GramIrStatus st = gram_ir_build(&r->arena, r->root, r->tokens, r->token_count, r->source, r->source_len, out);
     if (st != GRAM_IR_OK) {
@@ -1324,6 +1346,7 @@ const char *gram_ir_node_name(const GramIrView *view, uint32_t node_idx);
 const char *gram_ir_node_text(const GramIrView *view, uint32_t node_idx, uint32_t *out_len);
 uint32_t gram_ir_node_child_at(const GramIrView *view, uint32_t node_idx, uint32_t child_offset);
 uint32_t gram_ir_find_first(const GramIrView *view, uint32_t start_node, const char *name);
+uint32_t gram_ir_node_raw_token_count(const GramIrView *view, uint32_t node_idx);
 
 #ifdef __cplusplus
 }
@@ -1493,6 +1516,14 @@ uint32_t gram_ir_find_first(const GramIrView *view, uint32_t start_node, const c
     FindContext ctx = { name, 0 };
     gram_ir_walk(view, start_node, find_cb, &ctx);
     return ctx.found_idx;
+}
+
+uint32_t gram_ir_node_raw_token_count(const GramIrView *view, uint32_t node_idx) {
+    if (!view || !view->header || !view->nodes || node_idx == 0 || node_idx >= view->header->node_count) {
+        return 0;
+    }
+    const GramIrNode *n = &view->nodes[node_idx];
+    return (n->flags & GRAM_IR_NODE_RAW) ? n->value : 0;
 }
 '''
 

@@ -350,6 +350,97 @@ class TestGirPythonReader(unittest.TestCase):
         self.assertEqual(pre_nodes[0].index, 1)
         self.assertEqual(post_nodes[-1].index, 1)
 
+    def test_span_validation_against_source_size(self) -> None:
+        source_code = "def worker end"
+        gir_bytes, _, tmp = self._compile_grammar_and_produce_gir(source_code)
+        with tmp:
+            view = ir.load_gir(gir_bytes, source_text=source_code)
+            nodes_offset = view.header.nodes_offset
+            # Mutate node 1 src_length to exceed source_size
+            corrupt = bytearray(gir_bytes)
+            # src_length is offset 16 in Node (struct <HHIIIIIIIII)
+            struct.pack_into("<I", corrupt, nodes_offset + 1 * ir.reader.NODE_SIZE + 16, len(source_code) + 50)
+            with self.assertRaises(ValueError) as ctx:
+                ir.load_gir(corrupt)
+            self.assertIn("source_size", str(ctx.exception).lower())
+
+    def test_capture_raw_tokens_exposure_in_gir(self) -> None:
+        from gram.core.combinators import CaptureRaw
+
+        class RawBlock(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("raw"),
+                CaptureRaw(MatchKeyword("end")),
+                MatchKeyword("end"),
+            )
+            rule = entrypoint
+
+        session = sessions.Session("RawTokenSession", "Some")
+        session.add_keyword("raw")
+        session.add_keyword("end")
+        session.entrypoint = RawBlock
+
+        tmp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        with tmp_dir:
+            out_dir = pathlib.Path(tmp_dir.name)
+            manifest = session.export_c_parser(out_dir, emit_driver=True, emit_cli=True)
+
+            proj_root = pathlib.Path(__file__).resolve().parent.parent
+            native_inc = proj_root / "native" / "gram_lexer" / "include"
+            native_src = proj_root / "native" / "gram_lexer" / "src"
+            sources = [
+                "gram_ast.c", "gram_parser.c", "gram_ir.c", "gram_driver.c",
+                "gram_lexer_keywords.c", "gram_lexer_symbols.c", "gram_lexer_groups.c",
+            ]
+            common = [str(out_dir / name) for name in sources] + [
+                str(native_src / name)
+                for name in (
+                    "lexer.c", "indentation.c", "numbers.c", "strings.c",
+                    "symbols.c", "utf8.c", "diagnostics_lite.c",
+                )
+            ]
+            cli_exe = out_dir / "gram_cli.exe"
+            flags = [
+                "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
+                str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
+            ]
+            subprocess.run(flags, check=True, capture_output=True, text=True)
+
+            src_text = "raw mov eax, 42; nop; end"
+            src_file = out_dir / "input.src"
+            src_file.write_text(src_text, encoding="utf-8")
+            gir_file = out_dir / "output.gir"
+            subprocess.run([str(cli_exe), "compile", str(src_file), "-o", str(gir_file)], check=True)
+
+            view = ir.load_gir(gir_file, source_text=src_text, session=session)
+            # Find the RAW node
+            raw_node = None
+            for n in view.walk():
+                if n.is_raw:
+                    raw_node = n
+                    break
+
+            self.assertIsNotNone(raw_node)
+            self.assertTrue(raw_node.is_raw)
+            self.assertEqual(raw_node.text, "mov eax, 42; nop;")
+
+            # 1. Verify tokens exposure without requiring the Python lexer
+            toks = raw_node.tokens
+            self.assertIsInstance(toks, tuple)
+            self.assertGreater(len(toks), 0)
+            token_values = [t.value for t in toks]
+            self.assertIn("mov", token_values)
+            self.assertIn("eax", token_values)
+            self.assertIn(42, token_values)
+
+            # 2. Check RawNode protocol compatibility
+            self.assertEqual(len(raw_node), len(toks))
+            self.assertEqual(list(iter(raw_node)), list(toks))
+            self.assertEqual(raw_node[0], toks[0])
+            self.assertGreater(raw_node.token_count, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
