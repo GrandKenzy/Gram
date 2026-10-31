@@ -147,6 +147,20 @@ class LexerState(Diagnostics):
             return self.session.config.get(name, getattr(config, name, default))
         return getattr(config, name, default)
 
+    @property
+    def ident_underscores(self) -> int:
+        """Return the maximum leading underscores allowed in an identifier (-1 = unlimited, -2 = unlimited if followed by char, 0 = none, k >= 1 = at most k)."""
+        val = self.get_config("LEXER_IDENT_UNDERSCORES", -1)
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return -1
+
+    @ident_underscores.setter
+    def ident_underscores(self, value: int) -> None:
+        if self.session is not None:
+            self.session.config["LEXER_IDENT_UNDERSCORES"] = int(value)
+
     def get_keyword(self, name: str):
         """Return a keyword from the session catalog or legacy global catalog."""
         if self.session is not None:

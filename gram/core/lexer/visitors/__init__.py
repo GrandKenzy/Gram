@@ -21,6 +21,34 @@ if TYPE_CHECKING:
 _ASCII_DIGITS = frozenset("0123456789")
 
 
+def _should_start_word_on_underscore(lexer: LexerState) -> bool:
+    """Return whether the underscore at lexer.col starts an identifier according to ident_underscores."""
+    mode = lexer.ident_underscores
+    if mode == 0:
+        return False
+    if mode == -1:
+        return True
+
+    line = lexer.currline
+    start = lexer.col
+    i = start
+    while i < len(line) and line[i] == "_":
+        i += 1
+    u_count = i - start
+
+    has_alnum_after = i < len(line) and (line[i].isalnum() or line[i].isalpha())
+
+    if mode == -2:
+        return has_alnum_after
+
+    if mode >= 1:
+        if not has_alnum_after:
+            return False
+        return u_count <= mode
+
+    return True
+
+
 def visit(lexer: LexerState, char: str) -> TokenType:
     """
     Classify the current character under the lexer cursor and dispatch it
@@ -60,7 +88,7 @@ def visit(lexer: LexerState, char: str) -> TokenType:
     ):
         visitor_name = "VISITOR-NUMBER"
         handler = numbers.process
-    elif char.isalpha() or char == "_":
+    elif char.isalpha() or (char == "_" and _should_start_word_on_underscore(lexer)):
         visitor_name = "VISITOR-WORD"
         handler = words.process
     else:

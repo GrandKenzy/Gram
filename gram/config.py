@@ -41,6 +41,7 @@ _DEFAULTS: dict[str, Any] = {
     'LEXER_SUPPORT_DOCSTRINGS': True,
     'LEXER_ADD_INFO': True,
     'LEXER_ADD_ERROR': True,
+    'LEXER_IDENT_UNDERSCORES': -1,
     # Parser
     'PARSER_ADD_INFO': True,
     'PARSER_ADD_ERROR': True,
@@ -81,6 +82,7 @@ LEXER_SAVE_COMMENTS: bool = True
 LEXER_SUPPORT_DOCSTRINGS: bool = True
 LEXER_ADD_INFO: bool = True
 LEXER_ADD_ERROR: bool = True
+LEXER_IDENT_UNDERSCORES: int = -1
 
 # ==============================================================================
 # 2. MOTOR DEL PARSER
@@ -428,6 +430,7 @@ __all__ = [
     "INFO_INIT",
     "LEXER_ADD_ERROR",
     "LEXER_ADD_INFO",
+    "LEXER_IDENT_UNDERSCORES",
     # Lexer
     "LEXER_COMMENT_TOKEN",
     "LEXER_BLOCK_COMMENT_TOKEN",

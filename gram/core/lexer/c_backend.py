@@ -140,6 +140,7 @@ class GramLexerConfigC(ctypes.Structure):
         ("ignore_newlines", ctypes.c_uint8),
         ("save_comments", ctypes.c_uint8),
         ("add_error", ctypes.c_uint8),
+        ("ident_underscores", ctypes.c_int32),
     ]
 
 
@@ -560,6 +561,11 @@ def build_c_config(lexer: "Lexer") -> GramLexerConfigC:
     cfg.ignore_newlines = 1 if lexer.get_config("LEXER_IGNORE_NEWLINES", True) else 0
     cfg.save_comments = 1 if lexer.get_config("LEXER_SAVE_COMMENTS", True) else 0
     cfg.add_error = 1 if lexer.get_config("LEXER_ADD_ERROR", True) else 0
+    try:
+        ident_u = int(lexer.get_config("LEXER_IDENT_UNDERSCORES", -1))
+    except (TypeError, ValueError):
+        ident_u = -1
+    cfg.ident_underscores = ident_u
     return cfg
 
 

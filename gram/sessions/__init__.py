@@ -85,6 +85,8 @@ class Session:
         name: str,
         mode: Literal["Many", "Some"],
         entrypoint: type[RuleItem] | None = None,
+        *,
+        ident_underscores: int | None = None,
     ) -> None:
         if mode not in _MODES:
             raise ValueError("mode must be 'Many' or 'Some'")
@@ -98,6 +100,8 @@ class Session:
         self.words: tuple[tuple[str, words.Keyword], ...] = ()
         self.group: tuple[tuple[str, words.WordGroup], ...] | None = None
         self.config: dict[str, Any] = _session_config()
+        if ident_underscores is not None:
+            self.config["LEXER_IDENT_UNDERSCORES"] = int(ident_underscores)
         self.last_config: dict[str, Any] | None = None
         self.symbols = tokens._MapSymbolsDict(tokens.MAP_SYMBOLS)
         self.symbol_order: list[str] = sorted(self.symbols, key=len, reverse=True)
@@ -116,6 +120,15 @@ class Session:
         # Parser configuration is intentionally deferred, but expose the
         # pre-created object so both engines have a stable session owner.
         self.parser = Parser([], f"{name}-parser", session=self)
+
+    @property
+    def ident_underscores(self) -> int:
+        """Return the maximum leading underscores allowed in an identifier (-1 = unlimited, -2 = unlimited if followed by char, 0 = none, k >= 1 = at most k)."""
+        return int(self.config.get("LEXER_IDENT_UNDERSCORES", -1))
+
+    @ident_underscores.setter
+    def ident_underscores(self, value: int) -> None:
+        self.config["LEXER_IDENT_UNDERSCORES"] = int(value)
 
     def add_group(
         self,
@@ -284,11 +297,17 @@ class Session:
         self._loaded = True
         self._touch_predictive_revision()
 
-    def tokenize(self, source: list[str] | str, name: str):
+    def tokenize(
+        self,
+        source: list[str] | str,
+        name: str,
+        *,
+        backend: Literal["python", "c"] | None = None,
+    ):
         """Tokenize ``source`` with this session's lexer configuration."""
         raw_source = "\n".join(source) if isinstance(source, (list, tuple)) else str(source)
         self.parser.source = raw_source
-        return self.lexer.tokenize(source, name)
+        return self.lexer.tokenize(source, name, backend=backend)
 
     def new_conversion_state(self) -> ConversionState:
         """Create an empty detached conversion state for a compilation unit."""

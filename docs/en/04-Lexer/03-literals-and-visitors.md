@@ -171,7 +171,28 @@ remove_multline("<<<")
 
 ## 4. Words, Keywords, & Booleans (`visitors.words`)
 
-The word visitor handles continuous sequences of alphanumeric characters and underscores (`[a-zA-Z_][a-zA-Z0-9_]*`).
+The word visitor handles continuous sequences of alphanumeric characters and underscores (`[a-zA-Z_][a-zA-Z0-9_]*`), governed by `ident_underscores`.
+
+### Leading and Internal Underscore Control (`ident_underscores`)
+
+Gram supports fine-grained control over how underscores are recognized in identifiers via `config.LEXER_IDENT_UNDERSCORES` or `Session(..., ident_underscores=...)`:
+
+| Mode | Semantics | Example Input | Emitted Tokens |
+| :--- | :--- | :--- | :--- |
+| **`-1` (Default)** | Unlimited leading and internal underscores; standalone underscores are `IDENT`. | `___Hola`<br>`___` | `[IDENT("___Hola")]`<br>`[IDENT("___")]` |
+| **`-2`** | Unlimited leading underscores **only if followed by alphanumeric characters**; standalone underscores emit `UNDERSCORE`. | `___Hola`<br>`___` | `[IDENT("___Hola")]`<br>`[UNDERSCORE, UNDERSCORE, UNDERSCORE]` |
+| **`0`** | No underscores allowed in identifiers (neither leading nor internal); every `_` emits `UNDERSCORE`. | `_H`<br>`foo_bar` | `[UNDERSCORE, IDENT("H")]`<br>`[IDENT("foo"), UNDERSCORE, IDENT("bar")]` |
+| **`k >= 1`** | At most `k` leading underscores in `IDENT`; excess leading underscores become individual `UNDERSCORE` tokens. | `__H` (with `k=1`)<br>`___H` (with `k=1`) | `[UNDERSCORE, IDENT("_H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("_H")]` |
+
+```python
+from gram import sessions
+
+session = sessions.Session("UnderscoreDemo", "Some", ident_underscores=1)
+session.add_keyword("fn")
+
+tokens = session.tokenize("__H = 10;", "demo")
+# Emits: Token.UNDERSCORE ('_'), Token.IDENT ('_H'), Token.ASSIGN ('='), Token.NUMBER (10), Token.SEMICOLON (';')
+```
 
 ### The 4-Step Resolution Hierarchy
 

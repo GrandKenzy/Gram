@@ -22,6 +22,7 @@
 - Resolved lexical edge cases: `LEXER_ADD_INFO` skips diagnostic telemetry node creation, `fail()` strictly obeys error policies, and `Session` safely rebuilds symbol indices.
 - Indentation policies for `spaces`, `tabs`, and `mixed` with configurable `LEXER_TAB_WIDTH`, alongside proper reference cleanup when clearing a `WordGroup`.
 - Synchronized boolean classification, string documentation contracts, and `$len` formatting in `TokenType.formatter()`.
+- Configurable identifier leading underscore support (`LEXER_IDENT_UNDERSCORES` / `ident_underscores`): supports `-1` (unlimited, default), `-2` (unlimited only if followed by alphanumeric characters; standalone underscores emit `Token.UNDERSCORE`), `0` (no underscores permitted in identifiers; all emit `Token.UNDERSCORE`), and `k >= 1` (at most `k` leading underscores in identifier; excess leading underscores emit individual `Token.UNDERSCORE` tokens), with full end-to-end parity across Python, C lexer backend, and C AOT compiler.
 
 ## Parser and AST
 

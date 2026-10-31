@@ -116,6 +116,7 @@ GramLexerConfig gram_lexer_default_config(void) {
     cfg.ignore_newlines = 1u;
     cfg.save_comments = 0u;
     cfg.add_error = 1u;
+    cfg.ident_underscores = -1;
     return cfg;
 }
 
@@ -363,6 +364,49 @@ static int match_block_comment_at(const GramLexer *lexer, uint32_t pos) {
     return 0;
 }
 
+static int should_start_word_on_underscore(const GramLexer *lexer) {
+    int32_t mode = lexer->config.ident_underscores;
+    if (mode == 0) {
+        return 0;
+    }
+    if (mode == -1) {
+        return 1;
+    }
+
+    const char *src = lexer->source;
+    uint32_t line_end = lexer->line_end;
+    uint32_t p = lexer->position;
+    uint32_t u_count = 0;
+    while (p < line_end && src[p] == '_') {
+        p++;
+        u_count++;
+    }
+
+    int has_alnum_after = 0;
+    if (p < line_end) {
+        uint32_t next_cp = 0;
+        uint32_t next_step = 1u;
+        if (gram_utf8_decode(src, line_end, p, &next_cp, &next_step)) {
+            if (gram_unicode_is_alnum(next_cp)) {
+                has_alnum_after = 1;
+            }
+        }
+    }
+
+    if (mode == -2) {
+        return has_alnum_after;
+    }
+
+    if (mode >= 1) {
+        if (!has_alnum_after) {
+            return 0;
+        }
+        return ((int32_t)u_count <= mode) ? 1 : 0;
+    }
+
+    return 1;
+}
+
 static int scan_word(GramLexer *lexer, GramToken *out_token) {
     const char *src = lexer->source;
     uint32_t line_end = lexer->line_end;
@@ -373,7 +417,7 @@ static int scan_word(GramLexer *lexer, GramToken *out_token) {
         uint32_t cp = 0;
         uint32_t step = 1u;
         int valid = gram_utf8_decode(src, line_end, lexer->position, &cp, &step);
-        if (valid && (gram_unicode_is_alnum(cp) || cp == (uint32_t)'_')) {
+        if (valid && (gram_unicode_is_alnum(cp) || (cp == (uint32_t)'_' && lexer->config.ident_underscores != 0))) {
             lexer->position += step;
             lexer->column += 1u;
         } else {
@@ -785,7 +829,7 @@ int gram_lexer_next(GramLexer *lexer, GramToken *out_token) {
             }
 
             /* 2d. Word visitor */
-            if (valid_utf8 && (gram_unicode_is_alpha(cp) || cp == '_')) {
+            if (valid_utf8 && (gram_unicode_is_alpha(cp) || (cp == '_' && should_start_word_on_underscore(lexer)))) {
                 return scan_word(lexer, out_token);
             }
 

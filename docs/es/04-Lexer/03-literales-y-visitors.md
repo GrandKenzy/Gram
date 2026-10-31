@@ -171,7 +171,28 @@ remove_multline("<<<")
 
 ## 4. Palabras, Keywords y Booleanos (`visitors.words`)
 
-El visitor de palabras procesa secuencias contiguas de caracteres alfanuméricos y guiones bajos (`[a-zA-Z_][a-zA-Z0-9_]*`).
+El visitor de palabras procesa secuencias contiguas de caracteres alfanuméricos y guiones bajos (`[a-zA-Z_][a-zA-Z0-9_]*`), reguladas por `ident_underscores`.
+
+### Control de Guiones Bajos en Identificadores (`ident_underscores`)
+
+Gram permite controlar con total precisión cómo se gestionan los guiones bajos iniciales e internos en identificadores mediante `config.LEXER_IDENT_UNDERSCORES` o `Session(..., ident_underscores=...)`:
+
+| Modo | Semántica | Entrada de Ejemplo | Tokens Emitidos |
+| :--- | :--- | :--- | :--- |
+| **`-1` (Por defecto)** | Guiones bajos iniciales e internos ilimitados; secuencias aisladas de `_` son `IDENT`. | `___Hola`<br>`___` | `[IDENT("___Hola")]`<br>`[IDENT("___")]` |
+| **`-2`** | Guiones bajos iniciales ilimitados **sólo si van seguidos de caracteres alfanuméricos**; secuencias aisladas emiten `UNDERSCORE`. | `___Hola`<br>`___` | `[IDENT("___Hola")]`<br>`[UNDERSCORE, UNDERSCORE, UNDERSCORE]` |
+| **`0`** | Ningún identificador permite guiones bajos (ni iniciales ni internos); todo `_` emite `UNDERSCORE`. | `_H`<br>`foo_bar` | `[UNDERSCORE, IDENT("H")]`<br>`[IDENT("foo"), UNDERSCORE, IDENT("bar")]` |
+| **`k >= 1`** | Máximo `k` guiones bajos iniciales en `IDENT`; el exceso previo se emite como tokens `UNDERSCORE` individuales. | `__H` (con `k=1`)<br>`___H` (con `k=1`) | `[UNDERSCORE, IDENT("_H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("_H")]` |
+
+```python
+from gram import sessions
+
+session = sessions.Session("UnderscoreDemo", "Some", ident_underscores=1)
+session.add_keyword("fn")
+
+tokens = session.tokenize("__H = 10;", "demo")
+# Emite: Token.UNDERSCORE ('_'), Token.IDENT ('_H'), Token.ASSIGN ('='), Token.NUMBER (10), Token.SEMICOLON (';')
+```
 
 ### Jerarquía Determinista de 4 Niveles
 

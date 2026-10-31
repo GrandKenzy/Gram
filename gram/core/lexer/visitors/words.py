@@ -57,7 +57,7 @@ def process(
 
     while lexer.col < line_len:
         current = lexer.peek()
-        if current.isalnum() or current == "_":
+        if current.isalnum() or (current == "_" and lexer.ident_underscores != 0):
             lexer.advance()
         else:
             break

@@ -23,6 +23,7 @@ All lexer flags reside in `gram.config`. When running inside a `Session`, the le
 | `LEXER_IGNORE_EMPTY_LINES` | `bool` | `True` | When `True`, blank and comment-only lines are skipped without emitting redundant `Token.NEWLINE` tokens. |
 | `LEXER_IGNORE_NEWLINES` | `bool` | `True` | When `True`, newline characters at the end of lines are discarded rather than emitting `Token.NEWLINE`. |
 | `LEXER_SAVE_COMMENTS` | `bool` | `True` | When `True`, scanned comments are stored in `lexer.comments`. When `False`, comments are discarded immediately. |
+| `LEXER_IDENT_UNDERSCORES` | `int` | `-1` | Controls leading/internal underscore behavior in identifiers: `-1` (unlimited, default), `-2` (unlimited only if followed by characters; standalone `_` emits `UNDERSCORE`), `0` (no underscores permitted in identifiers; all `_` emit `UNDERSCORE`), or `k >= 1` (at most `k` leading underscores in identifier; excess leading underscores emit `UNDERSCORE`). |
 | `TOKEN_BOOL_TRUE` | `str` | `'true'` | Lexeme spelling converted to `Token.BOOL` with `value=True` (case-insensitive). |
 | `TOKEN_BOOL_FALSE` | `str` | `'false'` | Lexeme spelling converted to `Token.BOOL` with `value=False` (case-insensitive). |
 | `TOKEN_NULL` | `str` | `'null'` | Lexeme spelling converted to `Token.NULL` with `value=None` (case-insensitive). |

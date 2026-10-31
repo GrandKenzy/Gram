@@ -69,6 +69,7 @@ typedef struct {
     uint8_t ignore_newlines;
     uint8_t save_comments;
     uint8_t add_error;
+    int32_t ident_underscores;
 } GramLexerConfig;
 
 /**
