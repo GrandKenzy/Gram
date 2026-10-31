@@ -417,7 +417,7 @@ static int scan_word(GramLexer *lexer, GramToken *out_token) {
         uint32_t cp = 0;
         uint32_t step = 1u;
         int valid = gram_utf8_decode(src, line_end, lexer->position, &cp, &step);
-        if (valid && (gram_unicode_is_alnum(cp) || (cp == (uint32_t)'_' && lexer->config.ident_underscores != 0))) {
+        if (valid && (gram_unicode_is_alnum(cp) || cp == (uint32_t)'_')) {
             lexer->position += step;
             lexer->column += 1u;
         } else {

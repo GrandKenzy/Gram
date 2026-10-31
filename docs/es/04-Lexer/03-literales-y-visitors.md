@@ -173,16 +173,19 @@ remove_multline("<<<")
 
 El visitor de palabras procesa secuencias contiguas de caracteres alfanuméricos y guiones bajos (`[a-zA-Z_][a-zA-Z0-9_]*`), reguladas por `ident_underscores`.
 
-### Control de Guiones Bajos en Identificadores (`ident_underscores`)
+### Control de Guiones Bajos Iniciales en Identificadores (`ident_underscores`)
 
-Gram permite controlar con total precisión cómo se gestionan los guiones bajos iniciales e internos en identificadores mediante `config.LEXER_IDENT_UNDERSCORES` o `Session(..., ident_underscores=...)`:
+Gram permite controlar con total precisión cómo se gestionan los guiones bajos al comienzo de los identificadores mediante `config.LEXER_IDENT_UNDERSCORES` o `Session(..., ident_underscores=...)`:
+
+> [!NOTE]
+> La configuración `ident_underscores` aplica **estrictamente al comienzo (guiones bajos iniciales)** del identificador. Los guiones bajos intermedios o finales en identificadores que comienzan con caracteres alfanuméricos (como `A______B` o `D____________`) son completamente agnósticos a estas reglas y se conservan siempre íntegros dentro del `IDENT` en todos los modos.
 
 | Modo | Semántica | Entrada de Ejemplo | Tokens Emitidos |
 | :--- | :--- | :--- | :--- |
-| **`-1` (Por defecto)** | Guiones bajos iniciales e internos ilimitados; secuencias aisladas de `_` son `IDENT`. | `___Hola`<br>`___` | `[IDENT("___Hola")]`<br>`[IDENT("___")]` |
-| **`-2`** | Guiones bajos iniciales ilimitados **sólo si van seguidos de caracteres alfanuméricos**; secuencias aisladas emiten `UNDERSCORE`. | `___Hola`<br>`___` | `[IDENT("___Hola")]`<br>`[UNDERSCORE, UNDERSCORE, UNDERSCORE]` |
-| **`0`** | Ningún identificador permite guiones bajos (ni iniciales ni internos); todo `_` emite `UNDERSCORE`. | `_H`<br>`foo_bar` | `[UNDERSCORE, IDENT("H")]`<br>`[IDENT("foo"), UNDERSCORE, IDENT("bar")]` |
-| **`k >= 1`** | Máximo `k` guiones bajos iniciales en `IDENT`; el exceso previo se emite como tokens `UNDERSCORE` individuales. | `__H` (con `k=1`)<br>`___H` (con `k=1`) | `[UNDERSCORE, IDENT("_H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("_H")]` |
+| **`-1` (Por defecto)** | Guiones bajos iniciales ilimitados; secuencias aisladas de `_` son `IDENT`. | `___Hola`<br>`___`<br>`A______B` | `[IDENT("___Hola")]`<br>`[IDENT("___")]`<br>`[IDENT("A______B")]` |
+| **`-2`** | Guiones bajos iniciales ilimitados **sólo si van seguidos de caracteres alfanuméricos**; secuencias aisladas emiten `UNDERSCORE`. | `___Hola`<br>`___`<br>`D____________` | `[IDENT("___Hola")]`<br>`[UNDERSCORE, UNDERSCORE, UNDERSCORE]`<br>`[IDENT("D____________")]` |
+| **`0`** | Ningún identificador permite guiones bajos iniciales; todo `_` inicial o aislado emite `UNDERSCORE`. | `_H`<br>`__H`<br>`A______B` | `[UNDERSCORE, IDENT("H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("H")]`<br>`[IDENT("A______B")]` |
+| **`k >= 1`** | Máximo `k` guiones bajos iniciales en `IDENT`; el exceso previo se emite como tokens `UNDERSCORE` individuales. | `__H` (con `k=1`)<br>`___H` (con `k=1`)<br>`A______B` | `[UNDERSCORE, IDENT("_H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("_H")]`<br>`[IDENT("A______B")]` |
 
 ```python
 from gram import sessions

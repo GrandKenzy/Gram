@@ -76,7 +76,7 @@ class TestLexerIdentUnderscores(unittest.TestCase):
         self.assertEqual(self._tokens(session, "foo_bar"), [("IDENT", "foo_bar")])
 
     def test_mode_0(self) -> None:
-        """Mode 0: no IDENT allows underscores (leading or internal); all underscores are individual UNDERSCORE tokens."""
+        """Mode 0: no leading underscores allowed in IDENT; internal and trailing underscores remain part of IDENT."""
         session = sessions.Session("Mode0", "Some", ident_underscores=0)
         session.add_keyword("kw")
         self.assertEqual(session.ident_underscores, 0)
@@ -98,11 +98,10 @@ class TestLexerIdentUnderscores(unittest.TestCase):
             [("UNDERSCORE", "_"), ("UNDERSCORE", "_"), ("IDENT", "H")],
         )
 
-        # Internal underscores: separated into tokens
-        self.assertEqual(
-            self._tokens(session, "foo_bar"),
-            [("IDENT", "foo"), ("UNDERSCORE", "_"), ("IDENT", "bar")],
-        )
+        # Internal and trailing underscores starting with letter are completely preserved
+        self.assertEqual(self._tokens(session, "A______B"), [("IDENT", "A______B")])
+        self.assertEqual(self._tokens(session, "D____________"), [("IDENT", "D____________")])
+        self.assertEqual(self._tokens(session, "foo_bar"), [("IDENT", "foo_bar")])
 
     def test_mode_1(self) -> None:
         """Mode 1: at most 1 leading underscore in IDENT; excess leading underscores become individual UNDERSCORE tokens."""
@@ -167,12 +166,12 @@ class TestLexerIdentUnderscores(unittest.TestCase):
     def test_backend_c_differential_parity(self) -> None:
         """Verify differential parity between Python backend and native C backend across all modes."""
         cases = [
-            (-1, "_ __ ___ _H __H ___H ____Hola foo_bar"),
-            (-2, "_ __ ___ _H __H ___H ____Hola foo_bar"),
-            (0, "_ __ ___ _H __H ___H ____Hola foo_bar"),
-            (1, "_ __ ___ _H __H ___H ____Hola foo_bar"),
-            (2, "_ __ ___ _H __H ___H ____Hola foo_bar"),
-            (3, "_ __ ___ _H __H ___H ____Hola foo_bar"),
+            (-1, "_ __ ___ _H __H ___H ____Hola foo_bar A______B D____________"),
+            (-2, "_ __ ___ _H __H ___H ____Hola foo_bar A______B D____________"),
+            (0, "_ __ ___ _H __H ___H ____Hola foo_bar A______B D____________"),
+            (1, "_ __ ___ _H __H ___H ____Hola foo_bar A______B D____________"),
+            (2, "_ __ ___ _H __H ___H ____Hola foo_bar A______B D____________"),
+            (3, "_ __ ___ _H __H ___H ____Hola foo_bar A______B D____________"),
         ]
 
         for mode, text in cases:

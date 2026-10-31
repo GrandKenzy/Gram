@@ -173,16 +173,19 @@ remove_multline("<<<")
 
 The word visitor handles continuous sequences of alphanumeric characters and underscores (`[a-zA-Z_][a-zA-Z0-9_]*`), governed by `ident_underscores`.
 
-### Leading and Internal Underscore Control (`ident_underscores`)
+### Leading Underscore Control in Identifiers (`ident_underscores`)
 
-Gram supports fine-grained control over how underscores are recognized in identifiers via `config.LEXER_IDENT_UNDERSCORES` or `Session(..., ident_underscores=...)`:
+Gram supports fine-grained control over how leading underscores are recognized in identifiers via `config.LEXER_IDENT_UNDERSCORES` or `Session(..., ident_underscores=...)`:
+
+> [!NOTE]
+> The `ident_underscores` setting governs **strictly the beginning (leading position)** of an identifier. Internal and trailing underscores in identifiers starting with an alphanumeric character (e.g. `A______B` or `D____________`) are completely agnostic to these rules and are always preserved as part of the `IDENT` across all modes.
 
 | Mode | Semantics | Example Input | Emitted Tokens |
 | :--- | :--- | :--- | :--- |
-| **`-1` (Default)** | Unlimited leading and internal underscores; standalone underscores are `IDENT`. | `___Hola`<br>`___` | `[IDENT("___Hola")]`<br>`[IDENT("___")]` |
-| **`-2`** | Unlimited leading underscores **only if followed by alphanumeric characters**; standalone underscores emit `UNDERSCORE`. | `___Hola`<br>`___` | `[IDENT("___Hola")]`<br>`[UNDERSCORE, UNDERSCORE, UNDERSCORE]` |
-| **`0`** | No underscores allowed in identifiers (neither leading nor internal); every `_` emits `UNDERSCORE`. | `_H`<br>`foo_bar` | `[UNDERSCORE, IDENT("H")]`<br>`[IDENT("foo"), UNDERSCORE, IDENT("bar")]` |
-| **`k >= 1`** | At most `k` leading underscores in `IDENT`; excess leading underscores become individual `UNDERSCORE` tokens. | `__H` (with `k=1`)<br>`___H` (with `k=1`) | `[UNDERSCORE, IDENT("_H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("_H")]` |
+| **`-1` (Default)** | Unlimited leading underscores; standalone underscores are `IDENT`. | `___Hola`<br>`___`<br>`A______B` | `[IDENT("___Hola")]`<br>`[IDENT("___")]`<br>`[IDENT("A______B")]` |
+| **`-2`** | Unlimited leading underscores **only if followed by alphanumeric characters**; standalone underscores emit `UNDERSCORE`. | `___Hola`<br>`___`<br>`D____________` | `[IDENT("___Hola")]`<br>`[UNDERSCORE, UNDERSCORE, UNDERSCORE]`<br>`[IDENT("D____________")]` |
+| **`0`** | No leading underscores allowed in identifiers; every leading or standalone `_` emits `UNDERSCORE`. | `_H`<br>`__H`<br>`A______B` | `[UNDERSCORE, IDENT("H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("H")]`<br>`[IDENT("A______B")]` |
+| **`k >= 1`** | At most `k` leading underscores in `IDENT`; excess leading underscores become individual `UNDERSCORE` tokens. | `__H` (with `k=1`)<br>`___H` (with `k=1`)<br>`A______B` | `[UNDERSCORE, IDENT("_H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("_H")]`<br>`[IDENT("A______B")]` |
 
 ```python
 from gram import sessions
