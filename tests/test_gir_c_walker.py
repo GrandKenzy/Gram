@@ -107,8 +107,10 @@ static GramIrWalkAction stats_cb(
 
 typedef struct {
     const char *prune_target;
+    uint32_t prune_target_idx;
+    int target_entered;
+    int target_left;
     int visited_under_target;
-    bool inside_pruned;
 } PruneTest;
 
 static GramIrWalkAction prune_cb(
@@ -122,11 +124,43 @@ static GramIrWalkAction prune_cb(
     PruneTest *pt = (PruneTest *)user_data;
     const char *name = gram_ir_node_name(view, node_idx);
     if (is_enter) {
+        if (pt->prune_target_idx != 0) {
+            pt->visited_under_target++;
+        }
         if (strcmp(name, pt->prune_target) == 0) {
+            pt->prune_target_idx = node_idx;
+            pt->target_entered++;
             return GRAM_IR_WALK_PRUNE;
         }
-        if (pt->inside_pruned) {
-            pt->visited_under_target++;
+    } else {
+        if (node_idx == pt->prune_target_idx) {
+            pt->target_left++;
+            pt->prune_target_idx = 0;
+        }
+    }
+    return GRAM_IR_WALK_CONTINUE;
+}
+
+typedef struct {
+    int stop_at;
+    int enters;
+} StopTest;
+
+static GramIrWalkAction stop_cb(
+    const GramIrView *view,
+    uint32_t node_idx,
+    uint32_t depth,
+    bool is_enter,
+    void *user_data
+) {
+    (void)view;
+    (void)node_idx;
+    (void)depth;
+    StopTest *st = (StopTest *)user_data;
+    if (is_enter) {
+        st->enters++;
+        if (st->enters == st->stop_at) {
+            return GRAM_IR_WALK_STOP;
         }
     }
     return GRAM_IR_WALK_CONTINUE;
@@ -160,10 +194,18 @@ int main(int argc, char **argv) {
     assert(st.max_depth >= 2);
 
     /* Test 2: Pruning children of InnerRule */
-    PruneTest pt = { "InnerRule", 0, false };
+    PruneTest pt = { "InnerRule", 0, 0, 0, 0 };
     ist = gram_ir_walk(&view, 0, prune_cb, &pt);
     assert(ist == GRAM_IR_OK);
-    assert(pt.visited_under_target == 0); /* Children were pruned! */
+    assert(pt.target_entered == 1);
+    assert(pt.target_left == 1);
+    assert(pt.visited_under_target == 0); /* Descendants were never visited */
+
+    /* Test 2b: Early abortion with GRAM_IR_WALK_STOP */
+    StopTest st_stop = { 2, 0 };
+    ist = gram_ir_walk(&view, 0, stop_cb, &st_stop);
+    assert(ist == GRAM_IR_OK);
+    assert(st_stop.enters == 2);
 
     /* Test 3: Search helpers */
     uint32_t ident_idx = gram_ir_find_first(&view, 0, "IDENT");

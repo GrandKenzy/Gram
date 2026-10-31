@@ -35,7 +35,7 @@ GIR_NODE_RAW = 0x10
 
 def _fnv1a_64(data: bytes) -> int:
     """Compute 64-bit FNV-1a hash matching gram_ir_hash64 in C."""
-    h = 1469598103934665603
+    h = 14695981039346656037
     prime = 1099511628211
     for b in data:
         h = ((h ^ b) * prime) & 0xFFFFFFFFFFFFFFFF
@@ -208,7 +208,7 @@ class GirNode:
 
     def walk(self, order: Literal["pre", "post"] = "pre") -> Iterator[GirNode]:
         """
-        Recursively traverse all descendant nodes in either preorder or postorder.
+        Iteratively traverse all descendant nodes in either preorder or postorder.
 
         Args:
             order: "pre" for preorder (parent before children), "post" for postorder.
@@ -217,13 +217,24 @@ class GirNode:
             GirNode: Each visited node in traversal order.
         """
         if order == "pre":
-            yield self
-            for child in self.children:
-                yield from child.walk(order=order)
+            stack = [self]
+            while stack:
+                curr = stack.pop()
+                yield curr
+                ch = curr.children
+                for i in range(len(ch) - 1, -1, -1):
+                    stack.append(ch[i])
         elif order == "post":
-            for child in self.children:
-                yield from child.walk(order=order)
-            yield self
+            stack: list[tuple[GirNode, bool]] = [(self, False)]
+            while stack:
+                curr, expanded = stack.pop()
+                if expanded:
+                    yield curr
+                else:
+                    stack.append((curr, True))
+                    ch = curr.children
+                    for i in range(len(ch) - 1, -1, -1):
+                        stack.append((ch[i], False))
         else:
             raise ValueError(f"Unsupported walk order {order!r}; must be 'pre' or 'post'.")
 
@@ -270,7 +281,15 @@ class GirView:
         data: bytes | bytearray | memoryview,
         source: str | bytes | None = None,
     ) -> None:
-        raw = bytes(data) if not isinstance(data, (bytes, memoryview)) else data
+        if isinstance(data, memoryview):
+            raw = data.tobytes()
+        elif isinstance(data, bytearray):
+            raw = bytes(data)
+        elif isinstance(data, bytes):
+            raw = data
+        else:
+            raise TypeError(f"Expected bytes, bytearray, or memoryview, got {type(data).__name__}")
+
         if len(raw) < HEADER_SIZE:
             raise ValueError(
                 f"Invalid GIR buffer: length {len(raw)} is smaller than header size ({HEADER_SIZE} bytes)."
@@ -304,12 +323,31 @@ class GirView:
             )
         if not (flags & 0x1):
             raise ValueError("Unsupported big-endian GIR buffer; only little-endian buffers are supported.")
-        if hdr_size < HEADER_SIZE:
-            raise ValueError(f"Corrupt GIR header size: {hdr_size} bytes.")
-        if total_size > len(raw):
+        if hdr_size != HEADER_SIZE:
+            raise ValueError(f"Corrupt GIR header size: expected {HEADER_SIZE} bytes, got {hdr_size}.")
+        if total_size != len(raw):
             raise ValueError(
-                f"Truncated GIR buffer: expected total size {total_size} bytes, available {len(raw)} bytes."
+                f"Corrupt GIR buffer: header total_size={total_size} does not match buffer length {len(raw)}."
             )
+        if string_count < 1 or node_count < 2 or root_index != 1:
+            raise ValueError(
+                f"Corrupt GIR header: string_count={string_count}, node_count={node_count}, root_index={root_index}."
+            )
+        if (str_off_off & 3) != 0 or (nodes_off & 7) != 0:
+            raise ValueError("Corrupt GIR buffer: unaligned table offset.")
+        if str_pool_bytes < 1:
+            raise ValueError("Corrupt GIR string pool size: must be at least 1 byte.")
+
+        offsets_end = str_off_off + (string_count + 1) * 4
+        pool_end = str_pool_off + str_pool_bytes
+        nodes_end = nodes_off + node_count * NODE_SIZE
+        if (
+            str_off_off < HEADER_SIZE
+            or offsets_end > len(raw)
+            or pool_end > len(raw)
+            or nodes_end > len(raw)
+        ):
+            raise ValueError("Corrupt GIR buffer: table section exceeds buffer boundaries.")
 
         self.header = GirHeader(
             magic=magic,
@@ -334,7 +372,9 @@ class GirView:
         # Source buffer for span slicing
         if isinstance(source, str):
             self._source_bytes = source.encode("utf-8")
-        elif isinstance(source, (bytes, bytearray, memoryview)):
+        elif isinstance(source, memoryview):
+            self._source_bytes = source.tobytes()
+        elif isinstance(source, (bytes, bytearray)):
             self._source_bytes = bytes(source)
         else:
             self._source_bytes = None
@@ -342,32 +382,25 @@ class GirView:
         # 1. Unpack string offsets and decode string pool
         str_offsets_count = string_count + 1
         str_offsets_fmt = f"<{str_offsets_count}I"
-        str_offsets_bytes = str_offsets_count * 4
-        if str_off_off + str_offsets_bytes > len(raw):
-            raise ValueError("Truncated GIR string offsets table.")
         offsets = struct.unpack_from(str_offsets_fmt, raw, str_off_off)
 
-        if str_pool_off + str_pool_bytes > len(raw):
-            raise ValueError("Truncated GIR string pool.")
-        pool_bytes = raw[str_pool_off : str_pool_off + str_pool_bytes]
+        if offsets[0] != 0 or offsets[string_count] != str_pool_bytes:
+            raise ValueError("Corrupt GIR string offsets boundary values.")
+        pool_bytes = raw[str_pool_off : pool_end]
+        if pool_bytes[-1] != 0:
+            raise ValueError("Corrupt GIR string pool: not null-terminated.")
 
         strings_list: list[str] = []
         for i in range(string_count):
             start = offsets[i]
             end = offsets[i + 1]
-            if end > str_pool_bytes or start > end:
+            if end <= start or end > str_pool_bytes or pool_bytes[end - 1] != 0:
                 raise ValueError(f"Invalid string pool boundaries for id {i}: [{start}, {end}].")
-            raw_s = pool_bytes[start:end]
-            if raw_s.endswith(b"\0"):
-                raw_s = raw_s[:-1]
+            raw_s = pool_bytes[start : end - 1]
             strings_list.append(raw_s.decode("utf-8", errors="replace"))
         self.strings = tuple(strings_list)
 
         # 2. Unpack node table
-        nodes_expected_bytes = node_count * NODE_SIZE
-        if nodes_off + nodes_expected_bytes > len(raw):
-            raise ValueError("Truncated GIR nodes table.")
-
         nodes_list: list[GirNode] = []
         for idx in range(node_count):
             offset = nodes_off + idx * NODE_SIZE
@@ -385,6 +418,8 @@ class GirView:
                 next_sibling,
                 child_count,
             ) = node_fields
+            if symbol_id >= string_count or first_child >= node_count or next_sibling >= node_count:
+                raise ValueError(f"Corrupt GIR node #{idx}: field exceeds table bounds.")
             node = GirNode(
                 view=self,
                 index=idx,
@@ -404,16 +439,54 @@ class GirView:
             nodes_list.append(node)
         self.nodes = tuple(nodes_list)
 
-        # Precompute children and parent tree relationships
-        if 0 < self.header.root_index < len(self.nodes):
-            self._link_tree(self.nodes[self.header.root_index], parent=None, depth=0)
+        # 3. Validate tree structure: acyclic, reachable, and accurate child counts
+        if nodes_list[root_index].next_sibling_index != 0:
+            raise ValueError("Corrupt GIR tree: root node cannot have siblings.")
 
-    def _link_tree(self, node: GirNode, parent: GirNode | None, depth: int) -> None:
-        node._parent = parent
-        node.depth = depth
-        _ = node.children  # trigger lazy children list population
-        for child in node.children:
-            self._link_tree(child, parent=node, depth=depth + 1)
+        seen = bytearray(node_count)
+        v_stack = [root_index]
+        visited_count = 0
+        while v_stack:
+            idx = v_stack.pop()
+            if seen[idx]:
+                raise ValueError(f"Corrupt GIR tree: cycle detected at node index {idx}.")
+            seen[idx] = 1
+            visited_count += 1
+            curr_node = nodes_list[idx]
+
+            # Check child_count matches actual sibling chain length
+            actual_children = 0
+            ch = curr_node.first_child_index
+            while ch != 0:
+                actual_children += 1
+                if actual_children > node_count:
+                    raise ValueError(f"Corrupt GIR tree: circular sibling chain under node #{idx}.")
+                ch = nodes_list[ch].next_sibling_index
+            if actual_children != curr_node.child_count:
+                raise ValueError(
+                    f"Corrupt GIR tree: node #{idx} declared child_count={curr_node.child_count} "
+                    f"but actual child chain has {actual_children} nodes."
+                )
+
+            if curr_node.next_sibling_index != 0 and idx != root_index:
+                v_stack.append(curr_node.next_sibling_index)
+            if curr_node.first_child_index != 0:
+                v_stack.append(curr_node.first_child_index)
+
+        if visited_count != node_count - 1:
+            raise ValueError(
+                f"Corrupt GIR tree: reachable node count ({visited_count}) does not match "
+                f"expected {node_count - 1} nodes."
+            )
+
+        # 4. Precompute children, parent and depth iteratively without recursion
+        p_stack: list[tuple[GirNode, GirNode | None, int]] = [(self.nodes[root_index], None, 0)]
+        while p_stack:
+            curr, par, d = p_stack.pop()
+            curr._parent = par
+            curr.depth = d
+            for child in reversed(curr.children):
+                p_stack.append((child, curr, d + 1))
 
     @property
     def root(self) -> GirNode:
@@ -451,8 +524,10 @@ class GirView:
         return self.header.grammar_id == grammar_id
 
     def matches_source(self, source: str | bytes) -> bool:
-        """Return True if `source` matches the 64-bit FNV-1a hash stored in the GIR header."""
+        """Return True if `source` matches the 64-bit FNV-1a hash and length stored in the GIR header."""
         raw = source.encode("utf-8") if isinstance(source, str) else bytes(source)
+        if len(raw) != self.header.source_size:
+            return False
         return _fnv1a_64(raw) == self.header.source_hash
 
     def walk(self, order: Literal["pre", "post"] = "pre") -> Iterator[GirNode]:

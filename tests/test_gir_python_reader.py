@@ -194,6 +194,19 @@ class TestGirPythonReader(unittest.TestCase):
             self.assertIn("KEYWORD 'def'", dump_str)
             self.assertIn("IDENT 'sample'", dump_str)
 
+    def test_memoryview_support(self) -> None:
+        source_code = "def worker end"
+        gir_bytes, _, tmp = self._compile_grammar_and_produce_gir(source_code)
+        with tmp:
+            mv = memoryview(gir_bytes)
+            view = ir.load_gir(mv, source_text=source_code)
+            self.assertIsInstance(view, ir.GirView)
+            self.assertEqual(view.root.kind_name, "ARRAY")
+            self.assertEqual(len(view.root.children), 1)
+            self.assertEqual(view.root.children[0].kind_name, "ItemRule")
+            # Verify string pool decoding succeeded on memoryview
+            self.assertIn("def", [n.text for n in view.walk()])
+
     def test_error_handling_on_invalid_gir(self) -> None:
         # Buffer too short
         with self.assertRaises(ValueError):
@@ -212,6 +225,130 @@ class TestGirPythonReader(unittest.TestCase):
         # Invalid type
         with self.assertRaises(TypeError):
             ir.load_gir(12345)  # type: ignore[arg-type]
+
+    def test_corrupted_gir_tree_validation(self) -> None:
+        source_code = "def test_tree end"
+        gir_bytes, _, tmp = self._compile_grammar_and_produce_gir(source_code)
+        with tmp:
+            orig_view = ir.load_gir(gir_bytes)
+            nodes_offset = orig_view.header.nodes_offset
+            root_idx = orig_view.header.root_index
+            root_offset = nodes_offset + root_idx * ir.reader.NODE_SIZE
+            first_child_idx = orig_view.nodes[root_idx].first_child_index
+            child_offset = nodes_offset + first_child_idx * ir.reader.NODE_SIZE
+
+            # 1. Trailing extra bytes after total_size
+            with self.assertRaises(ValueError):
+                ir.load_gir(gir_bytes + b"EXTRA_BYTES")
+
+            # 2. Self-referencing cycle (root points to itself as first_child)
+            # first_child is at offset 28 in Node (struct <HHIIIIIIIII)
+            corrupt_self = bytearray(gir_bytes)
+            struct.pack_into("<I", corrupt_self, root_offset + 28, root_idx)
+            with self.assertRaises(ValueError) as ctx:
+                ir.load_gir(corrupt_self)
+            self.assertIn("cycle detected", str(ctx.exception).lower())
+
+            # 3. Two-node cycle (root child points back to root as first_child)
+            corrupt_cycle = bytearray(gir_bytes)
+            struct.pack_into("<I", corrupt_cycle, child_offset + 28, root_idx)
+            struct.pack_into("<I", corrupt_cycle, child_offset + 36, 1)  # match single child
+            with self.assertRaises(ValueError) as ctx:
+                ir.load_gir(corrupt_cycle)
+            self.assertIn("cycle detected", str(ctx.exception).lower())
+
+            # 4. Mismatched child_count (declare 99 children when there is only 1)
+            corrupt_count = bytearray(gir_bytes)
+            struct.pack_into("<I", corrupt_count, root_offset + 36, 99)
+            with self.assertRaises(ValueError) as ctx:
+                ir.load_gir(corrupt_count)
+            self.assertIn("child_count", str(ctx.exception).lower())
+
+            # 5. Root node having a next_sibling (illegal)
+            corrupt_root_sib = bytearray(gir_bytes)
+            struct.pack_into("<I", corrupt_root_sib, root_offset + 32, first_child_idx)
+            with self.assertRaises(ValueError) as ctx:
+                ir.load_gir(corrupt_root_sib)
+            self.assertIn("root node cannot have siblings", str(ctx.exception).lower())
+
+            # 6. Invalid root_index in header (offset 60)
+            corrupt_root_idx = bytearray(gir_bytes)
+            struct.pack_into("<I", corrupt_root_idx, 60, 999)
+            with self.assertRaises(ValueError):
+                ir.load_gir(corrupt_root_idx)
+
+    def test_deep_tree_iterative_walker_no_recursion_error(self) -> None:
+        """Verify that deep trees (e.g. 2,000 deep) do not trigger RecursionError."""
+        # Synthesize a valid binary GIR buffer with 2,000 chained nodes
+        depth = 2000
+        node_count = depth + 1  # index 0 is null sentinel, 1 is root, 2..2000 are chained children
+        string_pool = b"Node\0"
+        string_offsets = struct.pack("<2I", 0, len(string_pool))
+
+        hdr_size = 72
+        str_off_off = hdr_size
+        str_off_bytes = len(string_offsets)
+        str_pool_off = (str_off_off + str_off_bytes + 7) & ~7
+        str_pool_bytes = len(string_pool)
+        nodes_off = (str_pool_off + str_pool_bytes + 7) & ~7
+        nodes_bytes = node_count * ir.reader.NODE_SIZE
+        total_size = nodes_off + nodes_bytes
+
+        header = struct.pack(
+            ir.reader.HEADER_STRUCT_FORMAT,
+            ir.GIR_MAGIC,
+            1, 0,  # version 1.0
+            1,     # little endian flag
+            hdr_size,
+            0x1234,  # grammar_id
+            0, 0,    # source hash, size
+            1,       # string count
+            str_off_off,
+            str_pool_off,
+            str_pool_bytes,
+            nodes_off,
+            node_count,
+            1,       # root_index
+            total_size,
+        )
+
+        buf = bytearray(total_size)
+        buf[:len(header)] = header
+        buf[str_off_off : str_off_off + str_off_bytes] = string_offsets
+        buf[str_pool_off : str_pool_off + str_pool_bytes] = string_pool
+
+        # Build nodes: node 1 (root) has first_child 2, child_count 1
+        # Node i has first_child i+1, child_count 1 (except last node which has first_child 0, child_count 0)
+        for i in range(1, node_count):
+            first_child = (i + 1) if i < node_count - 1 else 0
+            child_count = 1 if i < node_count - 1 else 0
+            node_bytes = struct.pack(
+                ir.reader.NODE_STRUCT_FORMAT,
+                0, 0,  # kind, flags
+                0,     # symbol_id ("Node")
+                0,     # value
+                0, 0,  # src_start, length
+                i, 0,  # line, col
+                first_child,
+                0,     # next_sibling
+                child_count,
+            )
+            off = nodes_off + i * ir.reader.NODE_SIZE
+            buf[off : off + ir.reader.NODE_SIZE] = node_bytes
+
+        # Now load view and traverse
+        view = ir.load_gir(buf)
+        self.assertEqual(view.node_count, depth)
+
+        # Preorder walk: 2000 nodes, zero recursion error
+        pre_nodes = list(view.walk(order="pre"))
+        self.assertEqual(len(pre_nodes), depth)
+
+        # Postorder walk: 2000 nodes, zero recursion error
+        post_nodes = list(view.walk(order="post"))
+        self.assertEqual(len(post_nodes), depth)
+        self.assertEqual(pre_nodes[0].index, 1)
+        self.assertEqual(post_nodes[-1].index, 1)
 
 
 if __name__ == "__main__":
