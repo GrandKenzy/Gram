@@ -19,6 +19,7 @@ from dataclasses import dataclass
 if TYPE_CHECKING:
     from gram.core.combinators import RuleItem
     from gram.core.lexer import TokenType
+    from gram.sessions import Session
 
 
 @dataclass(slots=True, frozen=True)
@@ -40,6 +41,7 @@ class Parser(ParseState):
         log_file: str | None = None,
         *,
         conversions: Mapping[str, ConversionTarget] | None = None,
+        session: "Session | None" = None,
     ) -> None:
         """
         Initialize the parser with a list of lexed tokens.
@@ -47,10 +49,39 @@ class Parser(ParseState):
         Args:
             tokens (list[TokenType]): Sequence of tokens produced by the lexer.
             log_file (str | None): Optional log file path for diagnostic telemetry.
+            conversions (Mapping[str, ConversionTarget] | None): Initial logical
+                token conversions.
+            session (Session | None): Optional session providing parser settings.
         """
-        super().__init__(log_file, conversions=conversions)
+        super().__init__(log_file, conversions=conversions, session=session)
         self.tokens = tokens
+        self._reset_indent_levels()
         self.analyzer_ast_instance: ASTAnalyzer | None = None
+
+    def reset(
+        self,
+        tokens: list[TokenType],
+        log_file: str | None = None,
+        *,
+        conversions: Mapping[str, ConversionTarget] | None = None,
+    ) -> "Parser":
+        """Reuse this parser instance for a fresh token stream.
+
+        The session reference is preserved while cursor, diagnostics, hooks,
+        conversions, and analyzer state are reset to constructor-equivalent
+        values. Existing callers that instantiate ``Parser`` directly are
+        unaffected.
+        """
+        ParseState.__init__(
+            self,
+            log_file,
+            conversions=conversions,
+            session=self.session,
+        )
+        self.tokens = tokens
+        self._reset_indent_levels()
+        self.analyzer_ast_instance = None
+        return self
 
     def parse(
         self,
@@ -83,7 +114,13 @@ class Parser(ParseState):
             return None
 
         self.debug('Starting syntactic analysis')
-        analyzer = ASTAnalyzer(self, entrypoint, mode=mode, trace=trace)
+        analyzer = ASTAnalyzer(
+            self,
+            entrypoint,
+            mode=mode,
+            trace=trace,
+            session=self.session,
+        )
         self.analyzer_ast_instance = analyzer
         return analyzer.process()
 

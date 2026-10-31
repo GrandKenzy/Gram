@@ -4,11 +4,19 @@ from __future__ import annotations
 from gram import parser
 from gram.core.ast.analyzer import ASTAnalyzer
 from gram.core.ast.raytracing import RayTracing, TraceRecord
-from gram.core.combinators import Alt, MatchKeyword, MatchToken, Seq
+from gram.core.combinators import Alt, MatchKeyword, MatchToken, Ref, RuleItem, Seq
 from gram.core.combinators.signals import CutFlowSignal
 from gram.core.combinators.skip import Skip
 from gram.core.lexer.tokens import Token
 from tests.combinators.base import CombinatorTestCase, DummyEntrypoint
+
+
+class TraceEntryRule(RuleItem):
+    entrypoint = MatchKeyword("int")
+
+
+class TraceEntryPoint(RuleItem):
+    entrypoint = Alt(Ref(TraceEntryRule))
 
 
 class TestTraceModes(CombinatorTestCase):
@@ -101,6 +109,17 @@ class TestTraceModes(CombinatorTestCase):
         self.assertNotIn(
             analyzer.dispatch_raytracing_process, analyzer.parser.hookr.callables
         )
+
+    def test_entrypoint_trace_flags_are_restored_after_process(self) -> None:
+        root = TraceEntryPoint.entrypoint
+        child = root.combinators[0]
+        before = (root.ignore, child.branchable)
+
+        analyzer = self.analyzer("int", "off")
+        analyzer.entrypoint = TraceEntryPoint
+        analyzer.process()
+
+        self.assertEqual((root.ignore, child.branchable), before)
 
     def test_empty_detailed_report(self) -> None:
         self.assertEqual(RayTracing(mode="detailed").detailed(), "PROGRAM\n    (empty)")

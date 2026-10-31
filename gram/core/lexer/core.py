@@ -9,28 +9,29 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from gram import config, errors
+from gram import errors
 from gram.core.lexer import visitors, words
 from gram.core.lexer.control import LexerState
 from gram.core.lexer.items import TokenStream
 from gram.core.lexer.tokens import Token, TokenType
 
 
-def check_state() -> int:
+def check_state(session=None) -> int:
     """
     Verify that at least one keyword is registered in `words` before lexing.
 
     Returns:
         int: Total number of registered keywords.
     """
-    if words.is_empty():
+    count = session.keyword_count() if session is not None else words.count_keywords()
+    if count == 0:
         errors.LexerError(
             "EmptyKeywords",
             errors.LEXER_EMPTY_KEYWORDS,
             "No se encontró ninguna palabra clave registrada.",
             "Registre al menos una palabra clave mediante words.add_keyword() antes de ejecutar el Lexer.",
         ).raise_error()
-    return words.count_keywords()
+    return count
 
 
 class Lexer(LexerState):
@@ -45,8 +46,18 @@ class Lexer(LexerState):
         self,
         source: Sequence[str] | str | Path,
         logfile: str | None = None,
+        *,
+        session=None,
     ) -> None:
-        super().__init__(source, logfile=logfile)
+        super().__init__(source, logfile=logfile, session=session)
+
+    def tokenize(
+        self,
+        source: Sequence[str] | str | Path,
+        logfile: str | None = None,
+    ) -> list[TokenType]:
+        """Create a fresh cursor and tokenize ``source`` with this session."""
+        return Lexer(source, logfile=logfile, session=self.session).process()
 
     def process(self) -> list[TokenType]:
         """
@@ -55,18 +66,19 @@ class Lexer(LexerState):
         Returns:
             list[TokenType]: Complete ordered list of lexed tokens ending with `Token.EOF`.
         """
-        check_state()
+        check_state(self.session)
         tokens_list: list[TokenType] = []
 
-        self.node("LexingProcess", "Ejecutando análisis léxico", set_target=True)
+        if self.telemetry_enabled:
+            self.node("LexingProcess", "Ejecutando análisis léxico", set_target=True)
         self.debug("Iniciando análisis léxico")
 
         try:
             while self.has_lines():
                 if self.is_empty():
                     if (
-                        not config.LEXER_IGNORE_EMPTY_LINES
-                        and not config.LEXER_IGNORE_NEWLINES
+                        not self.get_config("LEXER_IGNORE_EMPTY_LINES", True)
+                        and not self.get_config("LEXER_IGNORE_NEWLINES", True)
                     ):
                         tokens_list.append(
                             TokenType(Token.NEWLINE, None, self.line, 0)
@@ -76,7 +88,7 @@ class Lexer(LexerState):
                     continue
 
                 # Check if the line only contains a comment before mutating indentation
-                stripped = self.currline.lstrip(" ")
+                stripped = self.currline.lstrip(" \t")
                 first_col = len(self.currline) - len(stripped)
                 if (
                     stripped
@@ -84,7 +96,7 @@ class Lexer(LexerState):
                     and not self.is_block_comment_start(first_col)
                 ):
                     self.col = first_col
-                    if config.LEXER_SAVE_COMMENTS:
+                    if self.get_config("LEXER_SAVE_COMMENTS", True):
                         self.comments.append(self.process_comment())
                     self.line += 1
                     self.col = 0
@@ -109,7 +121,7 @@ class Lexer(LexerState):
                         opening, closing = multiline
                         is_block_comment = (
                             opening == self.block_comment_token
-                            and getattr(config, "LEXER_SUPPORT_BLOCK_COMMENTS", True)
+                            and self.get_config("LEXER_SUPPORT_BLOCK_COMMENTS", True)
                         )
                         token = self.process_multiline(
                             opening,
@@ -118,7 +130,7 @@ class Lexer(LexerState):
                             decode_escapes=not is_block_comment,
                         )
                         if is_block_comment:
-                            if config.LEXER_SAVE_COMMENTS:
+                            if self.get_config("LEXER_SAVE_COMMENTS", True):
                                 self.comments.append(token)
                         else:
                             tokens_list.append(token)
@@ -127,7 +139,7 @@ class Lexer(LexerState):
                     if self.is_comment_start(char):
                         is_block_comment = self.is_block_comment_start()
                         comment = self.process_comment()
-                        if config.LEXER_SAVE_COMMENTS:
+                        if self.get_config("LEXER_SAVE_COMMENTS", True):
                             self.comments.append(comment)
                         if is_block_comment:
                             continue
@@ -138,7 +150,7 @@ class Lexer(LexerState):
                         tokens_list.append(token)
 
                 # 3. Emit end-of-line NEWLINE token if enabled
-                if not config.LEXER_IGNORE_NEWLINES:
+                if not self.get_config("LEXER_IGNORE_NEWLINES", True):
                     tokens_list.append(
                         TokenType(Token.NEWLINE, None, self.line, self.col)
                     )
@@ -147,7 +159,7 @@ class Lexer(LexerState):
                 self.col = 0
 
             # 4. Flush remaining open indentation blocks before EOF
-            while getattr(config, "SUPPORT_INDENT", True) and len(self.indents) > 1:
+            while self.get_config("SUPPORT_INDENT", True) and len(self.indents) > 1:
                 self.indents.pop()
                 tokens_list.append(
                     TokenType(Token.DEDENT, self.indents[-1], self.line, self.col)
@@ -161,7 +173,8 @@ class Lexer(LexerState):
             )
             return tokens_list
         finally:
-            self.down()
+            if self.telemetry_enabled:
+                self.down()
 
     def stream(self) -> TokenStream:
         """Execute lexical analysis and wrap the resulting tokens in a `TokenStream`."""

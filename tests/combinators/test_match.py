@@ -12,6 +12,7 @@ from gram.core.ast.nodes import (
     LiteralString,
     LiteralSymbol,
 )
+from gram.core.combinators import Alt, Seq
 from gram.core.combinators.match import (
     MatchGroup,
     MatchKeyword,
@@ -19,7 +20,7 @@ from gram.core.combinators.match import (
     MatchToken,
     generador_expr,
 )
-from gram.core.lexer.tokens import Token
+from gram.core.lexer.tokens import Token, TokenType
 from tests.combinators.base import CombinatorTestCase
 
 
@@ -187,3 +188,26 @@ class TestMatchCombinators(CombinatorTestCase):
         res_fail, analyzer2 = self.parse_with_analyzer(seq_sym, "-")
         self.assertIsNone(res_fail)
         self.assertEqual(analyzer2.parser.pos, 0)
+
+    def test_match_seq_symbol_relabeling_rolls_back_after_branch_failure(self) -> None:
+        """Relabeling must not leak through an enclosing checkpoint restore."""
+        analyzer = self.create_analyzer(
+            [
+                TokenType(Token.IDENT, "foo"),
+                TokenType(Token.EOF, None),
+            ]
+        )
+        result = analyzer.visitor(
+            Alt(
+                Seq(
+                    MatchSeqSymbol(pattern="foo", custom_token_name="CUSTOM"),
+                    MatchToken(Token.NUMBER),
+                ),
+                MatchToken(Token.IDENT),
+            )
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(analyzer.parser.pos, 1)
+        self.assertEqual(analyzer.parser.tokens[0].token, Token.IDENT)
+        self.assertEqual(result.token.token, Token.IDENT)

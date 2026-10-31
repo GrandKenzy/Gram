@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from gram import config
 from gram.core.lexer.visitors import numbers, strings, symbols, words
 
 if TYPE_CHECKING:
     from gram.core.lexer.control import LexerState
     from gram.core.lexer.tokens import TokenType
+
+
+_ASCII_DIGITS = frozenset("0123456789")
 
 
 def visit(lexer: LexerState, char: str) -> TokenType:
@@ -32,7 +34,7 @@ def visit(lexer: LexerState, char: str) -> TokenType:
     Returns:
         TokenType: Lexed token emitted by the selected visitor.
     """
-    if config.LEXER_SUPPORT_PREFIXED_STRINGS and char in "LuU" and (
+    if lexer.get_config("LEXER_SUPPORT_PREFIXED_STRINGS", True) and char in "LuU" and (
         lexer.peek(1) in "\"'"
         or (char == "u" and lexer.peek(1) == "8" and lexer.peek(2) in "\"'")
     ):
@@ -51,10 +53,10 @@ def visit(lexer: LexerState, char: str) -> TokenType:
     elif char in "\"'":
         visitor_name = "VISITOR-STRING"
         handler = strings.process
-    elif char.isdigit() or (
-        config.LEXER_SUPPORT_LEADING_DOT_NUMBERS
+    elif char in _ASCII_DIGITS or (
+        lexer.get_config("LEXER_SUPPORT_LEADING_DOT_NUMBERS", True)
         and char == "."
-        and lexer.peek(1).isdigit()
+        and lexer.peek(1) in _ASCII_DIGITS
     ):
         visitor_name = "VISITOR-NUMBER"
         handler = numbers.process
@@ -65,18 +67,20 @@ def visit(lexer: LexerState, char: str) -> TokenType:
         visitor_name = "VISITOR-SYMBOL"
         handler = symbols.process
 
-    lexer.node(
-        visitor_name,
-        f"Procesando carácter {char!r} en línea {lexer.line + 1}, columna {lexer.col}",
-        set_target=True,
-        from_target=True,
-    )
+    if lexer.telemetry_enabled:
+        lexer.node(
+            visitor_name,
+            f"Procesando carácter {char!r} en línea {lexer.line + 1}, columna {lexer.col}",
+            set_target=True,
+            from_target=True,
+        )
     lexer.debug(f"Carácter recibido: {char!r}")
 
     try:
         return handler(lexer, char)
     finally:
-        lexer.down()
+        if lexer.telemetry_enabled:
+            lexer.down()
 
 
 __all__ = [

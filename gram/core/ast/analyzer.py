@@ -21,6 +21,7 @@ from gram.core.ast.nodes import ASTNode
 if TYPE_CHECKING:
     from gram.core.lexer import TokenType
     from gram.core.parser import Parser
+    from gram.sessions import Session
 
 
 class ASTAnalyzer(ASTState):
@@ -37,10 +38,14 @@ class ASTAnalyzer(ASTState):
         mode: Literal["Many", "Some"] = "Many",
         *,
         trace: Literal["off", "basic", "detailed"] = "basic",
+        session: "Session | None" = None,
     ) -> None:
         if trace not in ('off', 'basic', 'detailed'):
             raise ValueError(f'Unknown tracing mode: {trace!r}')
-        super().__init__(logfile)
+        effective_session = (
+            session if session is not None else getattr(parser, "session", None)
+        )
+        super().__init__(logfile, session=effective_session)
         self.parser: Parser = parser
         self.entrypoint: type[RuleItem] = entrypoint
         self.comments: list[TokenType] = []
@@ -49,6 +54,7 @@ class ASTAnalyzer(ASTState):
         self.stack_errors: list[str] = []
         self.trace_mode = trace
         self._active = False
+        self._entrypoint_mutations: list[tuple[Combinator, str, bool]] = []
 
         self.debug(
             f"Analizador AST Inicializado. Entrada={self.entrypoint.name} grámaticas"
@@ -78,6 +84,9 @@ class ASTAnalyzer(ASTState):
         close = getattr(self.raytracing, 'close', None)
         if close is not None:
             close()
+        for target, attribute, previous in reversed(self._entrypoint_mutations):
+            setattr(target, attribute, previous)
+        self._entrypoint_mutations.clear()
 
     def dispatch_raytracing_process(self, state: str, checkpoint: Any = None) -> None:
         if state == 'save':

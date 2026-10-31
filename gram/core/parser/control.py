@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping, MutableMapping
 from contextlib import contextmanager
 import copy
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from gram import config, errors
 from gram.core.lexer import CustomToken, Token, TokenType
@@ -18,6 +18,9 @@ from gram.core.parser.conversions import ConversionTarget
 from gram.core.parser import Checkpoint
 from gram.utilities import Diagnostics, Format, error
 from gram.core.parser.hookr import Hookr
+
+if TYPE_CHECKING:
+    from gram.sessions import Session
 
 class ParseState(Diagnostics):
     """
@@ -30,17 +33,26 @@ class ParseState(Diagnostics):
         file: str | None = None,
         *,
         conversions: Mapping[str, ConversionTarget] | None = None,
+        session: "Session | None" = None,
     ) -> None:
         """
         Initialize the parser state and underlying diagnostics stack.
 
         Args:
             file (str | None): Optional log file identifier for diagnostics output.
+            conversions (Mapping[str, ConversionTarget] | None): Initial parser-local
+                identifier conversions.
+            session (Session | None): Optional owner providing parser settings.
         """
+        self.session = session
         self.pos: int = 0
         self.vpos: int = 0
         self.bracket_depth: int = 0
         self.tokens: list[TokenType] = []
+        # Prefix cache for indentation queries. It is extended lazily and
+        # invalidated when token contents or the token stream changes.
+        self._indent_levels: list[int] = [0]
+        self._indent_tokens_ref = self.tokens
         self.storage: dict[str, TokenType] = {}
         self.tk_tags: dict[int, frozenset[str]] = {}
         # Logical IDENT-to-token conversions active for this parser session.
@@ -56,10 +68,16 @@ class ParseState(Diagnostics):
             'PARSER',
             'pending',
             True,
-            config.INFO_GENERATE_LOGFILE,
-            config.INFO_GENERATE_LOGFILE_ON_ERROR,
+            self.get_config("INFO_GENERATE_LOGFILE", False),
+            self.get_config("INFO_GENERATE_LOGFILE_ON_ERROR", False),
         )
         self.hookr = Hookr()
+
+    def get_config(self, name: str, default=None):
+        """Return a session setting, falling back to global configuration."""
+        if self.session is not None:
+            return self.session.config.get(name, getattr(config, name, default))
+        return getattr(config, name, default)
 
     def load(self, checkpoint: Checkpoint) -> None:
         self.pos = checkpoint.pos
@@ -90,6 +108,7 @@ class ParseState(Diagnostics):
         for idx, saved_token in checkpoint.token_values:
             self.tokens[idx] = saved_token
         self._token_overrides = saved_overrides
+        self._reset_indent_levels()
 
     def report_error(self, err: error.Error) -> error.Error:
         """
@@ -105,7 +124,7 @@ class ParseState(Diagnostics):
         if (
             recorded is not None
             and not getattr(err, '_suppress_raise', False)
-            and config.ERROR_EXIT_ON_ERROR
+            and self.get_config("ERROR_EXIT_ON_ERROR", True)
         ):
             err.raise_error()
         return err
@@ -149,7 +168,7 @@ class ParseState(Diagnostics):
 
     def sender(self, msg: str, nt: Format.LogType) -> None:  # type: ignore
         """Emit a diagnostic note to the active node if parser logging is enabled."""
-        if config.PARSER_ADD_INFO:
+        if self.get_config("PARSER_ADD_INFO", True):
             self.current().note(msg, nt)
 
     # ==========================================================================
@@ -283,12 +302,32 @@ class ParseState(Diagnostics):
         return storage
 
     def current_indent_level(self) -> int:
-        """Return the active source indentation column at the physical cursor."""
-        level = 0
-        for token in self.tokens[: self.pos]:
+        """Return the active source indentation column at the physical cursor.
+
+        The prefix is memoized incrementally. Repeated queries at or before
+        the scanned range are O(1), while only newly reached tokens are read.
+        """
+        if self._indent_tokens_ref is not self.tokens:
+            self._reset_indent_levels()
+        target = min(max(self.pos, 0), len(self.tokens))
+        while len(self._indent_levels) <= target:
+            index = len(self._indent_levels) - 1
+            level = self._indent_levels[-1]
+            token = self.tokens[index]
             if token.token in (Token.INDENT, Token.DEDENT):
                 level = int(token.value) if token.value is not None else 0
-        return level
+            self._indent_levels.append(level)
+        return self._indent_levels[target]
+
+    def _invalidate_indent_levels(self, index: int = 0) -> None:
+        """Invalidate cached indentation state from a token index onward."""
+        keep = max(1, min(index + 1, len(self._indent_levels)))
+        del self._indent_levels[keep:]
+
+    def _reset_indent_levels(self) -> None:
+        """Reset the indentation cache after replacing the token stream."""
+        self._indent_levels[:] = [0]
+        self._indent_tokens_ref = self.tokens
 
     def consume(self, expected: Token | str | None = None) -> TokenType | None:
         """
@@ -475,6 +514,7 @@ class ParseState(Diagnostics):
             if index not in self._token_overrides:
                 self._token_overrides[index] = self.tokens[index]
             self.tokens[index] = new_token
+            self._invalidate_indent_levels(index)
 
     def restore(self, checkpoint: Checkpoint) -> None:
         """
@@ -721,6 +761,7 @@ class ParseState(Diagnostics):
         """
         initial_size = len(self.tokens)
         self.tokens = [t for t in self.tokens if t.token != tok]
+        self._reset_indent_levels()
         removed = initial_size - len(self.tokens)
         self.success(f'Removed {removed} tokens of type {tok.name}')
 

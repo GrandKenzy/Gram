@@ -246,11 +246,13 @@ class TokenType:
     def formatter(self, msg: str) -> str:
         """
         Interpolate contextual token placeholders (`$name`, `$value`, `$line`,
-        `$col`, `$symbol`, `$long`) into a diagnostic string.
+        `$col`, `$len`, `$symbol`, `$long`) into a diagnostic string. ``$len``
+        is the payload length and ``$long`` is ``col + len``.
         """
         token_name: str = self.token.name
         token_val: str = str(self.token.value)
         content_val: str = str(self.value) if self.value is not None else token_name
+        content_length = len(str(self.value)) if self.value is not None else 0
         symbol_val: str = MAP_SYMBOLS.get(self.token, "")
 
         return (
@@ -259,7 +261,7 @@ class TokenType:
             .replace("$content", content_val)
             .replace("$value", content_val)
             .replace("$line", str(self.line))
-            .replace("$len", str(self.line))
+            .replace("$len", str(content_length))
             .replace("$col", str(self.col))
             .replace("$symbol", symbol_val)
             .replace("$sym", symbol_val)
@@ -303,12 +305,13 @@ class TokenType:
             return self.token == other.token and self.value == other.value
         if isinstance(other, (Token, CustomToken)):
             return self.token == other
-        if isinstance(other, str):
-            return self.token.name == other or str(self.value) == other
-        return False
+        return NotImplemented
 
     def __hash__(self) -> int:
-        return hash((self.token, str(self.value), self.line, self.col))
+        # Equality is structural for token payloads and also supports direct
+        # comparison with Token/CustomToken. Hash only the token kind so both
+        # equal TokenType instances and direct token comparisons agree.
+        return hash(self.token)
 
 
 class _MapSymbolsDict(dict[str, Token]):
@@ -438,14 +441,17 @@ MAP_SYMBOLS: _MapSymbolsDict = _MapSymbolsDict({
 _SORTED_SYMBOLS: list[str] = sorted(MAP_SYMBOLS.keys(), key=len, reverse=True)
 
 
-def _sync_symbol_indexes() -> None:
+def _sync_symbol_indexes(mapping: _MapSymbolsDict | None = None) -> None:
     """
-    Rebuild the derived indexes after `MAP_SYMBOLS` is mutated: the reverse
-    lookup inside the dictionary and the length-sorted symbol list used for
-    maximal-munch tokenization (updated in place so existing references stay valid).
+    Rebuild derived symbol indexes after a symbol map is mutated: the reverse
+    lookup inside the dictionary and, for the global map, the length-sorted
+    symbol list used for maximal-munch tokenization. Existing list references
+    are updated in place.
     """
-    MAP_SYMBOLS._rebuild_reverse()
-    _SORTED_SYMBOLS[:] = sorted(MAP_SYMBOLS.keys(), key=len, reverse=True)
+    active = MAP_SYMBOLS if mapping is None else mapping
+    active._rebuild_reverse()
+    if active is MAP_SYMBOLS:
+        _SORTED_SYMBOLS[:] = sorted(MAP_SYMBOLS.keys(), key=len, reverse=True)
 
 
 def insert_symbol(symbol: str, token: Token) -> None:

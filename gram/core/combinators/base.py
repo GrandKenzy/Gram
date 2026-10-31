@@ -34,6 +34,14 @@ class Combinator:
         self.ignore: bool = ignore
         super().__init__()
 
+    @staticmethod
+    def get_session(analyzer: ASTAnalyzer):
+        """Return the language session active for this combinator evaluation."""
+        session = getattr(analyzer, "session", None)
+        if session is not None:
+            return session
+        return getattr(getattr(analyzer, "parser", None), "session", None)
+
     def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
         Execute syntactic parsing for this combinator against `analyzer`.
@@ -67,13 +75,14 @@ class Combinator:
         try:
             from gram.core.combinators.alternative import Alt
 
+            audit = bool(getattr(self, "audit", False) or getattr(other, "audit", False))
             if isinstance(self, Alt):
                 if isinstance(other, Alt):
-                    return Alt(*(self.combinators + other.combinators))
-                return Alt(*(self.combinators + (other,)))
+                    return Alt(*(self.combinators + other.combinators), audit=audit)
+                return Alt(*(self.combinators + (other,)), audit=audit)
             if isinstance(other, Alt):
-                return Alt(self, *other.combinators)
-            return Alt(self, other)
+                return Alt(self, *other.combinators, audit=audit)
+            return Alt(self, other, audit=audit)
         except ImportError:
             return NotImplemented
 

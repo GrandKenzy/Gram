@@ -9,18 +9,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from gram import config
-from gram.core.lexer import words
 from gram.core.lexer.tokens import Token, TokenType
 
 if TYPE_CHECKING:
     from gram.core.lexer.control import LexerState
 
-def _boolean_literals() -> dict[str, bool]:
+def _boolean_literals(lexer: LexerState) -> dict[str, bool]:
     """Return configured boolean spellings without hardcoded language words."""
     values: dict[str, bool] = {}
-    true_name = getattr(config, "TOKEN_BOOL_TRUE", None)
-    false_name = getattr(config, "TOKEN_BOOL_FALSE", None)
+    true_name = lexer.get_config("TOKEN_BOOL_TRUE", None)
+    false_name = lexer.get_config("TOKEN_BOOL_FALSE", None)
     if isinstance(true_name, str) and true_name:
         values[true_name.lower()] = True
     if isinstance(false_name, str) and false_name:
@@ -28,8 +26,8 @@ def _boolean_literals() -> dict[str, bool]:
     return values
 
 
-def _null_literal() -> str | None:
-    value = getattr(config, "TOKEN_NULL", None)
+def _null_literal(lexer: LexerState) -> str | None:
+    value = lexer.get_config("TOKEN_NULL", None)
     return value.lower() if isinstance(value, str) and value else None
 
 
@@ -44,8 +42,10 @@ def process(
     node: Any = None,
 ) -> TokenType:
     """
-    Scan an alphanumeric/underscore word and classify it as `Token.BOOL`,
-    `Token.NULL`, `Token.KEYWORD`, or `Token.IDENT`.
+    Scan an alphanumeric/underscore word and classify it using this priority:
+    configured boolean spelling, configured null spelling, exact registered
+    keyword spelling, then generic identifier. Boolean and null comparisons
+    are case-insensitive; keyword lookup remains exact.
     """
     start = lexer.col
     start_line = lexer.line
@@ -66,19 +66,19 @@ def process(
     lower = value.lower()
 
     # 1. Boolean literals
-    bools = _boolean_literals()
+    bools = _boolean_literals(lexer)
     if lower in bools:
         parsed_bool = bools[lower]
         lexer.success(f"Booleano reconocido: {value!r} -> {parsed_bool}")
         return TokenType(Token.BOOL, parsed_bool, start_line, start)
 
     # 2. Null literal
-    if lower == _null_literal():
+    if lower == _null_literal(lexer):
         lexer.success(f"Literal nulo reconocido: {value!r}")
         return TokenType(Token.NULL, None, start_line, start)
 
     # 3. Registered language keywords
-    keyword = words.get_keyword(value)
+    keyword = lexer.get_keyword(value)
     if keyword is not None:
         lexer.success(f"Palabra clave reconocida: {keyword.name!r}")
         return TokenType(Token.KEYWORD, keyword.name, start_line, start)

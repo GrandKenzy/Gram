@@ -40,6 +40,56 @@ class CNumericLiteralTests(unittest.TestCase):
             ["1.0f", "0x10ULL", 7.75, 0.5, 42],
         )
 
+    def test_hexadecimal_digits_are_not_misread_as_suffixes_or_exponents(self) -> None:
+        with patch.dict(
+            config.__dict__,
+            {
+                "LEXER_COMMENT_TOKEN": "#",
+                "LEXER_IGNORE_EMPTY_LINES": True,
+                "LEXER_IGNORE_NEWLINES": True,
+                "LEXER_ADD_INFO": False,
+                "INFO_GENERATE_LOGFILE": False,
+                "INFO_GENERATE_LOGFILE_ON_ERROR": False,
+                "ERROR_EXIT_ON_ERROR": False,
+                "ERROR_HIDE_CONSOLE": True,
+            },
+        ):
+            words.clear_all()
+            words.add_keyword("dummy")
+            tokens = Lexer("0x1f 0xface 0XFF 0x1p2").process()
+
+        self.assertEqual(
+            [token.token for token in tokens],
+            [Token.NUMBER, Token.NUMBER, Token.NUMBER, Token.DECIMAL, Token.EOF],
+        )
+        self.assertEqual(
+            [token.value for token in tokens[:-1]],
+            [31, 64206, 255, 4.0],
+        )
+
+    def test_malformed_numeric_separators_are_not_split_into_valid_tokens(self) -> None:
+        with patch.dict(
+            config.__dict__,
+            {
+                "LEXER_COMMENT_TOKEN": "#",
+                "LEXER_IGNORE_EMPTY_LINES": True,
+                "LEXER_IGNORE_NEWLINES": True,
+                "LEXER_ADD_INFO": False,
+                "INFO_GENERATE_LOGFILE": False,
+                "INFO_GENERATE_LOGFILE_ON_ERROR": False,
+                "ERROR_EXIT_ON_ERROR": False,
+                "ERROR_HIDE_CONSOLE": True,
+            },
+        ):
+            words.clear_all()
+            words.add_keyword("dummy")
+            tokens = Lexer("1__2").process()
+
+        self.assertEqual(
+            [token.token for token in tokens],
+            [Token.ERROR, Token.EOF],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

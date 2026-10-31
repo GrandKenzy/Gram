@@ -36,6 +36,9 @@ _HEX_FLOAT_RE = re.compile(
 _HEX_INTEGER_RE = re.compile(r"0[xX][0-9A-Fa-f_]+(?:[uUlL]*)")
 _RADIX_RE = re.compile(r"(?:0[bB][01_]+|0[oO][0-7_]+)(?:[uUlL]*)")
 _DECIMAL_INTEGER_RE = re.compile(r"[0-9][0-9_]*(?:[uUlL]*)")
+_INTEGER_SUFFIX_RE = re.compile(r"[uUlL]+$")
+_FLOAT_SUFFIX_RE = re.compile(r"[fFlL]+$")
+_DECIMAL_SUFFIX_RE = re.compile(r"[uUlLfF]+$")
 
 
 def _invalid_number(
@@ -57,10 +60,60 @@ def _invalid_number(
     return TokenType(Token.ERROR, raw_value, start_line, start)
 
 
+def _numeric_tail(line: str, start: int, end: int) -> int:
+    """Consume the contiguous malformed suffix of a numeric candidate."""
+    while end < len(line):
+        char = line[end]
+        if char.isalnum() or char in "._":
+            end += 1
+            continue
+        if char in "+-" and end > start and line[end - 1] in "eEpP":
+            end += 1
+            continue
+        break
+    return end
+
+
+def _has_invalid_separator(raw_value: str) -> bool:
+    """Return whether an underscore is not between two literal characters."""
+    return (
+        raw_value.startswith("_")
+        or raw_value.endswith("_")
+        or "__" in raw_value
+        or raw_value.lower().startswith(("0x_", "0b_", "0o_"))
+    )
+
+
 def _convert_number(raw_value: str) -> int | float | str:
     """Convert a literal while retaining suffix spelling for later phases."""
     clean_value = raw_value.replace("_", "")
-    suffix_match = re.search(r"[uUlLfF]+$", clean_value)
+    lower_value = clean_value.lower()
+
+    # Resolve radix before suffix/exponent checks. Hexadecimal digits may end
+    # in ``e`` or ``f``; treating those as decimal exponents or float suffixes
+    # corrupts valid literals such as ``0xface`` and ``0x1f``.
+    if lower_value.startswith("0x"):
+        if "p" in lower_value or "." in lower_value:
+            suffix_match = _FLOAT_SUFFIX_RE.search(clean_value)
+            suffix = suffix_match.group(0) if suffix_match else ""
+            if suffix:
+                return raw_value
+            return float.fromhex(clean_value)
+
+        suffix_match = _INTEGER_SUFFIX_RE.search(clean_value)
+        suffix = suffix_match.group(0) if suffix_match else ""
+        if suffix:
+            return raw_value
+        return int(clean_value, 16)
+
+    if lower_value.startswith(("0b", "0o")):
+        suffix_match = _INTEGER_SUFFIX_RE.search(clean_value)
+        suffix = suffix_match.group(0) if suffix_match else ""
+        if suffix:
+            return raw_value
+        return int(clean_value, 2 if lower_value.startswith("0b") else 8)
+
+    suffix_match = _DECIMAL_SUFFIX_RE.search(clean_value)
     suffix = suffix_match.group(0) if suffix_match else ""
     body = clean_value[:-len(suffix)] if suffix else clean_value
 
@@ -69,16 +122,8 @@ def _convert_number(raw_value: str) -> int | float | str:
     if suffix:
         return raw_value
 
-    if body.lower().startswith("0x") and ("." in body or "p" in body.lower()):
-        return float.fromhex(body)
     if "." in body or "e" in body.lower():
         return float(body)
-    if body.lower().startswith("0x"):
-        return int(body, 16)
-    if body.lower().startswith("0b"):
-        return int(body, 2)
-    if body.lower().startswith("0o"):
-        return int(body, 8)
     return int(body, 10)
 
 
@@ -104,15 +149,29 @@ def process(
     if match is None:
         match = _DECIMAL_INTEGER_RE.match(remainder)
     if match is None:
+        invalid_end = _numeric_tail(line_str, start, start + 1)
+        lexer.col = invalid_end
         return _invalid_number(
             lexer,
-            remainder[:1] or char,
+            line_str[start:invalid_end] or remainder[:1] or char,
             start,
             start_line,
             "No se pudo reconocer el literal numérico.",
         )
 
     raw_value = match.group(0)
+    end = start + len(raw_value)
+    tail_end = _numeric_tail(line_str, start, end)
+    if tail_end != end or _has_invalid_separator(raw_value):
+        lexer.col = tail_end
+        return _invalid_number(
+            lexer,
+            line_str[start:tail_end],
+            start,
+            start_line,
+            "La escritura del literal numérico no es válida.",
+        )
+
     lexer.advance(len(raw_value))
 
     # A hexadecimal floating point literal requires a binary exponent.
@@ -130,11 +189,13 @@ def process(
     lexer.success(f"Número procesado: {parsed!r}")
     # Keep the historical NUMBER token for integers and radix literals. A
     # decimal-point/exponent spelling gets the new generic DECIMAL token.
-    token_kind = (
-        Token.DECIMAL
-        if "." in raw_value or "e" in raw_value.lower()
-        else Token.NUMBER
+    lower_raw = raw_value.lower()
+    is_decimal = (
+        "." in raw_value
+        or "p" in lower_raw
+        or ("e" in lower_raw and not lower_raw.startswith("0x"))
     )
+    token_kind = Token.DECIMAL if is_decimal else Token.NUMBER
     return TokenType(token_kind, parsed, start_line, start)
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
+from gram import errors
 from gram.core.lexer.flags import CHAR, SIMPLE_QUOTE
 from gram.core.lexer.tokens import Token, TokenType
 
@@ -39,8 +39,10 @@ def process(
     start_override: int | None = None,
 ) -> TokenType:
     """
-    Dispatch string scanning to either `process_docstring` (if triple quotes
-    are detected and enabled) or `process_string`.
+    Dispatch string scanning through the active lexer multiline registry or
+    the single-line scanner. Registered multiline delimiters are consumed by
+    ``LexerState.process_multiline``; ``process_string`` handles ordinary
+    quoted literals.
     """
     start = lexer.col if start_override is None else start_override
     start_line = lexer.line

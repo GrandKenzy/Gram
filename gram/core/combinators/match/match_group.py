@@ -84,8 +84,19 @@ class MatchGroup(Combinator):
                 return None
 
         
-            if not words.exists_in_group(current.value, self.group):
-                if not words.group_exists(self.group):
+            session = self.get_session(analyzer)
+            in_group = (
+                session.exists_in_group(current.value, self.group)
+                if session is not None
+                else words.exists_in_group(current.value, self.group)
+            )
+            group_exists = (
+                session.group_exists(self.group)
+                if session is not None
+                else words.group_exists(self.group)
+            )
+            if not in_group:
+                if not group_exists:
                     parser.error(f"El grupo {self.group} no existe.")
                     analyzer.report_error(
                         errors.LexerError(

@@ -8,7 +8,8 @@ Todas las operaciones de palabras clave y grupos residen en `gram.core.lexer.wor
 
 ## 1. Configurar el Comportamiento del Lexer (`gram.config`)
 
-El `Lexer` consulta varias variables globales de configuración en `gram.config`:
+El `Lexer` independiente consulta flags de `gram.config`; el lexer de una
+sesión consulta esas mismas opciones desde la vista `Session.config`.
 
 | Configuración | Valor por Defecto | Efecto sobre el `Lexer` |
 | :--- | :--- | :--- |
@@ -18,13 +19,29 @@ El `Lexer` consulta varias variables globales de configuración en `gram.config`
 | `config.LEXER_SUPPORT_DOCSTRINGS` | `True` | Habilita los delimitadores multilínea predeterminados (`"""..."""` y `'''...'''`). Se emiten como `Token.STRING`. |
 | `config.LEXER_SUPPORT_PREFIXED_STRINGS` | `True` | Reconoce prefijos C como `L"texto"`, `u"texto"`, `U"texto"` y `u8"texto"`. |
 | `config.LEXER_SUPPORT_LEADING_DOT_NUMBERS` | `True` | Reconoce números que empiezan por punto, como `.5`. Si es `False`, se emiten `Token.DOT` y `Token.NUMBER`. |
+| `config.LEXER_TAB_WIDTH` | `4` | Ancho visual usado para tabs cuando `LEXER_INDENT_STYLE` es `tabs` o `mixed`. Los valores menores que `1` se normalizan a `1`. |
+| `config.LEXER_INDENT_STYLE` | `'spaces'` | Política de indentación: `spaces` conserva el ancho histórico basado solo en espacios, `tabs` cuenta tabs con `LEXER_TAB_WIDTH` y `mixed` expande ambos. |
 | `config.TOKEN_BOOL_TRUE` / `config.TOKEN_BOOL_FALSE` | `'true'` / `'false'` | Define las grafías que se convierten en `Token.BOOL`. |
 | `config.TOKEN_NULL` | `'null'` | Define la grafía que se convierte en `Token.NULL`. |
 | `config.SUPPORT_INDENT` | `True` | Si es `False`, no se generan `Token.INDENT` ni `Token.DEDENT`. |
 | `config.SUPPORT_TRIPLE_DOT` | `True` | Controla si `...` se reconoce como `Token.THREE_DOTS` o como tres tokens `Token.DOT`. |
 | `config.LEXER_IGNORE_EMPTY_LINES` | `True` | Si es `True`, las líneas en blanco o con solo comentarios se omiten sin emitir tokens redundantes `Token.NEWLINE` ni perturbar el cálculo de `INDENT`/`DEDENT`. |
-| `config.LEXER_ADD_INFO` | `True` | Si es `True`, emite notas de telemetría léxica a `LexerState`. |
+| `config.LEXER_ADD_INFO` | `True` | Si es `True`, emite telemetría léxica y crea nodos de proceso/visitante. Si es `False`, omite esos nodos y notas. |
 | `config.LEXER_ADD_ERROR` | `True` | Si es `True`, registra notas de fallo léxico en la pila de diagnóstico del lexer. |
+
+La clasificación de palabras es determinista. El lexer comprueba primero las
+grafías booleanas configuradas (sin distinguir mayúsculas), después la grafía
+de `null` (también sin distinguir mayúsculas), luego una palabra clave
+registrada con coincidencia exacta y finalmente emite `Token.IDENT`. Por eso
+una palabra clave `TRUE` no sustituye la grafía booleana configurada `true`.
+
+`WordGroup.contains()` usa nombres exactos y distingue mayúsculas. Además,
+`WordGroup.clear()` reinicia `keyword.group` para cada miembro, evitando
+referencias obsoletas después de vaciar un grupo.
+
+Para diagnósticos de tokens, `TokenType.formatter()` expande `$line`, `$col`,
+`$len` y `$long` usando el token emitido. `$len` es la longitud del contenido
+del token y `$long` es su columna final (`col + len`).
 
 ### Delimitadores multilínea
 
@@ -182,7 +199,7 @@ print("¿Está 'int' en 'types'?", lexer.words.exists_in_group("int", "types"))
 | `words.get_group(name, *, strict=False)` | `WordGroup \| None` | Retorna la instancia de `WordGroup` o `None` (lanza `LEXER_WORDGROUP_NOT_FOUND` si `strict=True`). |
 | `words.group_exists(name)` | `bool` | Retorna `True` si el grupo está registrado. |
 | `words.exists_in_group(kw, group)` | `bool` | Verificación de pertenencia en $O(1)$ dentro de `group`. |
-| `words.remove_group(name)` | `WordGroup \| None` | Elimina el grupo y reinicia `kw.group = None` en sus miembros. |
+| `words.remove_group(name)` | `WordGroup \| None` | Elimina el grupo y reinicia `kw.group = None` en sus miembros. `WordGroup.clear()` hace la misma limpieza sin eliminar el grupo. |
 | `words.clear_all()` | `None` | Limpia tanto `MAP_KEYWORDS` como todas las entradas de `WordGroup`. |
 
 ---

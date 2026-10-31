@@ -8,16 +8,49 @@ membership lookups.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 from gram import config, errors
 from gram.utilities import Format
 
 MAP_KEYWORDS: dict[str, Keyword] = {}
+_GLOBAL_GROUPS: dict[str, WordGroup] = {}
+_SESSION_TARGET: Any | None = None
+
+
+def bind_session(session: Any) -> None:
+    """Route the loose lexicon API to ``session`` until it is unbound."""
+    global _SESSION_TARGET
+    _SESSION_TARGET = session
+
+
+def unbind_session(session: Any | None = None) -> None:
+    """Stop routing loose lexicon calls to ``session``."""
+    global _SESSION_TARGET
+    if session is None or _SESSION_TARGET is session:
+        _SESSION_TARGET = None
+
+
+def active_session() -> Any | None:
+    """Return the session currently owning the loose lexicon API, if any."""
+    return _SESSION_TARGET
+
+
+def _catalogs() -> tuple[dict[str, Keyword], dict[str, WordGroup]]:
+    """Return the active keyword and group dictionaries."""
+    if _SESSION_TARGET is not None:
+        return _SESSION_TARGET.keywords, _SESSION_TARGET.groups
+    return MAP_KEYWORDS, _GLOBAL_GROUPS
 
 
 def _log_lexer_note(message: str, note_type: Format.LogType = "normal") -> None:
     """Emit a diagnostic note to the active lexer stack if `LEXER_ADD_INFO` is enabled."""
-    if not config.LEXER_ADD_INFO:
+    enabled = (
+        _SESSION_TARGET.config.get("LEXER_ADD_INFO", True)
+        if _SESSION_TARGET is not None
+        else getattr(config, "LEXER_ADD_INFO", True)
+    )
+    if not enabled:
         return
     from gram.core.lexer.control import LexerState
 
@@ -68,19 +101,9 @@ class Keyword:
         self.group: str | None = group_name
         self.description: str = description
         self.documentation: str = documentation
-        MAP_KEYWORDS[self.name] = self
-
-        if self.group is not None:
-            if not group_exists(self.group):
-                _log_lexer_note(
-                    f"El grupo {self.group!r} no existe aún al registrar la palabra clave "
-                    f"{self.name!r}. Créelo usando words.add_group.",
-                    "warn",
-                )
-            else:
-                grp = group if isinstance(group, WordGroup) else get_group(self.group)
-                if grp is not None:
-                    grp.add_keyword(self)
+        # Registration is deliberately performed by ``add_keyword``. Keeping
+        # this constructor side-effect free makes a Keyword safe to use as a
+        # value object inside an isolated Session.
 
     @property
     def color(self) -> str:
@@ -90,7 +113,7 @@ class Keyword:
     @classmethod
     def count(cls) -> int:
         """Return the total number of registered keywords in `MAP_KEYWORDS`."""
-        return len(MAP_KEYWORDS)
+        return len(_catalogs()[0])
 
     def __repr__(self) -> str:
         return f"Keyword({self.name!r}, color={self.hex_color!r}, group={self.group!r})"
@@ -143,19 +166,28 @@ class WordGroup:
         return list(self._keywords.values())
 
     def contains(self, keyword_name: str) -> bool:
-        """Return True if `keyword_name` belongs to this group (case-insensitive, $O(1)$)."""
+        """Return whether the exact keyword spelling belongs to this group.
+
+        The comparison is case-sensitive and uses the group's hash index, so
+        membership is O(1) average-case.
+        """
         return keyword_name in self._keywords
 
     def add_keyword(self, item: str | Keyword) -> Keyword | None:
-        """Add a registered `Keyword` (or keyword name) to this group."""
+        """Bind a keyword to this group in the active catalog.
+
+        This mutator remains as a compatibility shim. New code should use
+        :func:`add_keyword`, which is the canonical registration API.
+        """
+        keywords, _ = _catalogs()
         if isinstance(item, Keyword):
             name = item.name
             kw: Keyword | None = item
-            if name not in MAP_KEYWORDS:
-                MAP_KEYWORDS[name] = item
+            if name not in keywords:
+                keywords[name] = item
         else:
             name = str(item)
-            kw = get_keyword(name)
+            kw = keywords.get(name)
 
         if kw is None:
             _log_lexer_note(
@@ -188,7 +220,13 @@ class WordGroup:
         return len(self._keywords)
 
     def clear(self) -> None:
-        """Remove all keywords from this group."""
+        """Remove all keywords and clear their stale group references.
+
+        Complexity: O(K), where K is the number of keywords in this group.
+        """
+        for keyword in self._keywords.values():
+            if keyword.group == self.name:
+                keyword.group = None
         self._keywords.clear()
 
     def __repr__(self) -> str:
@@ -206,7 +244,21 @@ class WordGroupManager:
     """Centralized registry and lifecycle manager for lexical `WordGroup` instances."""
 
     def __init__(self) -> None:
-        self._groups: dict[str, WordGroup] = {}
+        raise RuntimeError(
+            "WordGroupManager is obsolete; use Session.add_group() or words.add_group()."
+        )
+
+
+# ==============================================================================
+# 3. GLOBAL CATALOG FUNCTIONS
+# ==============================================================================
+
+class _LegacyGroupsView:
+    """Compatibility view over the active Session group catalog."""
+
+    @property
+    def _groups(self) -> dict[str, WordGroup]:
+        return _catalogs()[1]
 
     def create(
         self,
@@ -217,76 +269,34 @@ class WordGroupManager:
         *,
         allow_override: bool = False,
     ) -> WordGroup:
-        """Create and register a new lexical `WordGroup`."""
-        group_name = name.name if isinstance(name, WordGroup) else str(name)
-        if group_name in self._groups and not allow_override:
-            _log_lexer_note(f"El grupo {group_name!r} ya está registrado", "error")
-            errors.LexerError(
-                "GroupAlreadyExists",
-                errors.LEXER_WORDGROUP_ALREADY_EXISTS,
-                f'El grupo de palabras clave "{group_name}" ya fue creado. '
-                "Use allow_override=True para sobrescribirlo.",
-            ).raise_error()
-
-        group = (
-            name
-            if isinstance(name, WordGroup)
-            else WordGroup(
-                name=group_name,
-                color_group=color_group,
-                description=description,
-            )
+        return add_group(
+            name,
+            values,
+            color_group,
+            description,
+            allow_override=allow_override,
         )
-        self._groups[group_name] = group
-
-        if values is not None:
-            for val in values:
-                group.add_keyword(val)
-
-        _log_lexer_note(f"Grupo de palabras creado: {group_name!r}", "success")
-        return group
 
     def get(self, name: str | WordGroup, *, strict: bool = False) -> WordGroup | None:
-        """Retrieve a registered `WordGroup` by name or instance."""
-        group_name = name.name if isinstance(name, WordGroup) else str(name)
-        group = self._groups.get(group_name)
-        if group is None and strict:
-            _log_lexer_note(f"Grupo no encontrado: {group_name!r}", "error")
-            errors.LexerError(
-                "GroupNotFound",
-                errors.LEXER_WORDGROUP_NOT_FOUND,
-                f'El grupo de palabras clave "{group_name}" no está registrado.',
-            ).raise_error()
-        return group
+        return get_group(name, strict=strict)
 
     def exists(self, name: str | WordGroup) -> bool:
-        """Return True if the specified group is registered."""
-        group_name = name.name if isinstance(name, WordGroup) else str(name)
-        return group_name in self._groups
+        return group_exists(name)
 
     def remove(self, name: str | WordGroup) -> WordGroup | None:
-        """Remove and return a registered `WordGroup`."""
-        group_name = name.name if isinstance(name, WordGroup) else str(name)
-        return self._groups.pop(group_name, None)
+        return remove_group(name)
 
     def all(self) -> dict[str, WordGroup]:
-        """Return a shallow copy of all registered groups."""
-        return dict(self._groups)
+        return all_groups()
 
     def all_names(self) -> list[str]:
-        """Return a list of all registered group names."""
-        return list(self._groups.keys())
+        return all_group_names()
 
     def clear(self) -> None:
-        """Clear all registered groups."""
-        self._groups.clear()
+        _catalogs()[1].clear()
 
 
-# ==============================================================================
-# 3. GLOBAL CATALOG FUNCTIONS
-# ==============================================================================
-
-groups: WordGroupManager = WordGroupManager()
+groups = _LegacyGroupsView()
 
 
 def add_keyword(
@@ -299,7 +309,8 @@ def add_keyword(
     color: str | None = None,
     allow_override: bool = False,
 ) -> Keyword:
-    """Register a keyword in the global lexer catalog."""
+    """Register a keyword in the active lexer catalog."""
+    keywords, groups_catalog = _catalogs()
     if color is not None:
         hex_color = color
     if not name or not name.strip():
@@ -310,7 +321,7 @@ def add_keyword(
         ).raise_error()
 
     clean_name = name.strip()
-    if clean_name in MAP_KEYWORDS and not allow_override:
+    if clean_name in keywords and not allow_override:
         errors.LexerError(
             "KeywordAlreadyExists",
             errors.LEXER_KEYWORD_ALREADY_EXISTS,
@@ -318,18 +329,31 @@ def add_keyword(
             "Use allow_override=True para reemplazarla o elija un nombre diferente.",
         ).raise_error()
 
-    return Keyword(
+    keyword = Keyword(
         name=clean_name,
         hex_color=hex_color,
-        group=group,
         description=description,
         documentation=documentation,
     )
+    keywords[clean_name] = keyword
+
+    if group is not None:
+        group_name = group.name if isinstance(group, WordGroup) else str(group)
+        target_group = groups_catalog.get(group_name)
+        if target_group is None:
+            _log_lexer_note(
+                f"El grupo {group_name!r} no existe aún al registrar la palabra clave "
+                f"{clean_name!r}. Créelo usando words.add_group.",
+                "warn",
+            )
+        else:
+            target_group.add_keyword(keyword)
+    return keyword
 
 
 def get_keyword(name: str, *, strict: bool = False) -> Keyword | None:
     """Retrieve a registered `Keyword` by exact name."""
-    kw = MAP_KEYWORDS.get(name)
+    kw = _catalogs()[0].get(name)
     if kw is None and strict:
         errors.LexerError(
             "KeywordNotFound",
@@ -341,13 +365,14 @@ def get_keyword(name: str, *, strict: bool = False) -> Keyword | None:
 
 
 def keyword_exists(name: str) -> bool:
-    """Return True if `name` is registered in `MAP_KEYWORDS`."""
-    return name in MAP_KEYWORDS
+    """Return True if `name` is registered in the active catalog."""
+    return name in _catalogs()[0]
 
 
 def remove_keyword(name: str, *, strict: bool = False) -> Keyword | None:
-    """Remove a keyword from the global catalog and any associated `WordGroup`."""
-    kw = MAP_KEYWORDS.pop(name, None)
+    """Remove a keyword from the active catalog and associated groups."""
+    keywords, groups_catalog = _catalogs()
+    kw = keywords.pop(name, None)
     if kw is None:
         if strict:
             errors.LexerError(
@@ -357,7 +382,7 @@ def remove_keyword(name: str, *, strict: bool = False) -> Keyword | None:
             ).raise_error()
         return None
 
-    for grp in groups.all().values():
+    for grp in groups_catalog.values():
         grp.remove_keyword(name)
 
     return kw
@@ -365,22 +390,22 @@ def remove_keyword(name: str, *, strict: bool = False) -> Keyword | None:
 
 def all_keywords() -> list[Keyword]:
     """Return a list of all registered `Keyword` instances."""
-    return list(MAP_KEYWORDS.values())
+    return list(_catalogs()[0].values())
 
 
 def all_keyword_names() -> list[str]:
     """Return a list of all registered keyword names."""
-    return list(MAP_KEYWORDS.keys())
+    return list(_catalogs()[0].keys())
 
 
 def is_empty() -> bool:
-    """Return True if no keywords are registered in `MAP_KEYWORDS`."""
-    return len(MAP_KEYWORDS) == 0
+    """Return True if no keywords are registered in the active catalog."""
+    return not _catalogs()[0]
 
 
 def count_keywords() -> int:
     """Return the number of registered keywords."""
-    return len(MAP_KEYWORDS)
+    return len(_catalogs()[0])
 
 
 def add_group(
@@ -392,28 +417,54 @@ def add_group(
     allow_override: bool = False,
 ) -> WordGroup:
     """Create and register a new `WordGroup`."""
-    return groups.create(
-        name=name,
-        values=values,
+    _, groups_catalog = _catalogs()
+    group_name = name.name if isinstance(name, WordGroup) else str(name)
+    if group_name in groups_catalog and not allow_override:
+        _log_lexer_note(f"El grupo {group_name!r} ya está registrado", "error")
+        errors.LexerError(
+            "GroupAlreadyExists",
+            errors.LEXER_WORDGROUP_ALREADY_EXISTS,
+            f'El grupo de palabras clave "{group_name}" ya fue creado. '
+            "Use allow_override=True para sobrescribirlo.",
+        ).raise_error()
+
+    group = name if isinstance(name, WordGroup) else WordGroup(
+        name=group_name,
         color_group=color_group,
         description=description,
-        allow_override=allow_override,
     )
+    groups_catalog[group_name] = group
+    if values is not None:
+        for value in values:
+            group.add_keyword(value)
+    _log_lexer_note(f"Grupo de palabras creado: {group_name!r}", "success")
+    return group
 
 
 def get_group(name: str | WordGroup, *, strict: bool = False) -> WordGroup | None:
     """Retrieve a `WordGroup` by name or instance."""
-    return groups.get(name, strict=strict)
+    group_name = name.name if isinstance(name, WordGroup) else str(name)
+    group = _catalogs()[1].get(group_name)
+    if group is None and strict:
+        _log_lexer_note(f"Grupo no encontrado: {group_name!r}", "error")
+        errors.LexerError(
+            "GroupNotFound",
+            errors.LEXER_WORDGROUP_NOT_FOUND,
+            f'El grupo de palabras clave "{group_name}" no está registrado.',
+        ).raise_error()
+    return group
 
 
 def group_exists(name: str | WordGroup) -> bool:
     """Return True if the specified group exists."""
-    return groups.exists(name)
+    group_name = name.name if isinstance(name, WordGroup) else str(name)
+    return group_name in _catalogs()[1]
 
 
 def remove_group(name: str | WordGroup) -> WordGroup | None:
     """Remove a registered `WordGroup` and clear its group reference on member keywords."""
-    grp = groups.remove(name)
+    group_name = name.name if isinstance(name, WordGroup) else str(name)
+    grp = _catalogs()[1].pop(group_name, None)
     if grp is not None:
         for kw in grp.keywords_list:
             if kw.group == grp.name:
@@ -423,12 +474,12 @@ def remove_group(name: str | WordGroup) -> WordGroup | None:
 
 def all_groups() -> dict[str, WordGroup]:
     """Return all registered `WordGroup` instances."""
-    return groups.all()
+    return dict(_catalogs()[1])
 
 
 def all_group_names() -> list[str]:
     """Return all registered group names."""
-    return groups.all_names()
+    return list(_catalogs()[1].keys())
 
 
 def exists_in_group(keyword_name: str | Keyword, group_name: str | WordGroup) -> bool:
@@ -442,8 +493,9 @@ def exists_in_group(keyword_name: str | Keyword, group_name: str | WordGroup) ->
 
 def clear_all() -> None:
     """Reset and clear all registered keywords and word groups."""
-    MAP_KEYWORDS.clear()
-    groups.clear()
+    keywords, groups_catalog = _catalogs()
+    keywords.clear()
+    groups_catalog.clear()
 
 
 __all__ = [

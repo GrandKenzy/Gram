@@ -8,7 +8,7 @@ import unittest
 from gram import config, lexer
 from gram.core.ast.raytracing import RayTracing
 from gram.core.combinators import Alt, MatchKeyword, MatchToken, Ref, RuleItem, Seq
-from gram.core.lexer.tokens import Token
+from gram.core.lexer.tokens import Token, TokenType
 from gram.core.parser import Parser
 from gram.sessions import Session
 from gram.utilities.error import _resolve_origin
@@ -71,6 +71,36 @@ class TestPerformanceFeatures(unittest.TestCase):
 
         self.assertEqual(raytracing.trace.values, [before])
         self.assertEqual(raytracing.trace.levels, [1])
+
+    def test_raytracing_explicit_restore_releases_stack_snapshot(self) -> None:
+        raytracing = RayTracing()
+        checkpoint = object()
+
+        raytracing.lift(checkpoint)
+        raytracing.unreach(checkpoint)
+
+        self.assertEqual(raytracing._trace_stack, [])
+        self.assertEqual(raytracing._trace_stack_ids, [])
+        # The checkpoint remains reusable for a repeated explicit restore.
+        raytracing.unreach(checkpoint)
+        self.assertEqual(raytracing.trace.values, [])
+
+    def test_indent_level_cache_is_invalidated_after_token_replacement(self) -> None:
+        parser = Parser(
+            [
+                TokenType(Token.INDENT, 4),
+                TokenType(Token.IDENT, "value"),
+                TokenType(Token.DEDENT, 0),
+            ]
+        )
+        parser.pos = 2
+        self.assertEqual(parser.current_indent_level(), 4)
+        parser.pos = 3
+        self.assertEqual(parser.current_indent_level(), 0)
+
+        parser.replace_token_at(0, TokenType(Token.INDENT, 8))
+        parser.pos = 2
+        self.assertEqual(parser.current_indent_level(), 8)
 
     def test_error_origin_resolution_is_cached_by_path_and_cwd(self) -> None:
         _resolve_origin.cache_clear()

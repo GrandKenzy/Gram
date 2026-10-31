@@ -91,6 +91,40 @@ class TraceRecord:
         return f"{indent}->{name} [{self.start}:{self.end}] {self.outcome}{extra}"
 
 
+class AlternativeRecord:
+    """Detailed execution record for one ``Alt`` branch attempt."""
+
+    __slots__ = (
+        "alternative",
+        "branch_index",
+        "planned_index",
+        "start",
+        "end",
+        "outcome",
+    )
+
+    def __init__(
+        self,
+        alternative: Combinator,
+        branch_index: int,
+        start: int,
+        planned_index: int | None = None,
+    ) -> None:
+        self.alternative = alternative
+        self.branch_index = branch_index
+        self.planned_index = planned_index
+        self.start = start
+        self.end: int | None = None
+        self.outcome: str = "PENDING"
+
+    @property
+    def consumed(self) -> int | None:
+        """Return the number of physical tokens covered by the attempt."""
+        if self.end is None:
+            return None
+        return self.end - self.start
+
+
 class RayTracing:
     """
     Syntactic raytracer recording execution paths, alternative branches,
@@ -103,8 +137,10 @@ class RayTracing:
         self.paths: list[str] = []
         self._checkpoints: dict[int, tuple[Trace, int, int, tuple[str, ...]]] = {}
         self._trace_stack: list[tuple[Trace, int, int, tuple[str, ...]]] = []
+        self._trace_stack_ids: list[int | None] = []
         self.branches: list[Trace] = []
         self.records: list[TraceRecord] = []
+        self.alternative_records: list[AlternativeRecord] = []
         self.backtracks: list[int] = []
         self.furthest: int | None = None
 
@@ -139,6 +175,7 @@ class RayTracing:
             self._checkpoints[id(checkpoint)] = snapshot
 
         self._trace_stack.append(snapshot)
+        self._trace_stack_ids.append(id(checkpoint) if checkpoint is not None else None)
 
     def unreach(self, checkpoint: Any = None) -> None:
         """
@@ -146,12 +183,20 @@ class RayTracing:
         """
         if checkpoint is not None and id(checkpoint) in self._checkpoints:
             saved_trace, values_length, levels_length, saved_paths = self._checkpoints[id(checkpoint)]
+            checkpoint_id = id(checkpoint)
+            for index in range(len(self._trace_stack_ids) - 1, -1, -1):
+                if self._trace_stack_ids[index] == checkpoint_id:
+                    del self._trace_stack_ids[index]
+                    del self._trace_stack[index]
+                    break
             self.trace = saved_trace.copy_prefix(values_length, levels_length)
             self.paths = list(saved_paths)
             return
 
         if self._trace_stack:
             saved_trace, values_length, levels_length, saved_paths = self._trace_stack.pop()
+            if self._trace_stack_ids:
+                self._trace_stack_ids.pop()
             self.trace = saved_trace.copy_prefix(values_length, levels_length)
             self.paths = list(saved_paths)
 
@@ -190,6 +235,33 @@ class RayTracing:
         record.outcome = outcome
         record.exception_type = exception_type
 
+    def begin_alternative(
+        self,
+        alternative: Combinator,
+        branch_index: int,
+        position: int = 0,
+        planned_index: int | None = None,
+    ) -> AlternativeRecord:
+        """Record the start of one detailed ``Alt`` branch attempt."""
+        record = AlternativeRecord(
+            alternative,
+            branch_index,
+            position,
+            planned_index=planned_index,
+        )
+        self.alternative_records.append(record)
+        return record
+
+    def end_alternative(
+        self,
+        record: AlternativeRecord,
+        position: int | None = None,
+        outcome: str = "SUCCESS",
+    ) -> None:
+        """Close one detailed alternative attempt with its cursor outcome."""
+        record.end = position
+        record.outcome = outcome
+
     def observe_position(self, pos: Any = None) -> None:
         """
         Register the furthest cursor position abandoned by a parser rollback.
@@ -220,6 +292,7 @@ class RayTracing:
         """
         self._checkpoints.clear()
         self._trace_stack.clear()
+        self._trace_stack_ids.clear()
 
 
-__all__ = ["Trace", "TraceRecord", "RayTracing"]
+__all__ = ["AlternativeRecord", "Trace", "TraceRecord", "RayTracing"]

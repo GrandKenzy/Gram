@@ -22,6 +22,7 @@ from . import (
     negation,
     optional,
     peek,
+    predictive,
     preprocess,
     reference,
     req,
@@ -71,6 +72,13 @@ from .negation import Not
 from .optional import Opt
 from .peek import Peek
 from .preprocess import Preprocess
+from .predictive import (
+    PredictivePlan,
+    PredictiveProfile,
+    analyze_predictability,
+    audit_alternatives,
+    compile_predictive_plan,
+)
 from .reference import Ref
 from .req import Req
 from .save import Save
@@ -133,6 +141,8 @@ __all__ = [
     "Opt",
     "Peek",
     "Preprocess",
+    "PredictivePlan",
+    "PredictiveProfile",
     "Ref",
     "Req",
     "RuleItem",
@@ -179,4 +189,8 @@ __all__ = [
     "tokenize",
     "until",
     "until_indent",
+    "predictive",
+    "analyze_predictability",
+    "audit_alternatives",
+    "compile_predictive_plan",
 ]

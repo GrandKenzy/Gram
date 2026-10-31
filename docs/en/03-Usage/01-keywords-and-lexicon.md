@@ -8,7 +8,8 @@ All keyword and group operations live in `gram.core.lexer.words` (accessible via
 
 ## 1. Configuring Lexer Behavior (`gram.config`)
 
-The `Lexer` reads several global flags from `gram.config`:
+The standalone `Lexer` reads flags from `gram.config`; a session-owned lexer
+reads the same settings from its `Session.config` view instead.
 
 | Setting | Default | Effect on `Lexer` |
 | :--- | :--- | :--- |
@@ -18,13 +19,29 @@ The `Lexer` reads several global flags from `gram.config`:
 | `config.LEXER_SUPPORT_DOCSTRINGS` | `True` | Enables the default multiline delimiters (`"""..."""` and `'''...'''`). They emit `Token.STRING`. |
 | `config.LEXER_SUPPORT_PREFIXED_STRINGS` | `True` | Recognizes C prefixes such as `L"text"`, `u"text"`, `U"text"`, and `u8"text"`. |
 | `config.LEXER_SUPPORT_LEADING_DOT_NUMBERS` | `True` | Recognizes numbers beginning with a dot, such as `.5`. If `False`, the lexer emits `Token.DOT` and `Token.NUMBER`. |
+| `config.LEXER_TAB_WIDTH` | `4` | Visual width used for tabs when `LEXER_INDENT_STYLE` is `tabs` or `mixed`. Values below `1` are normalized to `1`. |
+| `config.LEXER_INDENT_STYLE` | `'spaces'` | Indentation policy: `spaces` preserves the legacy space-only width, `tabs` counts tabs at `LEXER_TAB_WIDTH`, and `mixed` expands both spaces and tabs. |
 | `config.TOKEN_BOOL_TRUE` / `config.TOKEN_BOOL_FALSE` | `'true'` / `'false'` | Defines the spellings converted to `Token.BOOL`. |
 | `config.TOKEN_NULL` | `'null'` | Defines the spelling converted to `Token.NULL`. |
 | `config.SUPPORT_INDENT` | `True` | When `False`, the lexer emits neither `Token.INDENT` nor `Token.DEDENT`. |
 | `config.SUPPORT_TRIPLE_DOT` | `True` | Controls whether `...` is recognized as `Token.THREE_DOTS` or as three `Token.DOT` tokens. |
 | `config.LEXER_IGNORE_EMPTY_LINES` | `True` | When `True`, blank or comment-only lines are skipped without emitting redundant `Token.NEWLINE` tokens or perturbing `INDENT`/`DEDENT` calculation. |
-| `config.LEXER_ADD_INFO` | `True` | When `True`, emits lexical telemetry notes to `LexerState`. |
+| `config.LEXER_ADD_INFO` | `True` | When `True`, emits lexical telemetry and creates lexer process/visitor nodes. When `False`, those nodes and notes are skipped. |
 | `config.LEXER_ADD_ERROR` | `True` | When `True`, records lexical failure notes in the lexer diagnostic stack. |
+
+Word classification is deterministic. The lexer checks configured boolean
+spellings first (case-insensitive), then the configured null spelling
+(case-insensitive), then an exact registered keyword spelling, and finally
+emits `Token.IDENT`. A keyword named `TRUE` therefore does not override the
+configured boolean spelling `true`.
+
+`WordGroup.contains()` uses exact, case-sensitive names. `WordGroup.clear()`
+also resets `keyword.group` for every member, so clearing a group cannot leave
+stale group references behind.
+
+For token diagnostics, `TokenType.formatter()` expands `$line`, `$col`, `$len`,
+and `$long` from the emitted token. `$len` is the length of the token payload;
+`$long` is its ending column (`col + len`).
 
 ### Multiline delimiters
 
@@ -179,7 +196,7 @@ print("Is 'int' in 'types'?", lexer.words.exists_in_group("int", "types"))
 | `words.get_group(name, *, strict=False)` | `WordGroup \| None` | Returns the `WordGroup` instance or `None` (raises `LEXER_WORDGROUP_NOT_FOUND` if `strict=True`). |
 | `words.group_exists(name)` | `bool` | Returns `True` if the group is registered. |
 | `words.exists_in_group(kw, group)` | `bool` | $O(1)$ membership check inside `group`. |
-| `words.remove_group(name)` | `WordGroup \| None` | Removes the group and resets `kw.group = None` on its members. |
+| `words.remove_group(name)` | `WordGroup \| None` | Removes the group and resets `kw.group = None` on its members. `WordGroup.clear()` performs the same reference cleanup without removing the group. |
 | `words.clear_all()` | `None` | Clears both `MAP_KEYWORDS` and all `WordGroup` entries. |
 
 ---

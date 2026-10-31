@@ -21,7 +21,10 @@ class Hookr:
         """
         Execute all registered subscriber callbacks with the given arguments.
         """
-        for call in list(self.callables):
+        if not self.callables:
+            return
+        # Snapshot subscribers so callbacks can mutate the registry safely.
+        for call in tuple(self.callables):
             call(*args, **kwargs)
 
     def add(self, call: Callable[..., Any]) -> None:

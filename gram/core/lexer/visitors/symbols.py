@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from gram import config, errors
-from gram.core.lexer.tokens import MAP_SYMBOLS, Token, TokenType, get_sorted_symbols
+from gram import errors
+from gram.core.lexer.tokens import Token, TokenType
 
 if TYPE_CHECKING:
     from gram.core.lexer.control import LexerState
@@ -30,13 +30,14 @@ def process(
 
     lexer.debug(f"Buscando símbolo desde línea {start_line + 1}, columna {start}")
 
-    for symbol in get_sorted_symbols():
-        if symbol == '...' and not config.SUPPORT_TRIPLE_DOT:
+    symbol_map = lexer.get_symbols()
+    for symbol in lexer.sorted_symbols():
+        if symbol == '...' and not lexer.get_config("SUPPORT_TRIPLE_DOT", True):
             continue
         end = start + len(symbol)
         if line[start:end] == symbol:
             lexer.col = end
-            token_type = MAP_SYMBOLS[symbol]
+            token_type = symbol_map[symbol]
             lexer.success(f"Símbolo reconocido: {symbol!r} -> {token_type}")
             return TokenType(token_type, symbol, start_line, start)
 

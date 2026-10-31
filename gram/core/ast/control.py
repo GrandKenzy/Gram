@@ -2,8 +2,8 @@
 AST State and Diagnostic Control (`gram.core.ast.control`).
 ===========================================================
 Adapts the standalone `Diagnostics` toolkit to Gram's AST subsystem, wiring
-`config.AST_ADD_INFO`, `config.ERROR_EXIT_ON_ERROR`, cursor-weighted failure
-staging, and token-to-ASTNode delegation.
+session-aware diagnostic settings, cursor-weighted failure staging, and
+token-to-ASTNode delegation.
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from gram.core.lexer import Token, TokenType
 
 if TYPE_CHECKING:
     from gram.core.parser import Parser
+    from gram.sessions import Session
 
 _TOKEN_NODE_MAP: dict[Token, type[ASTNode]] = {
     Token.IDENT: Identifier,
@@ -39,20 +40,32 @@ _TOKEN_NODE_MAP: dict[Token, type[ASTNode]] = {
 class ASTState(utilities.Diagnostics):
     """
     Gram-specific AST diagnostic state bridging `utilities.Diagnostics` with
-    parser cursor positions and `gram.config`.
+    parser cursor positions and session settings, falling back to `gram.config`.
     """
 
     parser: Parser
 
-    def __init__(self, logfile: str | None = None) -> None:
+    def __init__(
+        self,
+        logfile: str | None = None,
+        *,
+        session: "Session | None" = None,
+    ) -> None:
+        self.session = session
         super().__init__(
             logfile or "ast-parser",
             "AST",
             "pending",
             True,
-            config.INFO_GENERATE_LOGFILE,
-            config.INFO_GENERATE_LOGFILE_ON_ERROR,
+            self.get_config("INFO_GENERATE_LOGFILE", False),
+            self.get_config("INFO_GENERATE_LOGFILE_ON_ERROR", False),
         )
+
+    def get_config(self, name: str, default=None):
+        """Return a session setting, falling back to global configuration."""
+        if self.session is not None:
+            return self.session.config.get(name, getattr(config, name, default))
+        return getattr(config, name, default)
 
     @contextmanager
     def safe_mode(self) -> Iterator[None]:
@@ -100,7 +113,7 @@ class ASTState(utilities.Diagnostics):
         if (
             res is not None
             and not getattr(err, "_suppress_raise", False)
-            and config.ERROR_EXIT_ON_ERROR
+            and self.get_config("ERROR_EXIT_ON_ERROR", True)
         ):
             self.fail(err, exit=True)
         return err
@@ -118,14 +131,14 @@ class ASTState(utilities.Diagnostics):
         if (
             target is not None
             and not getattr(target, "_suppress_raise", False)
-            and config.ERROR_EXIT_ON_ERROR
+            and self.get_config("ERROR_EXIT_ON_ERROR", True)
         ):
             self.fail(target, exit=True)
         return target
 
     def sender(self, msg: str, nt: utilities.Format.LogType) -> None:  # type: ignore[override]
         """Emit a diagnostic note only when `config.AST_ADD_INFO` is enabled."""
-        if config.AST_ADD_INFO:
+        if self.get_config("AST_ADD_INFO", True):
             self.current().note(msg, nt)
 
     def delegate_return_node(self, current: TokenType | None) -> ASTNode | None:
@@ -180,7 +193,12 @@ class ASTState(utilities.Diagnostics):
             )
             return False
 
-        entrypoint.entrypoint.ignore = True
+        root = entrypoint.entrypoint
+        if root.ignore is not True:
+            mutations = getattr(self, "_entrypoint_mutations", None)
+            if mutations is not None:
+                mutations.append((root, "ignore", root.ignore))
+            root.ignore = True
         for i, child in enumerate(entrypoint.entrypoint.combinators):
             if not isinstance(child, Ref):
                 self.error(
@@ -197,7 +215,11 @@ class ASTState(utilities.Diagnostics):
                     )
                 )
                 return False
-            child.branchable = True
+            if child.branchable is not True:
+                mutations = getattr(self, "_entrypoint_mutations", None)
+                if mutations is not None:
+                    mutations.append((child, "branchable", child.branchable))
+                child.branchable = True
 
         self.success("El entrypoint es válido")
         return True

@@ -2,8 +2,9 @@
 Alternative Combinator (`gram.core.combinators.alternative`).
 =============================================================
 Defines the syntactic branching combinator (`Alt`). Evaluates candidate
-combinators in priority order inside a reentrant `safe_mode` context and
-surfaces the deepest atomic failure if all candidate branches are rejected.
+combinators in priority order inside a reentrant `safe_mode` context, with an
+opt-in static predictive audit, and surfaces the deepest atomic failure if all
+candidate branches are rejected.
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.predictive import PredictivePlan, compile_predictive_plan
 from gram.core.combinators.signals import BacktrackSignal, CutFlowSignal
 
 if TYPE_CHECKING:
@@ -29,13 +31,21 @@ class Alt(Combinator):
 
     header_class: bool = True
 
-    def __init__(self, *combinators: Combinator, ignore: bool = False) -> None:
+    def __init__(
+        self,
+        *combinators: Combinator,
+        ignore: bool = False,
+        audit: bool = False,
+    ) -> None:
         """
         Initialize the alternative combinator with one or more candidate branches.
 
         Args:
             *combinators (Combinator): Candidate combinator branches to evaluate in order.
             ignore (bool): Whether to ignore this combinator in raytracing.
+            audit (bool): Whether to compile a conservative predictive order for
+                known, non-nullable, side-effect-free branches. The declared
+                ``combinators`` tuple is never mutated.
         """
         super().__init__(ignore=ignore)
         if not combinators:
@@ -47,6 +57,21 @@ class Alt(Combinator):
             ).raise_error()
 
         self.combinators: tuple[Combinator, ...] = tuple(combinators)
+        self.audit: bool = bool(audit)
+        self._predictive_plan: PredictivePlan | None = None
+        self._predictive_source: tuple[Combinator, ...] | None = None
+
+    def get_predictive_plan(self) -> PredictivePlan:
+        """Return the cached static plan, compiling it after branch changes."""
+        if self._predictive_plan is None or self._predictive_source is not self.combinators:
+            self._predictive_plan = compile_predictive_plan(self.combinators)
+            self._predictive_source = self.combinators
+        return self._predictive_plan
+
+    def invalidate_audit(self) -> None:
+        """Clear the cached predictive plan after external grammar mutation."""
+        self._predictive_plan = None
+        self._predictive_source = None
 
     def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
@@ -68,24 +93,68 @@ class Alt(Combinator):
         best_staged = None
 
         try:
-            for index, combinator in enumerate(self.combinators, start=1):
+            order: tuple[int, ...] | None = None
+            if self.audit:
+                plan = self.get_predictive_plan()
+                order = plan.order
+                if plan.changed:
+                    father.note(
+                        f"Auditoría de ALT aplicada: orden declarado={tuple(range(len(self.combinators)))!r}, "
+                        f"orden ejecutado={order!r}",
+                        "advice",
+                    )
+
+            branches = self.combinators if order is None else order
+            for attempt_index, branch in enumerate(branches):
+                branch_index = attempt_index if order is None else branch
+                combinator = branch if order is None else self.combinators[branch_index]
+                index = branch_index + 1
                 father.note(
                     f"Probando alternativa No. {index}: {combinator.type()}",
                     "normal",
                 )
                 committed = False
-                with analyzer.failure_scope() as scope:
-                    try:
-                        res = analyzer.visitor(combinator)
-                    except BacktrackSignal:
-                        res = None
-                    except CutFlowSignal as signal:
-                        candidate = signal._failure_candidate
-                        signal._failure_candidate = None
-                        if candidate is not None:
-                            analyzer.stage_failure(candidate[1], weight=candidate[0])
-                        res = None
-                        committed = True
+                attempt_record = None
+                if getattr(analyzer, "trace_mode", None) == "detailed":
+                    attempt_record = analyzer.raytracing.begin_alternative(
+                        self,
+                        branch_index,
+                        parser.pos,
+                        planned_index=attempt_index,
+                    )
+
+                outcome = "FAILED"
+                try:
+                    with analyzer.failure_scope() as scope:
+                        try:
+                            res = analyzer.visitor(combinator)
+                        except BacktrackSignal:
+                            res = None
+                            outcome = "BACKTRACK"
+                        except CutFlowSignal as signal:
+                            candidate = signal._failure_candidate
+                            signal._failure_candidate = None
+                            if candidate is not None:
+                                analyzer.stage_failure(candidate[1], weight=candidate[0])
+                            res = None
+                            committed = True
+                            outcome = "CUT"
+                    if res is not None:
+                        outcome = "SUCCESS"
+                    if attempt_record is not None:
+                        analyzer.raytracing.end_alternative(
+                            attempt_record,
+                            parser.pos,
+                            outcome=outcome,
+                        )
+                except BaseException:
+                    if attempt_record is not None and attempt_record.outcome == "PENDING":
+                        analyzer.raytracing.end_alternative(
+                            attempt_record,
+                            parser.pos,
+                            outcome="ERROR",
+                        )
+                    raise
 
                 if res is None:
                     father.note(f"Alternativa No. {index} rechazada", "normal")
@@ -147,7 +216,8 @@ class Alt(Combinator):
 
     def __repr__(self) -> str:
         items = ", ".join(repr(c) for c in self.combinators)
-        return f"Alt({items})"
+        suffix = ", audit=True" if self.audit else ""
+        return f"Alt({items}{suffix})"
 
 
 __all__ = ["Alt"]

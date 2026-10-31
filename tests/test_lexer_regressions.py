@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from gram import config
-from gram.core.lexer import Lexer, LexerState, Token, flags, words
+from gram.core.lexer import Lexer, LexerState, Token, TokenType, flags, words
 
 
 class LexerRegressionTests(unittest.TestCase):
@@ -180,6 +180,23 @@ class LexerRegressionTests(unittest.TestCase):
             [token.token for token in disabled],
             [Token.DOT, Token.DOT, Token.DOT, Token.EOF],
         )
+
+    def test_unicode_digit_reports_error_without_stalling(self) -> None:
+        tokens = Lexer("١").process()
+
+        self.assertEqual(
+            [token.token for token in tokens],
+            [Token.ERROR, Token.EOF],
+        )
+
+    def test_token_type_hash_matches_structural_equality(self) -> None:
+        first = TokenType(Token.IDENT, "value", line=0, col=0)
+        second = TokenType(Token.IDENT, "value", line=3, col=8)
+
+        self.assertEqual(first, second)
+        self.assertEqual(hash(first), hash(second))
+        self.assertEqual(len({first, second}), 1)
+        self.assertEqual(first, Token.IDENT)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ a synthesized `CustomToken`.
 """
 from __future__ import annotations
 
+from copy import copy
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -171,7 +172,13 @@ class MatchSeqSymbol(Combinator):
                 return None
 
             if self.custom_token_name:
-                tok.token = CustomToken(self.custom_token_name, val_str)
+                # Do not mutate the token object owned by the parser in place.
+                # A surrounding Seq/Alt may fail after this matcher and restore
+                # a checkpoint; direct mutation would survive that rollback.
+                relabeled = copy(tok)
+                relabeled.token = CustomToken(self.custom_token_name, val_str)
+                parser.replace_token_at(parser.pos, relabeled)
+                tok = relabeled
 
             father.note(f"MatchSeqSymbol exitoso: {val_str!r}", "success")
             parser.consume()

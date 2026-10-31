@@ -43,6 +43,18 @@ def parse(self, analyzer: ASTAnalyzer) -> Any:
 - `comb_a | comb_b` construye un `Alt(comb_a, comb_b)` aplanado.
 
 ### Modos de Traza (`ASTAnalyzer(..., trace=...)`)
-- `trace="off"`: Desactiva `RayTracing` y evita registrar callbacks en `parser.hookr`.
+- `trace="off"`: Desactiva los registros y callbacks de traza. Los checkpoints del parser y los diagnósticos de parser/AST siguen funcionando normalmente.
 - `trace="basic"` (por defecto): Registra combinadores evaluados (`ignore=False`) y niveles de anidamiento en `raytracing.trace`, nombres de reglas en `raytracing.paths` y ramas en `raytracing.branches`.
-- `trace="detailed"`: Registra adicionalmente instancias de `TraceRecord` (`combinator`, `depth`, `start`, `end`, `outcome`, `exception_type`) para cada combinador evaluado, y rastrea retrocesos en `raytracing.backtracks` y `raytracing.furthest`. Se formatea con `raytracing.detailed()`.
+- `trace="detailed"`: Registra deliberadamente instrumentación completa: instancias de `TraceRecord` (`combinator`, `depth`, `start`, `end`, `outcome`, `exception_type`) para cada combinador evaluado y retrocesos en `raytracing.backtracks` y `raytracing.furthest`. Es el modo pesado para diseñar parsers y lexers dedicados, y se formatea con `raytracing.detailed()`.
+
+### Auditoría predictiva de alternativas
+
+`Alt(..., audit=True)` activa un plan predictivo estático y cacheado. Solo puede
+reordenar ramas exactas, no anulables y sin efectos laterales, priorizando el
+consumo garantizado de tokens. La tupla pública `Alt.combinators` conserva el
+orden declarado.
+Las ramas opacas, recursivas, de ancho cero, ilimitadas o con control de flujo
+actúan como barreras y no se reordenan. El comportamiento predeterminado
+`audit=False` no cambia. Con `trace="detailed"`, los intentos están disponibles
+en `analyzer.raytracing.alternative_records` con índice declarado, índice
+planificado, intervalo de cursor y resultado.
