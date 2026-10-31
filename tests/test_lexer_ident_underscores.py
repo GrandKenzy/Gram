@@ -56,11 +56,13 @@ class TestLexerIdentUnderscores(unittest.TestCase):
         session.add_keyword("kw")
         self.assertEqual(session.ident_underscores, -2)
 
-        # Standalone underscores must have a character; otherwise emitted as individual UNDERSCORE tokens
+        # Standalone underscores: single is UNDERSCORE; 2 or more without alnum become UNDERSCORES
         self.assertEqual(self._tokens(session, "_"), [("UNDERSCORE", "_")])
+        self.assertEqual(self._tokens(session, "__"), [("UNDERSCORES", "__")])
+        self.assertEqual(self._tokens(session, "___"), [("UNDERSCORES", "___")])
         self.assertEqual(
-            self._tokens(session, "___"),
-            [("UNDERSCORE", "_"), ("UNDERSCORE", "_"), ("UNDERSCORE", "_")],
+            self._tokens(session, "_____________________________"),
+            [("UNDERSCORES", "_____________________________")],
         )
 
         # Followed by alnum: unlimited leading underscores allowed
@@ -244,6 +246,62 @@ class TestLexerIdentUnderscores(unittest.TestCase):
             res_fail = subprocess.run([str(cli_exe), "check", str(src_fail)], capture_output=True, text=True)
             self.assertEqual(res_fail.returncode, 2, "Expected syntax error because UNDERSCORE was missing")
 
+    def test_aot_c_compiler_execution_with_underscores_token(self) -> None:
+        """Compile a grammar with Token.UNDERSCORES in mode -2 and verify standalone CLI accepts multiline underscores."""
+        if shutil.which("gcc") is None:
+            self.skipTest("GCC is required for native AOT CLI compilation test")
+
+        class TableRule(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchToken(Token.UNDERSCORES),
+                MatchKeyword("end"),
+            )
+            rule = entrypoint
+
+        session = sessions.Session("AotUnderscoresSession", "Some", ident_underscores=-2)
+        session.add_keyword("end")
+        session.entrypoint = TableRule
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+            out_dir = pathlib.Path(tmp_dir)
+            session.export_c_parser(out_dir, emit_driver=True, emit_cli=True)
+
+            proj_root = pathlib.Path(__file__).resolve().parent.parent
+            native_inc = proj_root / "native" / "gram_lexer" / "include"
+            native_src = proj_root / "native" / "gram_lexer" / "src"
+
+            sources = [
+                "gram_ast.c", "gram_parser.c", "gram_ir.c", "gram_driver.c",
+                "gram_lexer_keywords.c", "gram_lexer_symbols.c", "gram_lexer_groups.c",
+            ]
+            common = [str(out_dir / name) for name in sources] + [
+                str(native_src / name)
+                for name in (
+                    "lexer.c", "indentation.c", "numbers.c", "strings.c",
+                    "symbols.c", "utf8.c", "diagnostics_lite.c",
+                )
+            ]
+            cli_exe = out_dir / "gram_cli.exe"
+            flags = [
+                "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
+                str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
+            ]
+            subprocess.run(flags, check=True, capture_output=True, text=True)
+
+            # Input: "_____________________________ end" (long sequence -> single UNDERSCORES token)
+            src_file = out_dir / "test.src"
+            src_file.write_text("_____________________________ end", encoding="utf-8")
+            res = subprocess.run([str(cli_exe), "check", str(src_file)], capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, f"CLI check failed: {res.stderr}")
+
+            # Input: "_ end" (single underscore -> UNDERSCORE, not UNDERSCORES, should fail)
+            src_fail = out_dir / "fail.src"
+            src_fail.write_text("_ end", encoding="utf-8")
+            res_fail = subprocess.run([str(cli_exe), "check", str(src_fail)], capture_output=True, text=True)
+            self.assertEqual(res_fail.returncode, 2, "Expected syntax error because UNDERSCORES was missing (got single UNDERSCORE)")
+
 
     def test_ident_underscores_validation(self) -> None:
         """Verify strict type and bounds validation (-1, -2, or 0..INT32_MAX)."""
@@ -293,20 +351,24 @@ class TestLexerIdentUnderscores(unittest.TestCase):
         # Case 1: 10,000 standalone underscores without alnum (mode -2 -> 10,000 UNDERSCORE tokens)
         big_text = "_" * 10000
 
-        # Python backend linear check
+        # Python backend linear check: in mode -2, 10,000 underscores collapse into a single UNDERSCORES token
         t0 = time.perf_counter()
         py_tokens = session.tokenize(big_text, "test", backend="python")
         py_elapsed = time.perf_counter() - t0
-        self.assertEqual(len([t for t in py_tokens if t.token == Token.UNDERSCORE]), 10000)
-        self.assertLess(py_elapsed, 1.5, f"Python backend took too long ({py_elapsed:.2f}s); potential O(n^2) regression")
+        py_u = [t for t in py_tokens if t.token == Token.UNDERSCORES]
+        self.assertEqual(len(py_u), 1)
+        self.assertEqual(len(py_u[0].value), 10000)
+        self.assertLess(py_elapsed, 0.5, f"Python backend took too long ({py_elapsed:.2f}s)")
 
         # Native C backend linear check (warm up compiler first)
         _ = session.tokenize("_", "warmup", backend="c")
         t0 = time.perf_counter()
         c_tokens = session.tokenize(big_text, "test", backend="c")
         c_elapsed = time.perf_counter() - t0
-        self.assertEqual(len([t for t in c_tokens if t.token == Token.UNDERSCORE]), 10000)
-        self.assertLess(c_elapsed, 0.5, f"C backend took too long ({c_elapsed:.2f}s); potential O(n^2) regression")
+        c_u = [t for t in c_tokens if t.token == Token.UNDERSCORES]
+        self.assertEqual(len(c_u), 1)
+        self.assertEqual(len(c_u[0].value), 10000)
+        self.assertLess(c_elapsed, 0.1, f"C backend took too long ({c_elapsed:.2f}s)")
 
         # Case 2: 10,000 underscores followed by an identifier (mode -2 -> single IDENT token)
         ident_text = "_" * 10000 + "Alpha"
@@ -315,14 +377,30 @@ class TestLexerIdentUnderscores(unittest.TestCase):
         py_ident_elapsed = time.perf_counter() - t0
         self.assertEqual(len(py_ident_tokens), 1)
         self.assertEqual(py_ident_tokens[0].token, Token.IDENT)
-        self.assertLess(py_ident_elapsed, 1.5)
+        self.assertLess(py_ident_elapsed, 0.5)
 
         t0 = time.perf_counter()
         c_ident_tokens = [t for t in session.tokenize(ident_text, "test", backend="c") if t.token != Token.EOF]
         c_ident_elapsed = time.perf_counter() - t0
         self.assertEqual(len(c_ident_tokens), 1)
         self.assertEqual(c_ident_tokens[0].token, Token.IDENT)
-        self.assertLess(c_ident_elapsed, 0.5)
+        self.assertLess(c_ident_elapsed, 0.1)
+
+    def test_session_migrate_preserves_ident_underscores(self) -> None:
+        """Verify that Session.init() and Session.migrate() preserve configured ident_underscores."""
+        session = sessions.Session("MigrateSession", "Many", ident_underscores=-2)
+        session.init()
+        self.assertEqual(session.ident_underscores, -2)
+        self.assertEqual(session.config["LEXER_IDENT_UNDERSCORES"], -2)
+
+        session.migrate()
+        self.assertEqual(session.ident_underscores, -2)
+        self.assertEqual(session.config["LEXER_IDENT_UNDERSCORES"], -2)
+
+        session.ident_underscores = 1
+        session.migrate()
+        self.assertEqual(session.ident_underscores, 1)
+        self.assertEqual(session.config["LEXER_IDENT_UNDERSCORES"], 1)
 
 
 if __name__ == "__main__":

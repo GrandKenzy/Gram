@@ -183,7 +183,7 @@ Gram supports fine-grained control over how leading underscores are recognized i
 | Mode | Semantics | Example Input | Emitted Tokens |
 | :--- | :--- | :--- | :--- |
 | **`-1` (Default)** | Unlimited leading underscores; standalone underscores are `IDENT`. | `___Hola`<br>`___`<br>`A______B` | `[IDENT("___Hola")]`<br>`[IDENT("___")]`<br>`[IDENT("A______B")]` |
-| **`-2`** | Unlimited leading underscores **only if followed by alphanumeric characters**; standalone underscores emit `UNDERSCORE`. | `___Hola`<br>`___`<br>`D____________` | `[IDENT("___Hola")]`<br>`[UNDERSCORE, UNDERSCORE, UNDERSCORE]`<br>`[IDENT("D____________")]` |
+| **`-2`** | Unlimited leading underscores **only if followed by alphanumeric characters**; standalone single `_` emits `UNDERSCORE`, and pure standalone sequences of $\ge 2$ underscores (such as table dividers or horizontal rules) emit a single `UNDERSCORES` token. | `___Hola`<br>`_`<br>`___`<br>`D____________` | `[IDENT("___Hola")]`<br>`[UNDERSCORE]`<br>`[UNDERSCORES("___")]`<br>`[IDENT("D____________")]` |
 | **`0`** | No leading underscores allowed in identifiers; every leading or standalone `_` emits `UNDERSCORE`. | `_H`<br>`__H`<br>`A______B` | `[UNDERSCORE, IDENT("H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("H")]`<br>`[IDENT("A______B")]` |
 | **`k >= 1`** | At most `k` leading underscores in `IDENT`; excess leading underscores become individual `UNDERSCORE` tokens. | `__H` (with `k=1`)<br>`___H` (with `k=1`)<br>`A______B` | `[UNDERSCORE, IDENT("_H")]`<br>`[UNDERSCORE, UNDERSCORE, IDENT("_H")]`<br>`[IDENT("A______B")]` |
 

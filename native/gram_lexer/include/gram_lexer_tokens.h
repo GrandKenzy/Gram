@@ -100,6 +100,7 @@ typedef enum {
     GRAM_TOKEN_UNKNOWN          = 82,
     GRAM_TOKEN_EMPTY_LINE       = 83,
     GRAM_TOKEN_DECIMAL          = 84,
+    GRAM_TOKEN_UNDERSCORES      = 85,
     GRAM_TOKEN_CUSTOM_BASE      = 1000
 } GramTokenKind;
 

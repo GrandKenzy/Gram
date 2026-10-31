@@ -78,6 +78,7 @@ class Session:
         "_restore_symbols",
         "_loaded",
         "_predictive_revision",
+        "_ident_underscores",
     )
 
     def __init__(
@@ -99,6 +100,7 @@ class Session:
         # Kept as observable snapshots for consumers of the previous API.
         self.words: tuple[tuple[str, words.Keyword], ...] = ()
         self.group: tuple[tuple[str, words.WordGroup], ...] | None = None
+        self._ident_underscores: int | None = None
         self.config: dict[str, Any] = _session_config()
         if ident_underscores is not None:
             self.ident_underscores = ident_underscores
@@ -124,6 +126,8 @@ class Session:
     @property
     def ident_underscores(self) -> int:
         """Return the maximum leading underscores allowed in an identifier (-1 = unlimited, -2 = unlimited if followed by char, 0 = none, k >= 1 = at most k)."""
+        if self._ident_underscores is not None:
+            return self._ident_underscores
         return int(self.config.get("LEXER_IDENT_UNDERSCORES", -1))
 
     @ident_underscores.setter
@@ -132,6 +136,7 @@ class Session:
             raise TypeError(f"ident_underscores must be an int, got {type(value).__name__}")
         if value < -2 or value > 2147483647:
             raise ValueError(f"ident_underscores must be -1, -2, or an integer in [0, 2147483647], got {value}")
+        self._ident_underscores = int(value)
         self.config["LEXER_IDENT_UNDERSCORES"] = int(value)
 
     def add_group(
@@ -266,6 +271,8 @@ class Session:
         self.map_symbs_copy = self._restore_symbols
         self._touch_predictive_revision()
         self.config = _session_config()
+        if self._ident_underscores is not None:
+            self.config["LEXER_IDENT_UNDERSCORES"] = self._ident_underscores
         words.bind_session(self)
 
     def migrate(self) -> None:
@@ -274,6 +281,8 @@ class Session:
         self.words = tuple(self.keywords.items())
         self.group = tuple(self.groups.items())
         self.config = _session_config()
+        if self._ident_underscores is not None:
+            self.config["LEXER_IDENT_UNDERSCORES"] = self._ident_underscores
         self.map_symbols = tuple(tokens.MAP_SYMBOLS.items())
         self.symbols.clear()
         self.symbols.update(self.map_symbols)
@@ -297,6 +306,8 @@ class Session:
         _replace(words.MAP_KEYWORDS, self.keywords)
         _replace(words._GLOBAL_GROUPS, self.groups)
         _replace(tokens.MAP_SYMBOLS, self.symbols.items())
+        if self._ident_underscores is not None:
+            self.config["LEXER_IDENT_UNDERSCORES"] = self._ident_underscores
         config.load(self.config)
         self._loaded = True
         self._touch_predictive_revision()

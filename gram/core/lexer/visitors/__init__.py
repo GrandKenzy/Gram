@@ -55,6 +55,18 @@ def _should_start_word_on_underscore(lexer: LexerState) -> bool:
     return True
 
 
+def _process_underscores(lexer: LexerState, _char: str) -> TokenType:
+    from gram.core.lexer.tokens import Token, TokenType
+
+    col = lexer.col
+    start_line = lexer.line
+    end = getattr(lexer, "_cached_u_end", col + 1)
+    u_count = end - col if end > col else 1
+    val = lexer.currline[col:end]
+    lexer.advance(u_count)
+    return TokenType(Token.UNDERSCORES, val, start_line, col)
+
+
 def visit(lexer: LexerState, char: str) -> TokenType:
     """
     Classify the current character under the lexer cursor and dispatch it
@@ -94,6 +106,20 @@ def visit(lexer: LexerState, char: str) -> TokenType:
     ):
         visitor_name = "VISITOR-NUMBER"
         handler = numbers.process
+    elif char == "_" and lexer.ident_underscores == -2:
+        if _should_start_word_on_underscore(lexer):
+            visitor_name = "VISITOR-WORD"
+            handler = words.process
+        else:
+            col = lexer.col
+            end = getattr(lexer, "_cached_u_end", col + 1)
+            u_count = end - col if end > col else 1
+            if u_count >= 2:
+                visitor_name = "VISITOR-UNDERSCORES"
+                handler = _process_underscores
+            else:
+                visitor_name = "VISITOR-SYMBOL"
+                handler = symbols.process
     elif char.isalpha() or (char == "_" and _should_start_word_on_underscore(lexer)):
         visitor_name = "VISITOR-WORD"
         handler = words.process

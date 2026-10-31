@@ -149,6 +149,7 @@ class Token(Enum):
     EMPTY_LINE = auto()
     # Appended deliberately: numeric token codes above remain stable.
     DECIMAL = auto()
+    UNDERSCORES = auto()
 
     @classmethod
     def from_string(cls, name: str) -> Token | None:

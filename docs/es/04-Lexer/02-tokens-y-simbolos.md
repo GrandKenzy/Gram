@@ -89,6 +89,7 @@ Todos los tipos estándar residen en `gram.core.lexer.tokens.Token`, organizados
 | `Token.SEMICOLON` | `;` | `Token.EXCLAMATION` | `!` |
 | `Token.AT` | `@` | `Token.BACKSLASH` | `\` |
 | `Token.HASH` | `#` | `Token.UNDERSCORE` | `_` |
+| `Token.UNDERSCORES` | `__+` | | |
 
 ### 9. Flechas
 | Miembro del Enum | Símbolo | Descripción |

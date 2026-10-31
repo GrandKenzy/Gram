@@ -89,6 +89,7 @@ All standard tokens reside in `gram.core.lexer.tokens.Token`. They are organized
 | `Token.SEMICOLON` | `;` | `Token.EXCLAMATION` | `!` |
 | `Token.AT` | `@` | `Token.BACKSLASH` | `\` |
 | `Token.HASH` | `#` | `Token.UNDERSCORE` | `_` |
+| `Token.UNDERSCORES` | `__+` | | |
 
 ### 9. Arrows
 | Enum Member | Symbol | Description |

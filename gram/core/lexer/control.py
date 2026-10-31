@@ -170,7 +170,7 @@ class LexerState(Diagnostics):
             raise ValueError(f"ident_underscores must be -1, -2, or an integer in [0, 2147483647], got {value}")
         self._ident_underscores_override = int(value)
         if self.session is not None:
-            self.session.config["LEXER_IDENT_UNDERSCORES"] = int(value)
+            self.session.ident_underscores = int(value)
 
     def get_keyword(self, name: str):
         """Return a keyword from the session catalog or legacy global catalog."""

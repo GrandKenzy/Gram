@@ -1,7 +1,7 @@
 #include "gram_lexer_internal.h"
 #include <string.h>
 
-static const char * const TOKEN_KIND_NAMES[85] = {
+static const char * const TOKEN_KIND_NAMES[86] = {
     "EOF",              /* 0 */
     "NEWLINE",          /* 1 */
     "IDENT",            /* 2 */
@@ -86,11 +86,12 @@ static const char * const TOKEN_KIND_NAMES[85] = {
     "ERROR",            /* 81 */
     "UNKNOWN",          /* 82 */
     "EMPTY_LINE",       /* 83 */
-    "DECIMAL"           /* 84 */
+    "DECIMAL",          /* 84 */
+    "UNDERSCORES"       /* 85 */
 };
 
 const char *gram_token_kind_name(uint32_t kind) {
-    if (kind < 85u) {
+    if (kind < 86u) {
         return TOKEN_KIND_NAMES[kind];
     }
     if (kind >= GRAM_TOKEN_CUSTOM_BASE) {
@@ -845,7 +846,29 @@ int gram_lexer_next(GramLexer *lexer, GramToken *out_token) {
                 return scan_word(lexer, out_token);
             }
 
-            /* 2e. Symbol / fallback visitor */
+            /* 2e. Standalone underscores in mode -2 */
+            if (cp == '_' && lexer->config.ident_underscores == -2) {
+                uint32_t pos = lexer->position;
+                uint32_t u_end = (lexer->cached_u_line == lexer->line) ? lexer->cached_u_end : (pos + 1u);
+                uint32_t u_count = (u_end > pos) ? (u_end - pos) : 1u;
+                if (u_count >= 2u) {
+                    memset(out_token, 0, sizeof(GramToken));
+                    out_token->kind = GRAM_TOKEN_UNDERSCORES;
+                    out_token->flags = GRAM_TOKEN_FLAG_NONE;
+                    out_token->start = pos;
+                    out_token->length = u_count;
+                    out_token->line = lexer->line;
+                    out_token->column = lexer->column;
+                    out_token->content_start = pos;
+                    out_token->content_length = u_count;
+
+                    lexer->position += u_count;
+                    lexer->column += u_count;
+                    return GRAM_LEXER_TOKEN;
+                }
+            }
+
+            /* 2f. Symbol / fallback visitor */
             return gram_scan_symbol(lexer, out_token);
         }
 
