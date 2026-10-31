@@ -181,13 +181,16 @@ Measured on the complete end-to-end pipeline (File Reading $\to$ Lexer $\to$ Pra
 
 ## Documentation
 
-Exhaustive documentation is available in the [`docs/en/`](docs/en/index.md) directory:
+Exhaustive documentation is available in English and Spanish:
+- **[English Documentation](docs/en/index.md)**
+- **[Documentación en Español](docs/es/index.md)**
 
-- **[01. Introduction](docs/en/01-Introduction/index.md):** Architectural goals, installation, and release status.
-- **[02. Combinators](docs/en/02-Combinators/index.md):** Complete guide to all 32 syntactic combinators, formal semantic kinds (`CombinatorKind`), repetition, and Pratt expressions.
-- **[03. Usage Guide](docs/en/03-Usage/index.md):** Language sessions (`Session`), rule definitions (`RuleItem`), `nodeable` inlining, diagnostics, and LSP tooling.
-- **[04. Lexer](docs/en/04-Lexer/index.md):** Lexical engine, tokens, symbol maximal munch, indentation tracking, and visitor architecture.
-- **[05. Native C Runtime & AOT](docs/en/05-Native-C-and-AOT/index.md):** C11 lexical engine, AOT parser generation, predictive switch dispatch, binary intermediate representation (**GIR 1.0**), and native CLI tooling.
+Section Index:
+- **01. Introduction / Introducción:** [EN](docs/en/01-Introduction/index.md) | [ES](docs/es/01-Introduccion/index.md)
+- **02. Combinators / Combinadores:** [EN](docs/en/02-Combinators/index.md) | [ES](docs/es/02-Combinadores/index.md)
+- **03. Usage Guide / Guía de Uso:** [EN](docs/en/03-Usage/index.md) | [ES](docs/es/03-Uso/index.md)
+- **04. Lexer / Analizador Léxico:** [EN](docs/en/04-Lexer/index.md) | [ES](docs/es/04-Lexer/index.md)
+- **05. Native C Runtime & AOT / Runtime C Nativo y AOT:** [EN](docs/en/05-Native-C-and-AOT/index.md) | [ES](docs/es/05-Nativo-C-y-AOT/index.md)
 
 ---
 
