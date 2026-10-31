@@ -342,6 +342,8 @@ class _Analyzer:
         from gram.core.combinators.preprocess import Preprocess
         from gram.core.combinators.reference import Ref
         from gram.core.combinators.req import Req
+        from gram.core.combinators.same_line import SameLine
+        from gram.core.combinators.item import Literal
         from gram.core.combinators.save import Save
         from gram.core.combinators.separator import Separator
         from gram.core.combinators.sequence import Seq
@@ -464,6 +466,20 @@ class _Analyzer:
                 effects="opaque",
                 has_cut=inner.has_cut,
                 reasons=inner.reasons + ("repetition is unbounded",),
+            )
+
+        if isinstance(combinator, SameLine):
+            return self.visit(combinator.combinator)
+
+        if isinstance(combinator, Literal):
+            return PredictiveProfile(
+                min_tokens=1,
+                max_tokens=1,
+                nullable=False,
+                first_set=None,
+                certainty='partial',
+                effects='pure',
+                reasons=('Literal inspects token values dynamically',),
             )
 
         if isinstance(combinator, (Peek, Not)):

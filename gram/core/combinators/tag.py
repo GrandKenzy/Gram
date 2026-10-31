@@ -7,10 +7,11 @@ extra AST nodes or advancing the cursor.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import ClassVar, TYPE_CHECKING, Literal
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer.tokens import TokenType
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ TagMode = Literal["add", "remove", "exists", "not_exists"]
 
 
 class Tag(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.TAG
     """
     [BETA] Zero-width combinator that manages semantic tags associated with the
     current token index (`parser.pos`) inside `parser.tk_tags`:

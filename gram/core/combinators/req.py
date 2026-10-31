@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer.tokens import CustomToken, Token, TokenType
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
 
 class Req(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.REQ
     """
     Fluent combinator for requiring, validating, and transforming a target token.
 

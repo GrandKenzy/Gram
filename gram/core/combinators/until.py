@@ -6,16 +6,18 @@ target stopping combinator matches on the stream.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
 
 
 class Until(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.UNTIL
     """
     Combinator that consumes tokens one by one until `self.target` matches.
 

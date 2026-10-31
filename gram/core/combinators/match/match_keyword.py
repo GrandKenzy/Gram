@@ -6,10 +6,11 @@ Validates that the token currently under the parser cursor is a registered
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer.tokens import Token
 from gram.core.lexer.words import Keyword
 
@@ -22,6 +23,8 @@ class MatchKeyword(Combinator):
     Atomic combinator that validates whether the current token is a `Token.KEYWORD`
     matching the expected keyword lexeme.
     """
+
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.TERMINAL_KEYWORD
 
     def __init__(self, keyword: str | Keyword) -> None:
         """

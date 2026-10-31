@@ -7,10 +7,11 @@ during content analysis so `NEWLINE`, `INDENT`, and `DEDENT` tokens are skipped.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer.tokens import Token
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ class Enclosed(Combinator):
     """
 
     header_class: bool = True
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.ENCLOSED
 
     def __init__(
         self,

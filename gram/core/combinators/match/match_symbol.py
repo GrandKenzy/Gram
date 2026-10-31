@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from copy import copy
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer.tokens import CustomToken
 
 if TYPE_CHECKING:
@@ -72,6 +73,8 @@ class MatchSeqSymbol(Combinator):
     Combinator that evaluates the textual value of the current token against
     a regular expression pattern, a list of allowed symbol strings, or a literal string.
     """
+
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.TERMINAL_SYMBOL
 
     def __init__(
         self,

@@ -9,10 +9,11 @@ Provides the `Opt` combinator for rules or subtrees with optional cardinality
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
@@ -27,6 +28,7 @@ class Opt(Combinator):
     or `None` if the optional branch consumed tokens and failed mid-way.
     """
 
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.OPTIONAL
     header_class: bool = True
 
     def __init__(self, combinator: Combinator) -> None:

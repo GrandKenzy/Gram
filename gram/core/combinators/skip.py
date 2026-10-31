@@ -7,9 +7,10 @@ with syntactic success.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.combinators.signals import *
 
 if TYPE_CHECKING:
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 
 
 class Skip(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.SKIP
     """
     Flow-control combinator that cleanly interrupts the current sequence (`Seq`)
     or repetition loop and marks the enclosing evaluation as successful.

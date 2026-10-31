@@ -10,10 +10,11 @@ directly to the `matcher`.
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping
-from typing import TYPE_CHECKING, Any, Literal
+from typing import ClassVar, TYPE_CHECKING, Any, Literal
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer import TokenType
 
 if TYPE_CHECKING:
@@ -23,6 +24,7 @@ LoadMode = Literal["get", "match", "unmatch", "replace", "change"]
 
 
 class Load(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.LOAD
     """
     [BETA] Combinator that operates on a `TokenType` stored in `parser.storage[name]`
     without altering the length of `parser.tokens`:

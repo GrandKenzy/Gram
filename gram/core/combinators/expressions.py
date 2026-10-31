@@ -11,10 +11,11 @@ from __future__ import annotations
 
 from collections import ChainMap
 from collections.abc import Iterable, MutableMapping
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.ast.nodes import ASTNode, ASTRef
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.combinators.base import (
     Combinator,
     RuleItem,
@@ -655,6 +656,7 @@ class BaseExpr(Combinator):
 # ==============================================================================
 
 class ArithmeticExpr(BaseExpr):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.EXPR_ARITHMETIC
     """
     Pratt expression combinator restricted to arithmetic and bitwise operators
     (`ARITHMETIC_BINARY_OPS` and `ARITHMETIC_UNARY_OPS`).
@@ -665,6 +667,7 @@ class ArithmeticExpr(BaseExpr):
 
 
 class ConditionalExpr(BaseExpr):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.EXPR_CONDITIONAL
     """
     Pratt expression combinator restricted to relational comparison and logical
     boolean operators (`CONDITIONAL_BINARY_OPS` and `CONDITIONAL_UNARY_OPS`).
@@ -717,6 +720,7 @@ class ConditionalExpr(BaseExpr):
 
 
 class DualExpr(BaseExpr):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.EXPR_DUAL
     """
     Unified Pratt expression combinator combining both arithmetic/bitwise and
     relational/logical operators (`DUAL_BINARY_OPS` and `DUAL_UNARY_OPS`).

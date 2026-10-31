@@ -1,10 +1,11 @@
 """Strict zero-width parser expectations."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import ClassVar, TYPE_CHECKING, Any, Literal
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer import Token
 
 if TYPE_CHECKING:
@@ -15,6 +16,7 @@ ExpectedKind = Literal["newline", "count", "ncount", "indent"]
 
 
 class Expected(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.EXPECTED
     """Assert a strict property of the remaining token stream."""
 
     def __init__(self, kind: ExpectedKind | str, value: int | None = None) -> None:

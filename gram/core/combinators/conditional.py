@@ -8,10 +8,11 @@ and branches into either `ok` (optionally rewinding the condition tokens if
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.combinators.sequence import Seq
 
 if TYPE_CHECKING:
@@ -27,6 +28,7 @@ def _coerce_branch(branch: Any) -> Combinator | None:
 
 
 class If(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.IF
     """
     Conditional combinator that asserts a sequence of `conditions` and branches
     between `ok` and `fail`.

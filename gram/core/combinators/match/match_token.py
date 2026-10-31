@@ -6,10 +6,11 @@ token type (`Token` enum, `CustomToken`, or string token identifier).
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer.tokens import CustomToken, Token
 
 if TYPE_CHECKING:
@@ -25,6 +26,8 @@ class MatchToken(Combinator):
     or `MatchGroup`). On match, consumes the token and returns the node
     produced by `analyzer.delegate_return_node(current)`.
     """
+
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.TERMINAL_TOKEN
 
     def __init__(self, token: Token | CustomToken | str) -> None:
         """

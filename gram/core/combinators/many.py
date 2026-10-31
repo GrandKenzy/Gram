@@ -7,9 +7,10 @@ partial deep syntax errors if an iteration fails mid-branch.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.combinators.signals import BreakFlowSignal, SkipFlowSignal
 
 if TYPE_CHECKING:
@@ -26,6 +27,7 @@ class Many(Combinator):
     protected by an outer speculative context, flushes the deep error.
     """
 
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.MANY
     header_class: bool = True
 
     def __init__(self, combinator: Combinator) -> None:

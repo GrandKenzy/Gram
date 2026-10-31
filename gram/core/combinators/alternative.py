@@ -9,10 +9,11 @@ candidate branches are rejected.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.combinators.base import Combinator, _predictive_epoch
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.combinators.predictive import PredictivePlan, compile_predictive_plan
 from gram.core.combinators.signals import BacktrackSignal, CutFlowSignal
 
@@ -29,6 +30,7 @@ class Alt(Combinator):
     recorded across the attempted branches.
     """
 
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.ALTERNATIVE
     header_class: bool = True
 
     def __init__(

@@ -16,6 +16,7 @@ from . import (
     expected,
     expressions,
     item,
+    kinds,
     load,
     many,
     match,
@@ -26,6 +27,7 @@ from . import (
     preprocess,
     reference,
     req,
+    same_line,
     save,
     separator,
     sequence,
@@ -59,6 +61,13 @@ from .expressions import (
     bind_right,
 )
 from .item import Item, ItemNode, Literal, LiteralNode
+from .kinds import (
+    CombinatorKind,
+    COMPILABLE_COMBINATOR_KINDS,
+    get_combinator_kind,
+    is_semantic_combinator,
+    is_compilable_combinator,
+)
 from .load import Load
 from .many import Many
 from .match import (
@@ -80,6 +89,7 @@ from .predictive import (
     compile_predictive_plan,
 )
 from .reference import Ref
+from .same_line import SameLine
 from .req import Req
 from .save import Save
 from .separator import ArrayNode, Separator
@@ -114,6 +124,11 @@ __all__ = [
     "BacktrackSignal",
     "BreakFlowSignal",
     "Combinator",
+    "CombinatorKind",
+    "COMPILABLE_COMBINATOR_KINDS",
+    "get_combinator_kind",
+    "is_semantic_combinator",
+    "is_compilable_combinator",
     "ConditionalExpr",
     "ControlFlowSignal",
     "CutFlowSignal",
@@ -148,6 +163,7 @@ __all__ = [
     "Ref",
     "Req",
     "RuleItem",
+    "SameLine",
     "RuleMeta",
     "RuleType",
     "Save",
@@ -172,6 +188,7 @@ __all__ = [
     "expressions",
     "generador_expr",
     "item",
+    "kinds",
     "load",
     "many",
     "match",
@@ -181,6 +198,7 @@ __all__ = [
     "preprocess",
     "reference",
     "req",
+    "same_line",
     "save",
     "separator",
     "sequence",

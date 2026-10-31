@@ -324,3 +324,19 @@ class Session:
             conversion_state.clear()
             conversion_state.update(parser.export_conversions())
         return result
+
+
+    def export_c_parser(
+        self,
+        output_dir: str | Path,
+        *,
+        emit_driver: bool = True,
+        emit_cli: bool = False,
+    ) -> dict[str, Any]:
+        """Compile and export this session's grammar graph into standalone C translation units.
+
+        With ``emit_driver`` the output also contains the file opener, the binary IR (GIR)
+        and the lexer tables; ``emit_cli`` adds a ready-to-build command-line frontend.
+        """
+        from gram.core.parser.c_generator import export_session_c_parser
+        return export_session_c_parser(self, output_dir, emit_driver=emit_driver, emit_cli=emit_cli)

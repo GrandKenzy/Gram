@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer.tokens import TokenType
 
 if TYPE_CHECKING:
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 
 
 class Preprocess(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.PREPROCESS
     """Run a user predicate against the current effective token.
 
     Truthy callback results allow parsing to continue without restoring the

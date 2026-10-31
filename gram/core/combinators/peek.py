@@ -7,16 +7,18 @@ consuming any tokens.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
 
 
 class Peek(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.LOOKAHEAD_POS
     """
     Zero-width positive lookahead combinator (`&e` in PEG notation).
 

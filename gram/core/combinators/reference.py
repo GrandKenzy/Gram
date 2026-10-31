@@ -7,11 +7,12 @@ and named `ASTRef` node wrapping.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.ast.nodes import ASTRef
 from gram.core.combinators.base import Combinator, RuleItem
+from gram.core.combinators.kinds import CombinatorKind
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
@@ -22,6 +23,8 @@ class Ref(Combinator):
     Rule reference combinator that delegates parsing to another `RuleItem`
     production rule and optionally wraps the output into an `ASTRef` node.
     """
+
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.REFERENCE
 
     def __init__(
         self,

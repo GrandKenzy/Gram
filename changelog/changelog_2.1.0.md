@@ -62,6 +62,14 @@
 - Las señales de control conservan sus clases compatibles y ahora exponen
   `FlowKind`; `trace="detailed"` también registra esa clasificación para
   distinguir secuencia, repetición, backtracking, commit y abort.
+- Nuevo combinador nativo `SameLine` (`gram/core/combinators/same_line.py`) para
+  exigir continuidad de línea entre el último token consumido y el siguiente
+  elemento sintáctico, integrado con el análisis predictivo (`first_set`).
+- Sistema formal de firmas semánticas `CombinatorKind` (`gram/core/combinators/kinds.py`)
+  en los 32 combinadores nativos de Gram (`COMPILABLE_COMBINATOR_KINDS`,
+  `is_semantic_combinator`, `is_compilable_combinator`), permitiendo distinguir
+  combinadores declarativos compilables y rechazar combinadores externos o con
+  callbacks arbitrarios de Python.
 
 ## Runtime nativo C y DiagnosticsLite
 
@@ -71,3 +79,12 @@
 - Exportador determinista desde `Session` (`tools/export_lexer_tables.py`) que genera tablas C estáticas (`gram_lexer_config.h`, `gram_lexer_keywords.c`, `gram_lexer_groups.c`, `gram_lexer_symbols.c`, `gram_lexer_codes.h`) y manifiesto JSON con hash SHA-256 y versionado ABI 1.0.
 - Adaptador opcional en Python mediante `Lexer(source, backend="python" | "c")`, manteniendo `backend="python"` como valor predeterminado sin fallback silencioso ante fallos en C.
 - Comparador diferencial [`tools/compare_lexers.py`](file:///c:/Users/Kentucky/Desktop/Gram/tools/compare_lexers.py), suite de pruebas diferenciales y contratos con fixtures dorados (`tests/test_lexer_differential.py`, `tests/fixtures/lexer/golden_cases.json`) y suite de benchmarks de rendimiento y memoria (`benchmarks/lexer_python_vs_c.py`).
+- Compilador AOT de Parser y generador de AST en C11 (`gram/core/parser/c_generator.py`, `Session.export_c_parser()` y CLI `tools/export_c_parser.py`) que resuelve el grafo transitivo de reglas desde el `entrypoint` de una `Session` y emite unidades C autónomas (`gram_ast.h`, `gram_ast.c`, `gram_parser.h`, `gram_parser.c` y `gram_parser_manifest.json` con hash SHA-256).
+- Arena contigua de nodos AST (`GramAstArena`) con rollback transaccional O(1) (`GramParserCheckpoint`), motores Pratt en C para `DualExpr`, `ArithmeticExpr` y `ConditionalExpr` (incluyendo operadores unarios, binarios, `refs_before_grouping` y filtrado por `first_set`), y soporte nativo para `MatchGroup`, `Enclosed`, `Separator` y `SameLine`.
+- Optimización predictiva de `Alt` en C mediante tablas de salto `switch (tok->kind)` y despacho secundario por carácter inicial en palabras clave (`case GRAM_TOKEN_KEYWORD:`), preservando el orden semántico PEG y logrando aceleraciones de ~2,400x en el pipeline completo Lexer + Parser + AST en C frente a Python.
+- Undo log transaccional O(1) en `GramAstArena` (`GramAstUndo`) junto con puntero `last_child` e inserción directa de hijos en reglas transparentes (`nodeable = False`), garantizando que los retrocesos (`gram_parser_restore`) desenlacen limpiamente los hijos añadidos a nodos padres supervivientes y registren el cursor más profundo alcanzado (`farthest`) para diagnósticos precisos.
+- Driver unificado y File Opener en C (`gram_driver.h`, `gram_driver.c`, generados desde `gram/core/parser/c_driver.py`) con dos modos de operación:
+  1. **Modo sin compilar (Source/File -> AST en memoria):** `gram_parse_source` y `gram_parse_file` ejecutan el lexer y el parser en C y devuelven `GramParseResult` con el arreglo de tokens y la arena AST lista para recorrer en memoria.
+  2. **Modo compilado (Source/File -> Binary IR):** `gram_compile_source_to_ir`, `gram_compile_file_to_ir` y `gram_compile_file_to_ir_file` leen archivos directamente (omitiendo BOM UTF-8), tokenizan y parsean internamente sin exponer arreglos intermedios de tokens y emiten un buffer o archivo `.gir`.
+- Formato binario relocalizable y zero-copy **Gram Binary IR (`GIR`)** (`gram_ir.h`, `gram_ir.c`) con encabezado de 72 bytes (`GramIrHeader`, fingerprint FNV-1a de la gramática y versión de formato), pool deduplicado de cadenas UTF-8 alineado a 8 bytes y tabla densa de nodos de 40 bytes (`GramIrNode`) con spans de bytes (`src_start`, `src_length`) y coordenadas de origen (`line` 1-based, `column` 0-based), validador estructural `gram_ir_view_init`, serialización en disco y dumper textual `gram_ir_dump`.
+- CLI nativo autónomo opcional (`gram_cli.c`, activable con `emit_cli=True` en `Session.export_c_parser()` o `--cli` en `tools/export_c_parser.py`) con subcomandos `compile`, `check`, `ast` e `ir`.

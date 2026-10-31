@@ -9,10 +9,11 @@ preserving the deepest atomic failure position.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.combinators.signals import SkipFlowSignal
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ class Seq(Combinator):
     and diagnostic target stack are atomically restored to the initial savepoint.
     """
 
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.SEQUENCE
     header_class: bool = True
 
     def __init__(self, *combinators: Combinator) -> None:

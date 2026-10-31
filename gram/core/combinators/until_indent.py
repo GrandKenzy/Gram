@@ -6,10 +6,11 @@ an indentation change matching a target level (absolute or relative) is reached.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import ClassVar, TYPE_CHECKING, Any, Literal
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer import Token, TokenType
 
 if TYPE_CHECKING:
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 
 
 class UntilIndent(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.UNTIL_INDENT
     """
     Combinator that sequentially consumes tokens until an indentation transition
     matches the specified target level or relative direction.

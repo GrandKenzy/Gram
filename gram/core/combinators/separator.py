@@ -9,11 +9,12 @@ returning an `ArrayNode`.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.ast.nodes import ASTNode, ArrayNode
 from gram.core.combinators.base import Combinator, RuleItem
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.combinators.match import MatchSeqSymbol, MatchToken
 from gram.core.combinators.reference import Ref
 from gram.core.combinators.signals import BreakFlowSignal, SkipFlowSignal
@@ -105,6 +106,7 @@ def _normalize_values(
 
 
 class Separator(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.SEPARATOR
     """
     Delimited repetition combinator matching elements separated by a delimiter.
 

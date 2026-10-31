@@ -7,16 +7,18 @@ position, without consuming any tokens.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 
 if TYPE_CHECKING:
     from gram.core.ast import ASTAnalyzer
 
 
 class Not(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.LOOKAHEAD_NEG
     """
     Zero-width negative lookahead combinator (`!e` in PEG notation).
 

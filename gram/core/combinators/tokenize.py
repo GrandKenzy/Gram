@@ -7,10 +7,11 @@ a `CustomToken` instance.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.combinators.sequence import Seq
 from gram.core.lexer.tokens import CustomToken, TokenType
 
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
 
 
 class Tokenize(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.TOKENIZE
     """
     Combinator that evaluates a child sequence and consolidates all matched
     tokens into a single `TokenType` with a synthesized `CustomToken`.

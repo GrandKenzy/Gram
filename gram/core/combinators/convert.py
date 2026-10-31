@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer.tokens import CustomToken, Token, TokenType
 
 if TYPE_CHECKING:
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 
 
 class Convert(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.CONVERT
     """Convert an exact identifier locally or register a future conversion."""
 
     def __init__(

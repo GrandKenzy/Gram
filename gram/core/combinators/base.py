@@ -7,9 +7,10 @@ declarative `RuleItem` base class for formal grammar production rules.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
+from gram.core.combinators.kinds import CombinatorKind, get_combinator_kind, is_compilable_combinator, is_semantic_combinator
 from gram.core.rules.codes import AutoCode, SetCode, code_manager
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ class Combinator:
     branching, or repeating tokens across the parser's token stream.
     """
 
+    combinator_kind: ClassVar[CombinatorKind | None] = None
     header_class: bool = False
     ignore: bool = False
     _predictive_revision: int = 0
@@ -229,8 +231,12 @@ RuleType = type[RuleItem] | str
 __all__ = [
     "AutoCode",
     "Combinator",
+    "CombinatorKind",
     "RuleItem",
     "RuleMeta",
     "RuleType",
     "SetCode",
+    "get_combinator_kind",
+    "is_compilable_combinator",
+    "is_semantic_combinator",
 ]

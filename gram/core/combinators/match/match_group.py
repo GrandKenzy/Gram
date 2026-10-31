@@ -8,10 +8,11 @@ registered semantic `WordGroup` in `gram.core.lexer.words` (e.g., `'$TYPES'`,
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer import words
 from gram.core.lexer.words import WordGroup
 
@@ -24,6 +25,8 @@ class MatchGroup(Combinator):
     Combinator that evaluates whether the current token belongs to a lexical
     `WordGroup`, with optional `'allow'` or `'deny'` filtering over specific values.
     """
+
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.TERMINAL_GROUP
 
     def __init__(
         self,

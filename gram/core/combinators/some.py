@@ -7,10 +7,11 @@ otherwise restores the initial checkpoint and promotes the deepest failure.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.combinators.signals import BreakFlowSignal, SkipFlowSignal
 
 if TYPE_CHECKING:
@@ -25,6 +26,7 @@ class Some(Combinator):
     subsequent consecutive matches until the stream ends or matching fails.
     """
 
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.SOME
     header_class: bool = True
 
     def __init__(self, combinator: Combinator) -> None:

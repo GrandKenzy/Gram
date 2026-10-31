@@ -9,10 +9,11 @@ token consumption and AST node construction directly to the `matcher`.
 from __future__ import annotations
 
 from collections.abc import MutableMapping
-from typing import TYPE_CHECKING, Any
+from typing import ClassVar, TYPE_CHECKING, Any
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer import TokenType
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
 
 class Save(Combinator):
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.SAVE
     """
     [BETA] Combinator that stores the current `TokenType` at `parser.pos`
     into `parser.storage[name]`.

@@ -7,10 +7,11 @@ combinators and the `Literal` combinator for validating primitive token values.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from gram import errors
 from gram.core.combinators.base import Combinator
+from gram.core.combinators.kinds import CombinatorKind
 from gram.core.lexer.tokens import Token, TokenType
 
 if TYPE_CHECKING:
@@ -40,6 +41,8 @@ class Item(Combinator):
     If any element in the sequence fails to match, the parser state is completely
     rewound to the initial checkpoint while preserving the deepest failure candidate.
     """
+
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.ITEM
 
     def __init__(self, *matchs: Combinator) -> None:
         """
@@ -158,6 +161,8 @@ class Literal(Combinator):
     against an expected value (or any non-keyword literal if omitted).
     Reserved keywords (`Token.KEYWORD`) never match `Literal`.
     """
+
+    combinator_kind: ClassVar[CombinatorKind] = CombinatorKind.TERMINAL_LITERAL
 
     def __init__(self, literal: Any = _ANY_LITERAL) -> None:
         """

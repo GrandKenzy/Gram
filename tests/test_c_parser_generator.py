@@ -1,0 +1,517 @@
+"""
+Unit tests for Ahead-Of-Time (AOT) C Parser, AST Generator, binary IR (GIR) and file driver.
+"""
+from __future__ import annotations
+
+import json
+import shutil
+import struct
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+from gram import sessions
+from gram.core.combinators import (
+    Alt,
+    Combinator,
+    DualExpr,
+    Enclosed,
+    Many,
+    MatchGroup,
+    MatchKeyword,
+    MatchToken,
+    Opt,
+    Ref,
+    RuleItem,
+    SameLine,
+    Separator,
+    Seq,
+    Some,
+)
+from gram.core.lexer.tokens import Token
+from gram.core.parser.c_generator import (
+    GrammarCompilerError,
+    export_session_c_parser,
+)
+
+
+class CustomUnsupportedCombinator(Combinator):
+    """External combinator with no semantic signature."""
+    pass
+
+
+class IndexRule(RuleItem):
+    nodeable = True
+    entrypoint = Enclosed(
+        Token.LBRACKET,
+        MatchToken(Token.NUMBER),
+        Token.RBRACKET,
+        allow_empty=False,
+    )
+
+
+class PrimaryRule(RuleItem):
+    nodeable = True
+    entrypoint = Alt(
+        Seq(
+            MatchToken(Token.IDENT),
+            Many(SameLine(Ref(IndexRule))),
+        ),
+        MatchToken(Token.NUMBER),
+    )
+
+
+class ExprRule(RuleItem):
+    nodeable = True
+    entrypoint = DualExpr(Ref(PrimaryRule))
+
+
+class LetRule(RuleItem):
+    nodeable = True
+    entrypoint = Seq(
+        Opt(MatchGroup("vis")),
+        MatchKeyword("let"),
+        SameLine(MatchToken(Token.IDENT)),
+        MatchToken(Token.ASSIGN),
+        Ref(ExprRule),
+        MatchToken(Token.SEMICOLON),
+    )
+
+
+class ReturnRule(RuleItem):
+    nodeable = True
+    entrypoint = Seq(
+        MatchKeyword("return"),
+        Ref(ExprRule),
+        MatchToken(Token.SEMICOLON),
+    )
+
+
+class TypeRule(RuleItem):
+    """Non-nodeable: its tokens must be spliced into the enclosing DeclRule."""
+    nodeable = False
+    entrypoint = Seq(
+        Opt(MatchKeyword("const")),
+        MatchToken(Token.IDENT),
+    )
+
+
+class DeclRule(RuleItem):
+    nodeable = True
+    entrypoint = Seq(
+        MatchKeyword("var"),
+        MatchToken(Token.IDENT),
+        MatchToken(Token.COLON),
+        Ref(TypeRule),
+        MatchToken(Token.SEMICOLON),
+    )
+
+
+class PartialRule(RuleItem):
+    """The first branch consumes `var IDENT` and then fails: its attachments must be rolled back."""
+    nodeable = True
+    entrypoint = Alt(
+        Seq(MatchKeyword("var"), MatchToken(Token.IDENT), MatchToken(Token.ASSIGN)),
+        Ref(DeclRule),
+    )
+
+
+class BlockRule(RuleItem):
+    nodeable = True
+    entrypoint = Enclosed(
+        Token.LBRACE,
+        Some(Alt(Ref(LetRule), Ref(ReturnRule))),
+        Token.RBRACE,
+        allow_empty=True,
+    )
+
+
+class RootRule(RuleItem):
+    nodeable = True
+    entrypoint = Alt(Ref(BlockRule), Ref(LetRule), Ref(ReturnRule), Ref(PartialRule))
+
+
+GIR_HEADER = struct.Struct("<4sHHIIQQ8IQ")
+GIR_NODE = struct.Struct("<HHIIIIIIIII")
+
+HARNESS_C = r"""
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "gram_driver.h"
+
+int main(int argc, char **argv) {
+    if (argc < 4) return 99;
+    const char *src = "var x: const y;";
+    size_t src_len = strlen(src);
+    GramDriverError err;
+
+    /* Uncompiled mode: in-memory AST. */
+    GramParseResult r;
+    if (gram_parse_source(src, src_len, &r, &err) != GRAM_DRIVER_OK) return 1;
+    if (r.root == 0 || r.arena.nodes[r.root].first_child == 0) return 2;
+    if (r.token_count < 2 || r.tokens[r.token_count - 1].kind != GRAM_TOKEN_EOF) return 3;
+    gram_parse_result_free(&r);
+
+    /* Compiled mode from memory. */
+    GramIrBlob blob;
+    if (gram_compile_source_to_ir(src, src_len, &blob, &err) != GRAM_DRIVER_OK) return 4;
+    GramIrView v;
+    if (gram_ir_view_init(&v, blob.data, blob.size) != GRAM_IR_OK) return 5;
+    if (!gram_ir_view_matches_grammar(&v) || !gram_ir_view_matches_source(&v, src, src_len)) return 6;
+    if (gram_ir_view_matches_source(&v, "var x: const z;", src_len)) return 7;
+    if (v.nodes[v.header->root_index].child_count != 1) return 8;
+
+    /* Determinism. */
+    GramIrBlob again;
+    if (gram_compile_source_to_ir(src, src_len, &again, &err) != GRAM_DRIVER_OK) return 9;
+    if (again.size != blob.size || memcmp(again.data, blob.data, blob.size) != 0) return 10;
+    gram_ir_blob_free(&again);
+
+    /* File round trip. */
+    if (gram_ir_write_file(&blob, argv[1]) != GRAM_IR_OK) return 11;
+    GramIrView loaded;
+    if (gram_ir_read_file(argv[1], &loaded) != GRAM_IR_OK) return 12;
+    if (loaded.size != blob.size || memcmp(loaded.data, blob.data, blob.size) != 0) return 13;
+    gram_ir_view_free(&loaded);
+
+    /* Corruption is rejected. */
+    uint8_t *copy = (uint8_t *)malloc(blob.size);
+    if (!copy) return 14;
+    memcpy(copy, blob.data, blob.size);
+    GramIrView bad;
+    copy[0] = 'X';
+    if (gram_ir_view_init(&bad, copy, blob.size) != GRAM_IR_ERR_FORMAT) return 15;
+    copy[0] = 'G';
+    if (gram_ir_view_init(&bad, copy, blob.size - 8u) != GRAM_IR_ERR_FORMAT) return 16;
+    if (gram_ir_view_init(&bad, copy, blob.size) != GRAM_IR_OK) return 17;
+    free(copy);
+    gram_ir_blob_free(&blob);
+
+    /* Syntax errors carry a position. */
+    GramIrBlob none;
+    if (gram_compile_source_to_ir("var x: ;", 8, &none, &err) != GRAM_DRIVER_ERR_PARSE) return 18;
+    if (err.line != 1 || err.column != 7 || strstr(err.message, ";") == NULL) return 19;
+
+    /* Argument validation and empty input. */
+    if (gram_parse_source(NULL, 5, &r, &err) != GRAM_DRIVER_ERR_ARGS) return 20;
+    if (gram_compile_source_to_ir("", 0, &blob, &err) != GRAM_DRIVER_OK) return 21;
+    gram_ir_blob_free(&blob);
+
+    /* File mode and missing files. */
+    if (gram_compile_file_to_ir_file(argv[2], argv[3], &err) != GRAM_DRIVER_OK) return 22;
+    if (gram_compile_file_to_ir("definitely/missing.src", &blob, &err) != GRAM_DRIVER_ERR_IO) return 23;
+    return 0;
+}
+"""
+
+
+class TestCParserGenerator(unittest.TestCase):
+    """Tests AOT C parser generation, predictive switch optimization, and GCC execution."""
+
+    def setUp(self) -> None:
+        self.session = sessions.Session("TestCParsingSession", "Many")
+        self.session.add_group("vis", color_group="#FFFFFF")
+        self.session.add_keyword("pub", group="vis")
+        self.session.add_keyword("priv", group="vis")
+        for keyword in ("let", "return", "var", "const"):
+            self.session.add_keyword(keyword)
+        self.session.entrypoint = RootRule
+
+    def test_crawl_and_generate_deterministic_units(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest = self.session.export_c_parser(tmpdir)
+            self.assertEqual(manifest["session_name"], "TestCParsingSession")
+            self.assertEqual(manifest["mode"], "Many")
+            self.assertGreaterEqual(manifest["rule_count"], 8)
+            for rule in ("RootRule", "LetRule", "ReturnRule", "BlockRule", "ExprRule", "TypeRule", "DeclRule"):
+                self.assertIn(rule, manifest["rules"])
+
+            out_path = Path(tmpdir)
+            for name in (
+                "gram_ast.h", "gram_ast.c", "gram_parser.h", "gram_parser.c",
+                "gram_ir.h", "gram_ir.c", "gram_driver.h", "gram_driver.c",
+                "gram_lexer_config.h", "gram_lexer_keywords.c", "gram_parser_manifest.json",
+            ):
+                self.assertTrue((out_path / name).is_file(), name)
+            self.assertFalse((out_path / "gram_cli.c").exists())
+            self.assertTrue(manifest["driver"])
+            self.assertEqual(manifest["ir_format"], "GIR 1.0")
+
+            # Verify predictive switch and keyword first-char dispatch are emitted
+            parser_c = (out_path / "gram_parser.c").read_text(encoding="utf-8")
+            self.assertIn("switch (alt_tok_", parser_c)
+            self.assertIn("case GRAM_TOKEN_LBRACE:", parser_c)
+            self.assertIn("case GRAM_TOKEN_KEYWORD:", parser_c)
+            self.assertIn("switch (p->source[alt_tok_", parser_c)
+            self.assertIn("case 'l':", parser_c)
+            self.assertIn("case 'r':", parser_c)
+
+            # Verify content hash reproducibility
+            manifest2 = self.session.export_c_parser(tmpdir)
+            self.assertEqual(manifest["content_hash"], manifest2["content_hash"])
+
+    def test_export_without_driver_keeps_parser_only_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest = self.session.export_c_parser(tmpdir, emit_driver=False)
+            self.assertFalse(manifest["driver"])
+            self.assertEqual(
+                manifest["files"], ["gram_ast.h", "gram_ast.c", "gram_parser.h", "gram_parser.c"]
+            )
+            self.assertFalse((Path(tmpdir) / "gram_driver.c").exists())
+            self.assertFalse((Path(tmpdir) / "gram_lexer_config.h").exists())
+
+    def test_cli_requires_driver(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(GrammarCompilerError):
+                export_session_c_parser(self.session, tmpdir, emit_driver=False, emit_cli=True)
+
+    def test_reject_external_combinator(self) -> None:
+        class BadRule(RuleItem):
+            nodeable = True
+            entrypoint = Seq(MatchToken(Token.IDENT), CustomUnsupportedCombinator())
+
+        bad_session = sessions.Session("BadSession", "Some")
+        bad_session.entrypoint = BadRule
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(GrammarCompilerError):
+                bad_session.export_c_parser(tmpdir)
+
+    def test_missing_entrypoint_raises_error(self) -> None:
+        empty_session = sessions.Session("EmptySession", "Some")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(GrammarCompilerError):
+                empty_session.export_c_parser(tmpdir)
+
+
+def decode_ir(data: bytes) -> tuple[dict[str, int], list[dict[str, int]], list[bytes]]:
+    """Independent Python decoder for the GIR layout (cross-checks the C writer)."""
+    fields = GIR_HEADER.unpack_from(data, 0)
+    header = dict(zip(
+        (
+            "magic", "major", "minor", "flags", "header_size", "grammar_id", "source_hash",
+            "source_size", "string_count", "offsets_off", "pool_off", "pool_bytes",
+            "nodes_off", "node_count", "root", "total_size",
+        ),
+        fields,
+    ))
+    offsets = struct.unpack_from(f"<{header['string_count'] + 1}I", data, header["offsets_off"])
+    pool = data[header["pool_off"]:header["pool_off"] + header["pool_bytes"]]
+    strings = [pool[offsets[i]:offsets[i + 1] - 1] for i in range(header["string_count"])]
+    nodes = [
+        dict(zip(
+            ("kind", "flags", "symbol", "value", "start", "length", "line", "column",
+             "first_child", "next_sibling", "child_count"),
+            GIR_NODE.unpack_from(data, header["nodes_off"] + i * GIR_NODE.size),
+        ))
+        for i in range(header["node_count"])
+    ]
+    return header, nodes, strings
+
+
+def ir_tree(nodes: list[dict[str, int]], strings: list[bytes], index: int) -> tuple[str, list]:
+    node = nodes[index]
+    children = []
+    child = node["first_child"]
+    while child:
+        children.append(ir_tree(nodes, strings, child))
+        child = nodes[child]["next_sibling"]
+    return strings[node["symbol"]].decode("utf-8"), children
+
+
+@unittest.skipUnless(shutil.which("gcc"), "gcc compiler not found in PATH")
+class TestCDriverAndIrEndToEnd(unittest.TestCase):
+    """Builds the generated C (strict -Werror) and checks the CLI, the API and the IR bytes."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.work = Path(cls._tmp.name)
+
+        session = sessions.Session("DriverSession", "Many")
+        session.add_group("vis", color_group="#FFFFFF")
+        session.add_keyword("pub", group="vis")
+        session.add_keyword("priv", group="vis")
+        for keyword in ("let", "return", "var", "const"):
+            session.add_keyword(keyword)
+        session.entrypoint = RootRule
+        cls.manifest = session.export_c_parser(cls.work, emit_cli=True)
+
+        repo_root = Path(__file__).resolve().parent.parent
+        native_inc = repo_root / "native" / "gram_lexer" / "include"
+        native_src = repo_root / "native" / "gram_lexer" / "src"
+        sources = [
+            "gram_ast.c", "gram_parser.c", "gram_ir.c", "gram_driver.c",
+            "gram_lexer_keywords.c", "gram_lexer_symbols.c", "gram_lexer_groups.c",
+        ]
+        common = [str(cls.work / name) for name in sources] + [
+            str(native_src / name)
+            for name in (
+                "lexer.c", "indentation.c", "numbers.c", "strings.c",
+                "symbols.c", "utf8.c", "diagnostics_lite.c",
+            )
+        ]
+        flags = [
+            "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+            f"-I{native_inc}", f"-I{native_src}", f"-I{cls.work}",
+        ]
+
+        (cls.work / "harness.c").write_text(HARNESS_C, encoding="utf-8")
+        cls.cli = cls.work / "gram_cli.exe"
+        cls.harness = cls.work / "harness.exe"
+        subprocess.run(
+            [*flags, str(cls.work / "gram_cli.c"), *common, "-o", str(cls.cli)],
+            check=True, capture_output=True, text=True,
+        )
+        subprocess.run(
+            [*flags, str(cls.work / "harness.c"), *common, "-o", str(cls.harness)],
+            check=True, capture_output=True, text=True,
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(self.cli), *args], capture_output=True, text=True, check=False
+        )
+
+    def compile_to_ir(self, name: str, source: bytes) -> tuple[bytes, bytes]:
+        src_path = self.work / f"{name}.src"
+        ir_path = self.work / f"{name}.gir"
+        src_path.write_bytes(source)
+        result = self.run_cli("compile", str(src_path), "-o", str(ir_path))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return ir_path.read_bytes(), source
+
+    def test_manifest_lists_cli_and_lexer_tables(self) -> None:
+        self.assertIn("gram_cli.c", self.manifest["files"])
+        self.assertIn("gram_lexer_config.h", self.manifest["lexer_files"])
+        manifest_file = json.loads((self.work / "gram_parser_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest_file["content_hash"], self.manifest["content_hash"])
+
+    def test_api_harness(self) -> None:
+        ir_path = self.work / "harness.gir"
+        src_path = self.work / "harness_in.src"
+        dst_path = self.work / "harness_out.gir"
+        src_path.write_text("let a = 1;\nreturn a + 2;", encoding="utf-8")
+        result = subprocess.run(
+            [str(self.harness), str(ir_path), str(src_path), str(dst_path)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, f"harness failed at check #{result.returncode}")
+        self.assertTrue(dst_path.is_file())
+
+    def test_ir_bytes_match_independent_python_decoder(self) -> None:
+        source = b"var x: const y;"
+        data, _ = self.compile_to_ir("decl", source)
+        header, nodes, strings = decode_ir(data)
+
+        self.assertEqual(header["magic"], b"GIR\x00")
+        self.assertEqual((header["major"], header["minor"]), (1, 0))
+        self.assertEqual(header["header_size"], 72)
+        self.assertEqual(header["total_size"], len(data))
+        self.assertEqual(header["source_size"], len(source))
+        self.assertEqual(header["nodes_off"] % 8, 0)
+        self.assertEqual(header["grammar_id"], int(self.manifest["grammar_id"], 16))
+        self.assertEqual(strings[0], b"")
+
+        tree = ir_tree(nodes, strings, header["root"])
+        # TypeRule is non-nodeable: `const y` is spliced straight into DeclRule.
+        # PartialRule's failed first branch must leave no trace after the rollback.
+        self.assertEqual(
+            tree,
+            ("ARRAY", [("RootRule", [("PartialRule", [("DeclRule", [
+                ("var", []), ("x", []), (":", []), ("const", []), ("y", []), (";", []),
+            ])])])]),
+        )
+
+        # Every terminal's span must slice the source back to its lexeme.
+        for node in nodes[1:]:
+            if node["flags"] & 0x1:
+                lexeme = strings[node["symbol"]]
+                self.assertEqual(source[node["start"]:node["start"] + node["length"]], lexeme)
+        decl = next(n for n in nodes[1:] if strings[n["symbol"]] == b"DeclRule")
+        self.assertEqual((decl["start"], decl["length"]), (0, len(source)))
+        self.assertEqual(decl["child_count"], 6)
+
+    def test_ir_expressions_lines_and_string_pool_dedup(self) -> None:
+        source = b"let a = 1;\nreturn a + 2;"
+        data, _ = self.compile_to_ir("multi", source)
+        header, nodes, strings = decode_ir(data)
+
+        self.assertEqual(len(strings), len(set(strings)), "string pool must be deduplicated")
+        returns = next(n for n in nodes[1:] if strings[n["symbol"]] == b"ReturnRule")
+        self.assertEqual((returns["line"], returns["column"]), (2, 0))
+        binary = next(n for n in nodes[1:] if strings[n["symbol"]] == b"EXPR_BINARY")
+        self.assertEqual(binary["child_count"], 2)
+        self.assertEqual(source[binary["start"]:binary["start"] + binary["length"]], b"a + 2")
+        self.assertTrue(binary["flags"] & 0x4)
+
+    def test_ir_is_independent_of_utf8_bom(self) -> None:
+        plain, _ = self.compile_to_ir("plain", b"let a = 1;")
+        bom, _ = self.compile_to_ir("bom", b"\xef\xbb\xbflet a = 1;")
+        self.assertEqual(plain, bom)
+
+    def test_cli_dump_and_ast_modes(self) -> None:
+        data, _ = self.compile_to_ir("dump", b"var x: const y;")
+        dumped = self.run_cli("ir", str(self.work / "dump.gir"))
+        self.assertEqual(dumped.returncode, 0, dumped.stderr)
+        self.assertIn("DeclRule (6)", dumped.stdout)
+        self.assertIn('KEYWORD "const"', dumped.stdout)
+
+        ast = self.run_cli("ast", str(self.work / "dump.src"))
+        self.assertEqual(ast.returncode, 0, ast.stderr)
+        self.assertIn("PartialRule", ast.stdout)
+        self.assertIn("TERMINAL_KEYWORD 'const'", ast.stdout)
+
+        checked = self.run_cli("check", str(self.work / "dump.src"), "--repeat", "3")
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertIn("OK", checked.stdout)
+
+    def test_cli_reports_syntax_error_position(self) -> None:
+        src_path = self.work / "broken.src"
+        src_path.write_text("let a = 1;\nlet b = ;", encoding="utf-8")
+        result = self.run_cli("compile", str(src_path), "-o", str(self.work / "broken.gir"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(":2:", result.stderr)
+        self.assertIn("syntax error", result.stderr)
+        self.assertFalse((self.work / "broken.gir").exists())
+
+    def test_cli_missing_input(self) -> None:
+        result = self.run_cli("check", str(self.work / "does_not_exist.src"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("cannot open", result.stderr)
+
+    def test_corrupted_ir_files_are_rejected(self) -> None:
+        data, _ = self.compile_to_ir("corrupt", b"var x: const y;")
+        header, nodes, _ = decode_ir(data)
+
+        def rejected(mutated: bytes, label: str) -> None:
+            path = self.work / f"mutated_{label}.gir"
+            path.write_bytes(mutated)
+            result = self.run_cli("ir", str(path))
+            self.assertEqual(result.returncode, 2, f"{label}: {result.stdout}")
+
+        rejected(b"XIR" + data[3:], "magic")
+        rejected(data[:-8], "truncated")
+        rejected(data[:40], "tiny")
+
+        # A child link pointing back at the root creates a cycle.
+        cyclic = bytearray(data)
+        victim = header["nodes_off"] + 2 * GIR_NODE.size
+        struct.pack_into("<I", cyclic, victim + 28, 1)
+        rejected(bytes(cyclic), "cycle")
+
+        # An out-of-range sibling index.
+        dangling = bytearray(data)
+        struct.pack_into("<I", dangling, victim + 32, header["node_count"] + 5)
+        rejected(bytes(dangling), "dangling")
+
+
+if __name__ == "__main__":
+    unittest.main()
