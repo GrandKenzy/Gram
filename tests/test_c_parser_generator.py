@@ -1009,6 +1009,142 @@ class TestCCompilerHardening(unittest.TestCase):
                 "Unrecognized lexical token outside CaptureRaw must be rejected",
             )
 
+    def test_many_and_some_array_nesting_in_c(self) -> None:
+        """Test that Many and Some repetition combinators emit nested GRAM_AST_ARRAY nodes in C/GIR."""
+        from gram.ir.reader import GirView
+
+        class Statement(RuleItem):
+            nodeable = True
+            entrypoint = Seq(MatchToken(Token.IDENT), MatchToken(Token.SEMICOLON))
+            rule = entrypoint
+
+        class AsmVariant(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchToken(Token.AT),
+                MatchKeyword("variant"),
+                MatchToken(Token.COLON),
+                Many(Ref(Statement)),
+                MatchToken(Token.AT),
+                MatchKeyword("end"),
+            )
+            rule = entrypoint
+
+        class MandatoryBlock(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("block"),
+                MatchToken(Token.COLON),
+                Some(Ref(Statement)),
+                MatchKeyword("end"),
+            )
+            rule = entrypoint
+
+        class RootRepRule(RuleItem):
+            nodeable = True
+            entrypoint = Many(Alt(Ref(AsmVariant), Ref(MandatoryBlock)))
+            rule = entrypoint
+
+        rep_session = sessions.Session("RepetitionNestingSession", "Some")
+        for kw in ("variant", "block", "end"):
+            rep_session.add_keyword(kw)
+        rep_session.entrypoint = RootRepRule
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+            out_dir = Path(tmp_dir)
+            export_session_c_parser(rep_session, out_dir, emit_driver=True, emit_cli=True)
+
+            proj_root = Path(__file__).resolve().parent.parent
+            native_inc = proj_root / "native" / "gram_lexer" / "include"
+            native_src = proj_root / "native" / "gram_lexer" / "src"
+
+            sources = [
+                "gram_ast.c", "gram_parser.c", "gram_ir.c", "gram_driver.c",
+                "gram_lexer_keywords.c", "gram_lexer_symbols.c", "gram_lexer_groups.c",
+            ]
+            common = [str(out_dir / name) for name in sources] + [
+                str(native_src / name)
+                for name in (
+                    "lexer.c", "indentation.c", "numbers.c", "strings.c",
+                    "symbols.c", "utf8.c", "diagnostics_lite.c",
+                )
+            ]
+            cli_exe = out_dir / "gram_cli.exe"
+            flags = [
+                "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
+                str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
+            ]
+            subprocess.run(flags, check=True, capture_output=True, text=True)
+
+            # 1. AsmVariant with 3 statements:
+            # Must generate an ARRAY node at index 3 with the 3 Statement children.
+            # Delimiters @, end must follow AFTER the ARRAY node (indices 4 and 5), exactly matching Python AST structure.
+            src_3 = "@ variant : m1; m2; m3; @ end"
+            fpath_3 = out_dir / "variant_3.src"
+            gir_3 = out_dir / "variant_3.gir"
+            fpath_3.write_text(src_3, encoding="utf-8")
+            res_3 = subprocess.run([str(cli_exe), "compile", str(fpath_3), "-o", str(gir_3)], capture_output=True, text=True)
+            self.assertEqual(res_3.returncode, 0, res_3.stderr)
+
+            view_3 = GirView(gir_3.read_bytes(), source=src_3.encode("utf-8"))
+            variant_node = view_3.root.find_first("AsmVariant")
+            self.assertIsNotNone(variant_node)
+            self.assertEqual(len(variant_node.children), 6)
+            self.assertEqual(variant_node.children[0].text, "@")
+            self.assertEqual(variant_node.children[1].text, "variant")
+            self.assertEqual(variant_node.children[2].text, ":")
+
+            array_node = variant_node.children[3]
+            self.assertTrue(array_node.is_array)
+            self.assertEqual(len(array_node), 3)
+            self.assertEqual([s.kind_name for s in array_node], ["Statement", "Statement", "Statement"])
+            self.assertEqual([s.children[0].text for s in array_node], ["m1", "m2", "m3"])
+
+            self.assertEqual(variant_node.children[4].text, "@")
+            self.assertEqual(variant_node.children[5].text, "end")
+
+            # 2. AsmVariant with 0 statements:
+            # Many matches 0 times; no array node is attached, leaving exactly 5 children without shifting delimiter indices.
+            src_0 = "@ variant : @ end"
+            fpath_0 = out_dir / "variant_0.src"
+            gir_0 = out_dir / "variant_0.gir"
+            fpath_0.write_text(src_0, encoding="utf-8")
+            res_0 = subprocess.run([str(cli_exe), "compile", str(fpath_0), "-o", str(gir_0)], capture_output=True, text=True)
+            self.assertEqual(res_0.returncode, 0, res_0.stderr)
+
+            view_0 = GirView(gir_0.read_bytes(), source=src_0.encode("utf-8"))
+            variant_0 = view_0.root.find_first("AsmVariant")
+            self.assertIsNotNone(variant_0)
+            self.assertEqual(len(variant_0.children), 5)
+            self.assertEqual([ch.text for ch in variant_0.children], ["@", "variant", ":", "@", "end"])
+
+            # 3. MandatoryBlock with Some:
+            # 2 statements: succeeds and groups them in an ARRAY node.
+            src_some_2 = "block : x; y; end"
+            fpath_some = out_dir / "some_2.src"
+            gir_some = out_dir / "some_2.gir"
+            fpath_some.write_text(src_some_2, encoding="utf-8")
+            res_some = subprocess.run([str(cli_exe), "compile", str(fpath_some), "-o", str(gir_some)], capture_output=True, text=True)
+            self.assertEqual(res_some.returncode, 0, res_some.stderr)
+
+            view_some = GirView(gir_some.read_bytes(), source=src_some_2.encode("utf-8"))
+            block_node = view_some.root.find_first("MandatoryBlock")
+            self.assertIsNotNone(block_node)
+            self.assertEqual(len(block_node.children), 4)
+            self.assertEqual(block_node.children[0].text, "block")
+            self.assertEqual(block_node.children[1].text, ":")
+            self.assertTrue(block_node.children[2].is_array)
+            self.assertEqual(len(block_node.children[2]), 2)
+            self.assertEqual([s.children[0].text for s in block_node.children[2]], ["x", "y"])
+            self.assertEqual(block_node.children[3].text, "end")
+
+            # 4. MandatoryBlock with 0 statements: Some requires at least 1 match, must fail syntax check
+            fpath_fail = out_dir / "some_fail.src"
+            fpath_fail.write_text("block : end", encoding="utf-8")
+            res_fail = subprocess.run([str(cli_exe), "check", str(fpath_fail)], capture_output=True, text=True)
+            self.assertEqual(res_fail.returncode, 2, "Some combinator with 0 matches must fail syntax check")
+
 
 class TestCaptureRawPython(unittest.TestCase):
     """Test CaptureRaw combinator and RawNode in Python ASTAnalyzer runtime."""

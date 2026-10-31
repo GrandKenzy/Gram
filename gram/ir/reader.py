@@ -13,6 +13,7 @@ import struct
 from typing import IO, Any, Iterator, Literal
 
 from gram.core.lexer.tokens import Token, TokenType
+from gram.core.lexer.visitors.strings import _ESCAPES
 
 # Binary layout constants matching gram_ir.h
 GIR_MAGIC = b"GIR\0"
@@ -73,6 +74,10 @@ class GirHeader:
 
 
 def _decode_string_literal(text: str) -> str:
+    """
+    Decode string literal escapes matching the official Gram lexer visitor (`process_string`).
+    Correctly resolves `\\n`, `\\uXXXX`, `\\b`, `\\f`, `\\v`, `\\0`, `\\r`, `\\t`, and escaped backslashes.
+    """
     s = text.lstrip("LuU8r")
     if len(s) >= 6 and (
         (s.startswith('"""') and s.endswith('"""'))
@@ -87,21 +92,33 @@ def _decode_string_literal(text: str) -> str:
     else:
         return text
 
-    replacements = {
-        "\\n": "\n",
-        "\\r": "\r",
-        "\\t": "\t",
-        "\\0": "\0",
-        "\\\\": "\\",
-        '\\"': '"',
-        "\\'": "'",
-    }
-    for esc, rep in replacements.items():
-        inner = inner.replace(esc, rep)
-    return inner
+    chars: list[str] = []
+    i = 0
+    n = len(inner)
+    while i < n:
+        c = inner[i]
+        if c == "\\" and i + 1 < n:
+            i += 1
+            esc = inner[i]
+            if esc == "u" and i + 4 < n:
+                hex_digits = inner[i + 1 : i + 5]
+                try:
+                    chars.append(chr(int(hex_digits, 16)))
+                    i += 5
+                    continue
+                except ValueError:
+                    chars.append(f"\\u{hex_digits}")
+                    i += 5
+                    continue
+            chars.append(_ESCAPES.get(esc, f"\\{esc}"))
+            i += 1
+        else:
+            chars.append(c)
+            i += 1
+    return "".join(chars)
 
 
-def _parse_typed_value(tok: Token | None, text: str) -> Any:
+def _parse_typed_value(tok: Token | None, text: str, session: Any = None) -> Any:
     if tok is None:
         return text
     if tok == Token.NUMBER:
@@ -119,7 +136,21 @@ def _parse_typed_value(tok: Token | None, text: str) -> Any:
         except ValueError:
             return text
     if tok == Token.BOOL:
-        return text.lower() in ("true", "1")
+        lower = text.lower()
+        true_name = "true"
+        false_name = "false"
+        if session is not None and hasattr(session, "get_config"):
+            true_cfg = session.get_config("TOKEN_BOOL_TRUE", None)
+            if isinstance(true_cfg, str) and true_cfg:
+                true_name = true_cfg.lower()
+            false_cfg = session.get_config("TOKEN_BOOL_FALSE", None)
+            if isinstance(false_cfg, str) and false_cfg:
+                false_name = false_cfg.lower()
+        if lower == true_name or lower == "1":
+            return True
+        if lower == false_name or lower == "0":
+            return False
+        return lower in ("true", "1")
     if tok == Token.NULL:
         return None
     if tok == Token.STRING:
@@ -255,7 +286,8 @@ class GirNode:
         if not self.is_terminal:
             return self.text
         tok = Token.from_code(self.value)
-        return _parse_typed_value(tok, self.text)
+        session = getattr(self.view, "session", None)
+        return _parse_typed_value(tok, self.text, session=session)
 
     @property
     def span(self) -> tuple[int, int]:
@@ -294,17 +326,17 @@ class GirNode:
         """
         Tuple of tokens captured inside this CaptureRaw block.
 
-        Returns the exact tokens stored directly in GIR as child terminal nodes.
-        If no child tokens were serialized in the buffer (legacy GIR format), falls back
-        to tokenizing the raw text using the C lexer backend without requiring the Python lexer.
+        If terminal tokens are attached as children, returns them with typed values.
+        Otherwise, re-tokenizes the authoritative source span using the C lexer backend.
+        Returns () if unattached to source or if no tokens can be reconstructed from the span.
         """
         if self._tokens is not None:
             return self._tokens
-        if not self.is_raw or self.src_length == 0 or self.value == 0:
+        if not self.is_raw:
             self._tokens = ()
             return self._tokens
 
-        # 1. Preferred: Return the exact tokens serialized in GIR
+        # 1. Preferred: Return the exact tokens serialized in GIR (if any)
         if self.children:
             res = []
             for ch in self.children:
@@ -315,8 +347,8 @@ class GirNode:
             self._tokens = tuple(res)
             return self._tokens
 
-        # 2. Fallback: Only if source_bytes are attached and text is present
-        if self.view.source_bytes is None:
+        # 2. Fallback: Only if source_bytes are attached and span has content
+        if self.view.source_bytes is None or self.src_length == 0:
             self._tokens = ()
             return self._tokens
 
@@ -350,16 +382,13 @@ class GirNode:
 
     def __len__(self) -> int:
         if self.is_raw:
-            if self._tokens is not None:
+            if self._tokens is not None and len(self._tokens) > 0:
                 return len(self._tokens)
-            if self.src_length == 0 or self.value == 0:
-                return 0
             return self.child_count if self.child_count else self.value
         return len(self.children)
 
     def __bool__(self) -> bool:
-        if self.is_raw:
-            return len(self) > 0 or bool(self.text)
+        """AST nodes are always truthy entities within the syntax tree."""
         return True
 
     def __iter__(self) -> Iterator[Any]:
@@ -686,6 +715,13 @@ class GirView:
             self._source_bytes = source.encode("utf-8")
         else:
             self._source_bytes = bytes(source)
+        self._invalidate_node_tokens()
+
+    def _invalidate_node_tokens(self) -> None:
+        """Invalidate cached raw tokens across all nodes when lexical or source context changes."""
+        for n in getattr(self, "nodes", ()):
+            if n.is_raw:
+                n._tokens = None
 
     def get_string(self, symbol_id: int) -> str:
         """Retrieve an interned string by ID from the GIR string pool."""
@@ -745,6 +781,7 @@ class GirView:
     def attach_session(self, session: Any) -> None:
         """Attach an active Gram Session to power context-aware lexical tokenization on raw nodes."""
         self.session = session
+        self._invalidate_node_tokens()
 
     @classmethod
     def from_bytes(

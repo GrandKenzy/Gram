@@ -582,7 +582,108 @@ class TestGirPythonReader(unittest.TestCase):
         self.assertEqual(empty_gir_node.tokens, ())
         self.assertEqual(empty_gir_node.token_count, 0)
         self.assertEqual(len(empty_gir_node), 0)
-        self.assertFalse(bool(empty_gir_node))
+        self.assertTrue(bool(empty_gir_node))  # AST nodes are always truthy
+
+        # 3. Empty span with structural zero-length consumed tokens (e.g. value=2, src_length=0)
+        zero_span_with_tokens = ir.GirNode(
+            view=view,
+            index=2,
+            kind=9,
+            flags=ir.reader.GIR_NODE_RAW,
+            symbol_id=0,
+            value=2,  # token_count = 2
+            src_start=4,
+            src_length=0,  # empty span
+            line=1,
+            column=4,
+            first_child_index=0,
+            next_sibling_index=0,
+            child_count=0,
+        )
+        self.assertEqual(zero_span_with_tokens.token_count, 2)
+        self.assertEqual(len(zero_span_with_tokens), 2)  # Must retain consumed count
+        self.assertEqual(zero_span_with_tokens.tokens, ())  # Cannot reconstruct without span
+        self.assertTrue(bool(zero_span_with_tokens))
+
+    def test_typed_value_escapes_and_configurable_booleans(self) -> None:
+        from gram.core.lexer.tokens import Token
+
+        view = ir.GirView.__new__(ir.GirView)
+        view._source_bytes = None
+        view.strings = ()
+
+        # 1. Escaped backslash before n: r"\\n" must not decode as newline
+        raw_str_node = ir.GirNode(
+            view=view, index=1, kind=1, flags=ir.reader.GIR_NODE_TERMINAL,
+            symbol_id=0, value=Token.STRING.value, src_start=0, src_length=0,
+            line=1, column=0, first_child_index=0, next_sibling_index=0, child_count=0,
+        )
+        raw_str_node._text_override = r'"\\n"'
+        self.assertEqual(raw_str_node.typed_value, r"\n")
+
+        # 2. Unicode and control escapes: \u0041, \t, \r, \b, \f, \v
+        raw_str_node._text_override = r'"\u0041\t\r\b\f\v"'
+        self.assertEqual(raw_str_node.typed_value, "A\t\r\b\f\v")
+
+        # 3. Configurable booleans via session
+        class MockSession:
+            def get_config(self, key: str, default: Any = None) -> Any:
+                if key == "TOKEN_BOOL_TRUE":
+                    return "si"
+                if key == "TOKEN_BOOL_FALSE":
+                    return "no"
+                return default
+
+        view.session = MockSession()
+        bool_node = ir.GirNode(
+            view=view, index=2, kind=1, flags=ir.reader.GIR_NODE_TERMINAL,
+            symbol_id=0, value=Token.BOOL.value, src_start=0, src_length=0,
+            line=1, column=0, first_child_index=0, next_sibling_index=0, child_count=0,
+        )
+        bool_node._text_override = "si"
+        self.assertIs(bool_node.typed_value, True)
+
+        bool_node._text_override = "no"
+        self.assertIs(bool_node.typed_value, False)
+
+    def test_attach_source_and_session_invalidates_tokens_cache(self) -> None:
+        source_code = "mov eax, 1; nop;"
+        view = ir.GirView.__new__(ir.GirView)
+        view._source_bytes = None
+        view.strings = ("RAW",)
+
+        raw_node = ir.GirNode(
+            view=view,
+            index=1,
+            kind=9,  # GRAM_AST_RAW
+            flags=ir.reader.GIR_NODE_RAW,
+            symbol_id=0,
+            value=4,
+            src_start=0,
+            src_length=len(source_code),
+            line=1,
+            column=0,
+            first_child_index=0,
+            next_sibling_index=0,
+            child_count=0,
+        )
+        view.nodes = (ir.GirNode(view, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), raw_node)
+
+        # 1. Without source, tokens returns () and caches it
+        self.assertEqual(raw_node.tokens, ())
+        self.assertIsNotNone(raw_node._tokens)
+
+        # 2. Attach source and session: must invalidate cache and re-tokenize correctly
+        session = sessions.Session("TestSess", "Some")
+        session.add_keyword("mov")
+        view.attach_session(session)
+        view.attach_source(source_code)
+        self.assertIsNone(raw_node._tokens)
+        re_toks = raw_node.tokens
+        self.assertGreater(len(re_toks), 0)
+        tok_values = [str(t.value) for t in re_toks]
+        self.assertIn("mov", tok_values)
+        self.assertIn("eax", tok_values)
 
     def test_raw_node_serialized_children_tokens_typed(self) -> None:
         from gram.core.lexer.tokens import Token
