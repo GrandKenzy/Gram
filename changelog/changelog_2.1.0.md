@@ -1,91 +1,63 @@
 # Gram `2.1.0`
 
-## Utilería de diagnosticos
+## Diagnostics Subsystem
 
-- Paquete integrado de diagnóstico con `Diagnostics`, `errors` e `info`.
-- `Diagnostics` conserva su API y mejora hooks, scopes, targets y deduplicación.
-- `errors` mejora la validación de códigos, el registro de errores y la escritura de snapshots.
-- `info` centraliza nodos, targets y flujos de notas (`debug`, `warn`, `advice`, `error`, `fatal`).
-- Logs más seguros e idempotentes, con benchmark y pruebas de regresión incluidos.
-- `StackError` optimiza la deduplicación e indexación por identidad y protege su almacenamiento público contra mutaciones no controladas.
-- `StackLimit` limita la memoria, permite volcado JSONL con identificadores de línea y secuencia, recuperación de registros y modo de error al alcanzar el límite.
-- `ErrorCombinator` conserva la recuperación de errores usando las operaciones controladas del stack; la suite actual alcanza 228 pruebas exitosas.
+- Integrated diagnostic framework with `Diagnostics`, `errors`, and `info`.
+- `Diagnostics` maintains its stable API with enhanced hooks, scopes, targets, and deduplication.
+- `errors` improves code validation, error logging, and snapshot serialization.
+- `info` centralizes nodes, targets, and notification streams (`debug`, `warn`, `advice`, `error`, `fatal`).
+- Idempotent and thread-safe logging with dedicated benchmarks and regression tests.
+- `StackError` optimizes identity-based deduplication and indexing, securing internal state against uncontrolled mutation.
+- `StackLimit` enforces memory caps, JSONL log dumping with line and sequence identifiers, record recovery, and error policies upon reaching capacity.
+- `ErrorCombinator` preserves transactional error recovery using controlled stack operations; verified by over 300 passing unit tests.
 
-## Análisis léxico y lexer
+## Lexical Analysis and Lexer
 
-- `Session` ahora posee el catálogo y la configuración efectiva del lexer, con
-  instancias predefinidas de lexer/parser y tokenización aislada por sesión.
-- `add_group()` y `add_keyword()` pueden configurar directamente una sesión;
-  `WordGroupManager` queda obsoleto y falla al instanciarse.
-- Aislados también los símbolos del lexer y sincronizadas las mutaciones de
-  sesión con los lectores legacy después de `load()`.
-- Corregido el avance seguro ante dígitos Unicode y literales numéricos malformados, evitando bucles infinitos con errores suprimidos.
-- Reforzada la conversión numérica: los hexadecimales con `e/E` o `f/F` se interpretan correctamente y los separadores inválidos generan `Token.ERROR` sin fragmentarse.
-- Alineados `TokenType.__eq__` y `__hash__` para mantener un comportamiento consistente en conjuntos y diccionarios.
-- Resueltos los pendientes léxicos: `LEXER_ADD_INFO` evita construir nodos de telemetría, `fail()` respeta la política de errores y `Session` reconstruye índices de símbolos de forma segura.
-- Añadidas políticas de indentación `spaces`, `tabs` y `mixed` con `LEXER_TAB_WIDTH`, además de limpieza correcta de referencias al vaciar `WordGroup`.
-- Corregidos los contratos de clasificación de booleanos, documentación de cadenas y `$len` en `TokenType.formatter()`.
+- `Session` owns the active lexical catalog and configuration, providing isolated lexer/parser instances and per-session tokenization.
+- `add_group()` and `add_keyword()` configure sessions directly; `WordGroupManager` is deprecated and fails on direct instantiation.
+- Lexer symbol tables are isolated per session, synchronizing mutations with legacy readers after `load()`.
+- Safe cursor advancement for Unicode digits and malformed numeric literals, preventing infinite loops when errors are suppressed.
+- Hardened numeric literal parsing: hexadecimal numbers with `e/E` or `f/F` are accurately resolved, and misplaced radix separators yield `Token.ERROR` without token fragmentation.
+- Aligned `TokenType.__eq__` and `__hash__` contracts for consistent dictionary and set operations.
+- Resolved lexical edge cases: `LEXER_ADD_INFO` skips diagnostic telemetry node creation, `fail()` strictly obeys error policies, and `Session` safely rebuilds symbol indices.
+- Indentation policies for `spaces`, `tabs`, and `mixed` with configurable `LEXER_TAB_WIDTH`, alongside proper reference cleanup when clearing a `WordGroup`.
+- Synchronized boolean classification, string documentation contracts, and `$len` formatting in `TokenType.formatter()`.
 
-## Parser y AST
+## Parser and AST
 
-- `Session.parse()` reutiliza su parser predefinido y propaga la sesión al
-  `ASTAnalyzer`, aislando las flags de diagnóstico de parser y AST.
-- `MatchGroup` resuelve grupos desde la sesión activa del parser en lugar de
-  depender del catálogo global.
-- Se preserva la API directa de `Parser` y `ASTAnalyzer`; los combinadores
-  reciben la vista de sesión cuando necesitan configuración contextual.
-- `Alt(audit=True)` añade perfiles de consumo, caché de planes predictivos y
-  reordenamiento conservador sin mutar el orden público de alternativas.
-- La auditoría predictiva usa `first_set` para omitir ramas exactas imposibles
-  en el token actual, conserva barreras opacas y cae al orden compilado si no
-  hay una predicción segura; se añadieron pruebas diferenciales de resultados,
-  cursor y diagnósticos entre `audit=False` y `audit=True`.
-- La caché predictiva detecta cambios en combinadores anidados, `entrypoint` y
-  sesiones con comprobación O(1) mientras no haya mutaciones; las conversiones
-  locales se resuelven dinámicamente sin reutilizar dispatch obsoleto.
-- El benchmark de alternativas redujo de `0.191345 s` a `0.045692 s` la
-  mediana del caso auditado con 16 ramas y 128 sentencias.
-- El parser evita escaneos repetidos de indentación y trabajo vacío de hooks,
-  mejorando el rendimiento observable de los modos normales.
-- Las restauraciones de traza liberan snapshots temporales y las flags de
-  entrypoints se restauran al finalizar el análisis.
-- `trace="detailed"` registra intentos de alternativas para medir consumo,
-  retrocesos y orden planificado sin añadir coste a `off` ni `basic`.
-- `MatchSeqSymbol` ya relabela tokens mediante el mecanismo transaccional del
-  parser, evitando mutaciones que sobrevivían a un rollback de `Alt` o `Seq`.
-- `trace="detailed"` conserva instrumentación completa y deliberadamente
-  pesada para diseñar parsers y lexers dedicados.
-- Las expresiones usan despacho predictivo cacheado para omitir `Ref` imposibles,
-  conservando el orden y la prioridad de referencias sobre paréntesis.
-- `ArithmeticExpr`, `ConditionalExpr` y `DualExpr` respetan conversiones lógicas
-  del parser y evitan serializar árboles recursivos completos en el camino normal.
-- Las señales de control conservan sus clases compatibles y ahora exponen
-  `FlowKind`; `trace="detailed"` también registra esa clasificación para
-  distinguir secuencia, repetición, backtracking, commit y abort.
-- Nuevo combinador nativo `SameLine` (`gram/core/combinators/same_line.py`) para
-  exigir continuidad de línea entre el último token consumido y el siguiente
-  elemento sintáctico, integrado con el análisis predictivo (`first_set`).
-- Sistema formal de firmas semánticas `CombinatorKind` (`gram/core/combinators/kinds.py`)
-  en los 32 combinadores nativos de Gram (`COMPILABLE_COMBINATOR_KINDS`,
-  `is_semantic_combinator`, `is_compilable_combinator`), permitiendo distinguir
-  combinadores declarativos compilables y rechazar combinadores externos o con
-  callbacks arbitrarios de Python.
+- `Session.parse()` reuses its preconfigured parser instance and propagates the session to `ASTAnalyzer`, isolating diagnostic flags across parser and AST layers.
+- `MatchGroup` resolves keyword groups directly from the parser's active session rather than relying on global state.
+- Preserves the direct API of `Parser` and `ASTAnalyzer`; combinators receive the session view when contextual configuration is needed.
+- `Alt(audit=True)` introduces consumption profiling, predictive plan caching, and conservative branch reordering while preserving public PEG semantics.
+- Predictive auditing uses `first_set` analysis to prune unreachable branches given the current lookahead token, respecting opaque barriers and falling back to declaration order when lookahead is ambiguous.
+- Dynamic predictive cache detects modifications in nested combinators, `entrypoint`, and session definitions with O(1) checks under invariant conditions.
+- Alternative benchmark reduced median execution time from `0.191345 s` to `0.045692 s` on an audited grammar with 16 branches and 128 statements.
+- Parser optimizes whitespace and indentation skips, eliminating redundant hook calls in standard parsing modes.
+- RayTracing state restoration cleans up temporary snapshots, and entrypoint flags are restored upon analysis completion.
+- `trace="detailed"` records alternative branch evaluations to track consumption, rollbacks, and dispatch plans without incurring overhead in `off` or `basic` modes.
+- `MatchSeqSymbol` re-labels tokens through the parser's transactional mechanism, ensuring modifications roll back cleanly on `Alt` or `Seq` backtracking.
+- Pratt expressions use cached predictive dispatch to bypass impossible `Ref` targets, preserving operator precedence and grouping rules.
+- `ArithmeticExpr`, `ConditionalExpr`, and `DualExpr` respect parser logical conversions and avoid serializing full recursive trees in standard execution paths.
+- Flow control signals expose `FlowKind`; `trace="detailed"` records these classifications to distinguish sequences, repetitions, backtracking, commits, and aborts.
+- Native `SameLine` combinator (`gram/core/combinators/same_line.py`) enforces line continuity between the last consumed token and the next syntactic item, integrated with `first_set` lookahead analysis.
+- Native `CaptureRaw` combinator (`gram/core/combinators/capture_raw.py`) and AST node `RawNode` (`gram/core/ast/nodes.py`) for capturing opaque, unparsed code blocks (e.g., inline assembly, shader code, or embedded DSLs) into a single leaf node without inflating the AST arena with individual child nodes. Supports nested delimiter balancing (`balance_delimiters=(open, close)`), target consumption (`consume_target=True/False`), and token limits (`max_tokens`).
+- Formal semantic kind system `CombinatorKind` (`gram/core/combinators/kinds.py`) covering all 32 native Gram combinators (`COMPILABLE_COMBINATOR_KINDS`, `is_semantic_combinator`, `is_compilable_combinator`), distinguishing compilable declarative combinators and strictly rejecting external or non-compilable constructs during AOT export.
 
-## Runtime nativo C y DiagnosticsLite
+## Native C Runtime and DiagnosticsLite
 
-- Runtime léxico nativo C11 independiente (`native/gram_lexer/`), reentrante y con cero asignaciones dinámicas por token, operando sobre spans en memoria del buffer UTF-8 original.
-- Subsistema de diagnósticos desacoplado `DiagnosticsLite` (`gram_diagnostics_lite.h`, `diagnostics_lite.c`), sin objetos ni herencia, con soporte para sinks nulos, callbacks de usuario, buffers externos con arena para mensajes, límite máximo de diagnósticos, severidades personalizables y políticas `recover`, `stop_on_error` y `stop_on_fatal`.
-- Soporte léxico completo alineado al 100% con Python: identificadores y palabras clave, grupos semánticos, máxima coincidencia de símbolos (*maximal munch*), números decimales, flotantes, binarios, octales y hexadecimales (incluyendo `0x...p...` y punto inicial), cadenas con prefijos (`L`, `u`, `U`, `u8`) y escapes `\uXXXX`, docstrings multilínea, comentarios de línea y bloque (`/* ... */`), e indentación configurable (`spaces`, `tabs`, `mixed`).
-- Exportador determinista desde `Session` (`tools/export_lexer_tables.py`) que genera tablas C estáticas (`gram_lexer_config.h`, `gram_lexer_keywords.c`, `gram_lexer_groups.c`, `gram_lexer_symbols.c`, `gram_lexer_codes.h`) y manifiesto JSON con hash SHA-256 y versionado ABI 1.0.
-- Adaptador opcional en Python mediante `Lexer(source, backend="python" | "c")`, manteniendo `backend="python"` como valor predeterminado sin fallback silencioso ante fallos en C.
-- Comparador diferencial [`tools/compare_lexers.py`](tools/compare_lexers.py), suite de pruebas diferenciales y contratos con fixtures dorados (`tests/test_lexer_differential.py`, `tests/fixtures/lexer/golden_cases.json`) y suite de benchmarks de rendimiento y memoria (`benchmarks/lexer_python_vs_c.py`).
-- Compilador AOT de Parser y generador de AST en C11 (`gram/core/parser/c_generator.py`, `Session.export_c_parser()` y CLI `tools/export_c_parser.py`) que resuelve el grafo transitivo de reglas desde el `entrypoint` de una `Session` y emite unidades C autónomas (`gram_ast.h`, `gram_ast.c`, `gram_parser.h`, `gram_parser.c` y `gram_parser_manifest.json` con hash SHA-256).
-- Arena contigua de nodos AST (`GramAstArena`) con rollback transaccional (checkpoint O(1) y restauración O(k) sobre los k enlaces del undo log), motores Pratt en C para `DualExpr`, `ArithmeticExpr` y `ConditionalExpr` (incluyendo operadores unarios, binarios, `refs_before_grouping` y filtrado por `first_set`), y soporte nativo para `MatchGroup` (con filtros `allow` y `deny`), `Literal` (wildcard y exacto), `MatchSeqSymbol` (listas de símbolos fijos y case-insensitivity), `Enclosed`, `Separator`, `SameLine` y `Until` (con delimitadores compuestos, `consume_target=True/False` y `max_tokens`).
-- Optimización predictiva de `Alt` en C mediante tablas de salto `switch (tok->kind)` y despacho secundario por carácter inicial en palabras clave (`case GRAM_TOKEN_KEYWORD:`), preservando el orden semántico PEG y logrando aceleraciones de ~1,700x a ~2,400x en el pipeline completo Lexer + Parser + AST en C frente a Python (verificado de forma reproducible mediante el benchmark sintético end-to-end [`benchmarks/parser_python_vs_c.py`](benchmarks/parser_python_vs_c.py)).
-- Undo log transaccional en `GramAstArena` (`GramAstUndo`) con puntero `last_child`, inserción directa de hijos en reglas transparentes (`nodeable = False`), detección estricta y propagación de errores de asignación de memoria (OOM), y cursor más profundo alcanzado (`farthest`) para diagnósticos precisos.
-- Contrato cerrado de compilación AOT con rechazo temprano de combinadores dinámicos no soportados (`Convert` o expresiones regulares complejas en `MatchSeqSymbol`), eliminando falsos positivos silenciosos en el generador C.
-- Driver unificado y File Opener en C (`gram_driver.h`, `gram_driver.c`, generados desde `gram/core/parser/c_driver.py`) con dos modos de operación:
-  1. **Modo sin compilar (Source/File -> AST en memoria):** `gram_parse_source` y `gram_parse_file` ejecutan el lexer y el parser en C y devuelven `GramParseResult` con el arreglo de tokens y la arena AST lista para recorrer en memoria.
-  2. **Modo compilado (Source/File -> Binary IR):** `gram_compile_source_to_ir`, `gram_compile_file_to_ir` y `gram_compile_file_to_ir_file` leen archivos directamente (omitiendo BOM UTF-8), tokenizan y parsean internamente sin exponer arreglos intermedios de tokens y emiten un buffer o archivo `.gir`.
-- Formato binario relocalizable y zero-copy **Gram Binary IR (`GIR`)** (`gram_ir.h`, `gram_ir.c`) con encabezado de 72 bytes (`GramIrHeader`, fingerprint FNV-1a de la gramática y versión de formato), pool deduplicado de cadenas UTF-8 alineado a 8 bytes y tabla densa de nodos de 40 bytes (`GramIrNode`) con spans de bytes (`src_start`, `src_length`) y coordenadas de origen (`line` 1-based, `column` 0-based), validador estructural `gram_ir_view_init`, serialización en disco y dumper textual `gram_ir_dump`.
-- CLI nativo autónomo opcional (`gram_cli.c`, activable con `emit_cli=True` en `Session.export_c_parser()` o `--cli` en `tools/export_c_parser.py`) con subcomandos `compile`, `check`, `ast` e `ir`.
+- Independent, reentrant C11 lexical runtime (`native/gram_lexer/`) with zero dynamic memory allocations per token, operating directly over memory spans of the UTF-8 source buffer.
+- Decoupled `DiagnosticsLite` diagnostic subsystem (`gram_diagnostics_lite.h`, `diagnostics_lite.c`), without objects or inheritance, supporting null sinks, user callbacks, external arena-backed message buffers, diagnostic count limits, custom severities, and error policies (`recover`, `stop_on_error`, `stop_on_fatal`).
+- 100% lexical parity with Python: identifiers, keywords, semantic keyword groups, maximal munch symbol matching, decimal, float, binary, octal, and hexadecimal numbers (including `0x...p...` and leading decimal dots), prefixed strings (`L`, `u`, `U`, `u8`), `\uXXXX` escapes, multiline docstrings, line and block comments (`/* ... */`), and indentation modes (`spaces`, `tabs`, `mixed`).
+- Deterministic table exporter from `Session` (`tools/export_lexer_tables.py`) generating static C tables (`gram_lexer_config.h`, `gram_lexer_keywords.c`, `gram_lexer_groups.c`, `gram_lexer_symbols.c`, `gram_lexer_codes.h`) and a JSON manifest with SHA-256 hashes and ABI 1.0 versioning.
+- Optional Python adapter via `Lexer(source, backend="python" | "c")`, maintaining `backend="python"` as default without silent fallbacks on C errors.
+- Differential verification harness [`tools/compare_lexers.py`](../tools/compare_lexers.py), golden differential test suite (`tests/test_lexer_differential.py`, `tests/fixtures/lexer/golden_cases.json`), and performance benchmark suite (`benchmarks/lexer_python_vs_c.py`).
+- Ahead-Of-Time (AOT) C11 parser compiler and AST generator (`gram/core/parser/c_generator.py`, `Session.export_c_parser()`, and CLI `tools/export_c_parser.py`) resolving the transitive rule graph from a `Session`'s `entrypoint` and emitting standalone C units (`gram_ast.h`, `gram_ast.c`, `gram_parser.h`, `gram_parser.c`, and `gram_parser_manifest.json` with SHA-256 hash and a `grammar_id` fingerprint sensitive to rule bodies and the session lexical catalog).
+- Contiguous AST node arena (`GramAstArena`) with transactional rollback ($O(1)$ checkpoint and $O(k)$ restore across $k$ undo entries), native C Pratt expression parsers for `DualExpr`, `ArithmeticExpr`, and `ConditionalExpr` (supporting unary and binary operators, `refs_before_grouping`, and `first_set` filtering), and native C generation for `Ref` (supporting `RuleItem` subclasses and `Combinator` instances), `MatchGroup` (with `allow` and `deny` filters), `Literal` (exact and wildcard), `MatchSeqSymbol` (fixed symbol lists and case insensitivity), `Enclosed`, `Separator`, `SameLine`, `Until` (with transactional attachment of compound delimiters, `consume_target=True/False`, and `max_tokens`), and `CaptureRaw` (leaf node `GRAM_AST_RAW` and `GRAM_IR_NODE_RAW` with continuous byte span in $O(1)$, delimiter balancing, foreign token handling, and transactional rollback).
+- Predictive C `Alt` optimization via branch jump tables (`switch (tok->kind)`) and secondary keyword initial character dispatch (`case GRAM_TOKEN_KEYWORD:`), preserving PEG ordered-choice semantics and yielding speedups of ~565x (vs pure Python `trace="off"`) to ~1,542x–2,400x (vs Python default `trace="basic"`) across the complete end-to-end pipeline (verified reproducibly and cross-platform via [`benchmarks/parser_python_vs_c.py`](../benchmarks/parser_python_vs_c.py)).
+- Transactional undo log in `GramAstArena` (`GramAstUndo`) with `last_child` pointer, transparent rule splicing (`nodeable = False`), strict OOM error propagation, and deepest cursor tracking (`farthest`) for accurate error diagnostics.
+- Strict closed compilation contract rejecting non-compilable combinators (`Convert`, dynamic regexes in `MatchSeqSymbol`, invalid `Ref` targets) upfront at export time, preventing silent false syntactic successes in C.
+- Unified C Driver and File Opener (`gram_driver.h`, `gram_driver.c`, generated via `gram/core/parser/c_driver.py`) with two operating modes:
+  1. **Uncompiled Mode (Source/File -> In-Memory AST):** `gram_parse_source` and `gram_parse_file` tokenize and parse input in C, returning a `GramParseResult` with the token buffer and AST arena.
+  2. **Compiled Mode (Source/File -> Binary IR):** `gram_compile_source_to_ir`, `gram_compile_file_to_ir`, and `gram_compile_file_to_ir_file` stream and parse files directly (stripping UTF-8 BOM), producing a standalone relocatable `.gir` binary buffer or file without intermediate exposed allocations.
+- Relocatable, zero-copy **Gram Binary IR (`GIR 1.0`)** format (`gram_ir.h`, `gram_ir.c`) with a 72-byte header (`GramIrHeader`, FNV-1a grammar fingerprint, source hash, format version), 8-byte aligned deduplicated UTF-8 string pool, and a dense table of 40-byte nodes (`GramIrNode`) with byte spans (`src_start`, `src_length`), 1-based line and 0-based column coordinates, tree navigation (`first_child`, `next_sibling`, `child_count`), structural validator `gram_ir_view_init`, disk serialization, and text dumper `gram_ir_dump`.
+- Optional standalone native CLI (`gram_cli.c`, enabled via `emit_cli=True` in `Session.export_c_parser()` or `--cli` in `tools/export_c_parser.py`) supporting subcommands `compile`, `check`, `ast`, and `ir`.

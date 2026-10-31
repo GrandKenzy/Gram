@@ -94,7 +94,56 @@ until_semicolon = Until(MatchToken(Token.SEMICOLON), consume_target=False)
 
 ---
 
-## 4. `UntilIndent`
+## 4. `CaptureRaw`
+
+Captures an unparsed, opaque block of raw tokens (such as inline assembly, shader code, or embedded domain-specific sublanguages) directly into a single leaf `RawNode` without allocating individual AST nodes for every token.
+
+### Constructor
+```python
+CaptureRaw(
+    target: Combinator | Token | str,
+    *,
+    balance_delimiters: tuple[Token | str, Token | str] | None = None,
+    consume_target: bool = False,
+    max_tokens: int | None = None,
+)
+```
+
+- `target`: The terminating combinator or token (e.g. `MatchToken(Token.RBRACE)`).
+- `balance_delimiters`: An optional `(open, close)` pair of tokens (e.g., `(Token.LBRACE, Token.RBRACE)`). When specified, occurrences of `open` increment an internal nesting counter, and `target` is only accepted when the nesting depth returns to zero.
+- `consume_target`: If `True`, the target delimiter is consumed and included in the raw text span; if `False` (default), the target delimiter is preserved in the stream for subsequent combinators.
+- `max_tokens`: Optional maximum token limit allowed inside the raw block before failing.
+
+### Return Shape (`RawNode`)
+Returns a `RawNode` (`gram.core.ast.nodes.RawNode`) on success, or `None` if `target` is never found (raising `CaptureRawTargetNotFound`):
+- `node.tokens`: `tuple[TokenType, ...]` of captured tokens.
+- `node.text`: Reconstructed original source text preserving exact spacing and line breaks.
+- `node.line`, `node.col`, `node.end_line`, `node.end_col`: Source coordinates of the span.
+- Supports `len(node)`, `iter(node)`, `node[i]`, and `bool(node) == True`.
+
+### AOT Compilation in C
+In C11 AOT mode, `CaptureRaw` generates $O(1)$ memory operations by allocating a single `GRAM_AST_RAW` node (mapped to `GRAM_IR_NODE_RAW` in GIR) with zero child links, while recording the exact byte offset and length in the source buffer.
+
+### Example
+```python
+from gram.core.combinators import CaptureRaw, MatchKeyword, MatchToken, Seq
+from gram.core.lexer import Token
+
+inline_asm = Seq(
+    MatchKeyword("asm"),
+    MatchToken(Token.LBRACE),
+    CaptureRaw(
+        MatchToken(Token.RBRACE),
+        balance_delimiters=(Token.LBRACE, Token.RBRACE),
+        consume_target=False,
+    ),
+    MatchToken(Token.RBRACE),
+)
+```
+
+---
+
+## 5. `UntilIndent`
 
 Consumes tokens one by one (converting each via `analyzer.delegate_return_node`) until encountering a `Token.INDENT` or `Token.DEDENT` token that satisfies `target`.
 

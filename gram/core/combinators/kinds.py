@@ -52,6 +52,7 @@ class CombinatorKind(Enum):
     SEPARATOR = "separator"
     UNTIL = "until"
     UNTIL_INDENT = "until_indent"
+    CAPTURE_RAW = "capture_raw"
     IF = "if"
     ERROR = "error"
     PREPROCESS = "preprocess"
@@ -87,6 +88,7 @@ COMPILABLE_COMBINATOR_KINDS: frozenset[CombinatorKind] = frozenset(
         CombinatorKind.EXPR_CONDITIONAL,
         CombinatorKind.SEPARATOR,
         CombinatorKind.UNTIL,
+        CombinatorKind.CAPTURE_RAW,
     }
 )
 

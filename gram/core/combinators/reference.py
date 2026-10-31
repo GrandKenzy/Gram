@@ -52,7 +52,9 @@ class Ref(Combinator):
         """Return the descriptive identifier of the referenced rule."""
         if isinstance(self.rule, str):
             return self.rule
-        return getattr(self.rule, "name", "") or self.rule.__name__
+        if isinstance(self.rule, Combinator):
+            return getattr(self.rule, "name", "") or type(self.rule).__name__
+        return getattr(self.rule, "name", "") or getattr(self.rule, "__name__", repr(self.rule))
 
     def parse(self, analyzer: ASTAnalyzer) -> Any:
         """
@@ -70,7 +72,10 @@ class Ref(Combinator):
         father = parser.node("ProcessingRef", "Procesando referencia", set_target=True)
         try:
             r_name = self.rule_name
-            entrypoint = getattr(self.rule, "entrypoint", None)
+            if isinstance(self.rule, Combinator):
+                entrypoint = self.rule
+            else:
+                entrypoint = getattr(self.rule, "entrypoint", None)
 
             if entrypoint is None:
                 father.note(

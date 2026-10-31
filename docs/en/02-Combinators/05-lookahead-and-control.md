@@ -214,4 +214,31 @@ ErrorCombinator(length: int = 1)
 - **When errors exist:** Removes the selected errors from the active error list and returns them as `list[errors.Error]` in reverse chronological order (most recent first).
 - **When no errors exist:** Reports `NoErrorsToCatch` (`GrammarError`) and returns `None`.
 
-> **Note:** To record errors into `_errors` without terminating the process before `ErrorCombinator` runs, either set `config.ERROR_EXIT_ON_ERROR = False` or register an error hook returning `ErrorAction.SUPPRESS_RAISE`.
+---
+
+## 8. `SameLine` (Line Continuity Constraint)
+
+Enforces that `combinator` must start on the exact same line as the immediately preceding consumed token (`parser.tokens[parser.pos - 1].line == parser.tokens[parser.pos].line`).
+
+### Constructor
+```python
+SameLine(combinator: Combinator)
+```
+
+### Execution & Diagnostics
+- If `parser.pos == 0`, `SameLine` succeeds unconditionally (permitting the first token of a file).
+- If one or more `NEWLINE` layout tokens or line breaks separate the previous token and `parser.pos`, `SameLine` fails immediately, restores the checkpoint, reports `SameLineViolation` (`GrammarError`), and returns `None`.
+- Fully supported in C AOT compilation and integrated with predictive `first_set` analysis.
+
+### Example
+```python
+from gram.core.combinators import MatchKeyword, MatchToken, SameLine, Seq
+from gram.core.lexer import Token
+
+# Forbids line breaks between 'return' and its return expression
+tight_return = Seq(
+    MatchKeyword("return"),
+    SameLine(MatchToken(Token.IDENT)),
+)
+```
+

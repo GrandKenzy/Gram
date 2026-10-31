@@ -14,6 +14,7 @@ from pathlib import Path
 from gram import sessions
 from gram.core.combinators import (
     Alt,
+    CaptureRaw,
     Combinator,
     Convert,
     DualExpr,
@@ -25,6 +26,7 @@ from gram.core.combinators import (
     MatchSeqSymbol,
     MatchToken,
     Opt,
+    RawNode,
     Ref,
     RuleItem,
     SameLine,
@@ -528,14 +530,90 @@ class TestCCompilerHardening(unittest.TestCase):
             rule = MatchKeyword("bar")
 
         s1 = sessions.Session("test_fp1", "Many")
+        s1.add_keyword("foo")
         s1.entrypoint = R1
         s2 = sessions.Session("test_fp2", "Many")
+        s2.add_keyword("bar")
         s2.entrypoint = R2
+        s3 = sessions.Session("test_fp3", "Many")
+        s3.add_keyword("foo")
+        s3.add_keyword("extra_lexical_kw")
+        s3.entrypoint = R1
 
-        with tempfile.TemporaryDirectory() as td1, tempfile.TemporaryDirectory() as td2:
+        with tempfile.TemporaryDirectory() as td1, tempfile.TemporaryDirectory() as td2, tempfile.TemporaryDirectory() as td3:
             m1 = export_session_c_parser(s1, td1, emit_driver=True)
             m2 = export_session_c_parser(s2, td2, emit_driver=True)
+            m3 = export_session_c_parser(s3, td3, emit_driver=True)
             self.assertNotEqual(m1["grammar_id"], m2["grammar_id"])
+            self.assertNotEqual(
+                m1["grammar_id"],
+                m3["grammar_id"],
+                "Adding a session keyword must change grammar_id even when rules are identical",
+            )
+
+    def test_ref_to_combinator_instance_and_invalid_ref_rejection(self) -> None:
+        # 1. Invalid target in Ref must raise GrammarCompilerError
+        class BadRefRule(RuleItem):
+            rule = Ref("not_a_rule_or_combinator")  # type: ignore[arg-type]
+
+        s_bad = sessions.Session("test_bad_ref", "Many")
+        s_bad.entrypoint = BadRefRule
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(GrammarCompilerError) as ctx:
+                export_session_c_parser(s_bad, td)
+            self.assertEqual(ctx.exception.name, "InvalidRefTarget")
+
+        # 2. Ref wrapping a Combinator instance must compile and execute its inner combinator
+        if shutil.which("gcc") is None:
+            self.skipTest("GCC compiler not found in PATH")
+
+        inline_binding = Seq(MatchKeyword("let"), MatchToken(Token.IDENT))
+
+        class CombRefRule(RuleItem):
+            nodeable = True
+            entrypoint = Ref(inline_binding)
+            rule = entrypoint
+
+        s_ok = sessions.Session("test_comb_ref", "Many")
+        s_ok.add_keyword("let")
+        s_ok.entrypoint = CombRefRule
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            out_dir = Path(td)
+            export_session_c_parser(s_ok, out_dir, emit_driver=True, emit_cli=True)
+
+            proj_root = Path(__file__).resolve().parent.parent
+            native_inc = proj_root / "native" / "gram_lexer" / "include"
+            native_src = proj_root / "native" / "gram_lexer" / "src"
+            sources = [
+                "gram_ast.c", "gram_parser.c", "gram_ir.c", "gram_driver.c",
+                "gram_lexer_keywords.c", "gram_lexer_symbols.c", "gram_lexer_groups.c",
+            ]
+            common = [str(out_dir / name) for name in sources] + [
+                str(native_src / name)
+                for name in (
+                    "lexer.c", "indentation.c", "numbers.c", "strings.c",
+                    "symbols.c", "utf8.c", "diagnostics_lite.c",
+                )
+            ]
+            cli_exe = out_dir / "gram_cli.exe"
+            subprocess.run(
+                [
+                    "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                    f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
+                    str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
+                ],
+                check=True, capture_output=True, text=True,
+            )
+
+            fpath = out_dir / "input.src"
+            fpath.write_text("let my_var", encoding="utf-8")
+            res_ok = subprocess.run([str(cli_exe), "check", str(fpath)], capture_output=True, text=True)
+            self.assertEqual(res_ok.returncode, 0, res_ok.stderr)
+
+            fpath.write_text("let 12345", encoding="utf-8")
+            res_fail = subprocess.run([str(cli_exe), "check", str(fpath)], capture_output=True, text=True)
+            self.assertEqual(res_fail.returncode, 2, "Ref(Combinator) must not compile to a vacuous ok = true")
 
     def test_convert_combinator_is_rejected_at_export(self) -> None:
         class ConvRule(RuleItem):
@@ -772,6 +850,234 @@ class TestCCompilerHardening(unittest.TestCase):
             # The Until array node should have 2 children ('a' and '123')
             until_array = array_nodes[-1]
             self.assertEqual(until_array["child_count"], 2)
+
+            # Compound target with consume_target=True and partial match rollback:
+            # Input: "raw item1 : item2 : end"
+            # The first ":" is a partial match of Seq(COLON, "end") that fails on "item2";
+            # its partial node must be rolled back, then ":" consumed as a normal token.
+            # When ": end" finally matches, both ":" and "end" must be attached to the Until ARRAY.
+            # Total children in Until ARRAY: item1, :, item2, :, end -> 5 children!
+            fpath_comp = out_dir / "test_comp.src"
+            gir_comp = out_dir / "test_comp.gir"
+            fpath_comp.write_text("raw item1 : item2 : end", encoding="utf-8")
+            comp_res = subprocess.run(
+                [str(cli_exe), "compile", str(fpath_comp), "-o", str(gir_comp)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(comp_res.returncode, 0, comp_res.stderr)
+            _, comp_nodes, comp_strings = decode_ir(gir_comp.read_bytes())
+            comp_arrays = [n for n in comp_nodes if comp_strings[n["symbol"]] == b"ARRAY"]
+            self.assertGreaterEqual(len(comp_arrays), 1)
+            comp_until_array = comp_arrays[-1]
+            self.assertEqual(
+                comp_until_array["child_count"],
+                5,
+                "Compound Until(Seq(COLON, 'end'), consume_target=True) must attach ':' and 'end' to ARRAY (5 children total)",
+            )
+
+    def test_capture_raw_combinator_end_to_end(self) -> None:
+        """Test CaptureRaw combinator in generated C: delimiter balancing, leaf Raw AST/GIR, rollback."""
+        class AsmBlock(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("asm"),
+                MatchToken(Token.LBRACE),
+                CaptureRaw(MatchToken(Token.RBRACE), balance_delimiters=(Token.LBRACE, Token.RBRACE)),
+                MatchToken(Token.RBRACE),
+            )
+            rule = entrypoint
+
+        class ShaderBlock(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("shader"),
+                CaptureRaw(MatchKeyword("end"), consume_target=True),
+            )
+            rule = entrypoint
+
+        class CappedRaw(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("raw"),
+                CaptureRaw(MatchKeyword("stop"), max_tokens=2),
+                MatchKeyword("stop"),
+            )
+            rule = entrypoint
+
+        class RootRawRule(RuleItem):
+            nodeable = True
+            entrypoint = Many(Alt(Ref(AsmBlock), Ref(ShaderBlock), Ref(CappedRaw)))
+            rule = entrypoint
+
+        raw_session = sessions.Session("RawSession", "Some")
+        for kw in ("asm", "shader", "end", "raw", "stop"):
+            raw_session.add_keyword(kw)
+        raw_session.entrypoint = RootRawRule
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+            out_dir = Path(tmp_dir)
+            export_session_c_parser(raw_session, out_dir, emit_driver=True, emit_cli=True)
+
+            proj_root = Path(__file__).resolve().parent.parent
+            native_inc = proj_root / "native" / "gram_lexer" / "include"
+            native_src = proj_root / "native" / "gram_lexer" / "src"
+
+            sources = [
+                "gram_ast.c", "gram_parser.c", "gram_ir.c", "gram_driver.c",
+                "gram_lexer_keywords.c", "gram_lexer_symbols.c", "gram_lexer_groups.c",
+            ]
+            common = [str(out_dir / name) for name in sources] + [
+                str(native_src / name)
+                for name in (
+                    "lexer.c", "indentation.c", "numbers.c", "strings.c",
+                    "symbols.c", "utf8.c", "diagnostics_lite.c",
+                )
+            ]
+            cli_exe = out_dir / "gram_cli.exe"
+            flags = [
+                "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
+                str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
+            ]
+            subprocess.run(flags, check=True, capture_output=True, text=True)
+
+            def check_code(code: str) -> int:
+                fpath = out_dir / "input.src"
+                fpath.write_text(code, encoding="utf-8")
+                res = subprocess.run([str(cli_exe), "check", str(fpath)], capture_output=True, text=True)
+                return res.returncode
+
+            # 1. Delimiter balancing inside assembly block:
+            self.assertEqual(check_code("asm { mov eax, 1; }"), 0, "simple asm block should match")
+            self.assertEqual(check_code("asm { mov eax, [rbx]; { nop; } ret; }"), 0, "nested braces with balancing must match")
+            self.assertEqual(check_code("asm { mov eax, 1;"), 2, "unclosed asm block must fail and rollback")
+            self.assertEqual(check_code("asm { { nop; }"), 2, "unbalanced inner brace must fail")
+
+            # 2. consume_target=True:
+            self.assertEqual(check_code("shader in vec3 p; void main() {} end"), 0, "shader block with consume_target=True should match")
+            self.assertEqual(check_code("shader end"), 0, "immediate target should match")
+            self.assertEqual(check_code("shader in vec3 p;"), 2, "shader without end must fail")
+
+            # 3. max_tokens cap:
+            self.assertEqual(check_code("raw a b stop"), 0, "raw with 2 tokens <= max_tokens(2) should pass")
+            self.assertEqual(check_code("raw a b c stop"), 2, "raw with 3 tokens > max_tokens(2) must fail")
+
+            # 4. GIR Inspection: check single leaf node with GRAM_AST_RAW, child_count == 0, and exact source span
+            fpath = out_dir / "test_raw.src"
+            gir_path = out_dir / "test_raw.gir"
+            source_content = "asm { mov eax, [rsp + 0x10]; nop; }"
+            fpath.write_text(source_content, encoding="utf-8")
+            compile_res = subprocess.run(
+                [str(cli_exe), "compile", str(fpath), "-o", str(gir_path)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(compile_res.returncode, 0, compile_res.stderr)
+            self.assertTrue(gir_path.exists())
+
+            header, nodes, strings = decode_ir(gir_path.read_bytes())
+            raw_nodes = [n for n in nodes if strings[n["symbol"]] == b"RAW"]
+            self.assertEqual(len(raw_nodes), 1, "Must generate exactly 1 RAW node for the asm payload")
+            raw_node = raw_nodes[0]
+            self.assertEqual(raw_node["child_count"], 0, "RAW node must be a leaf with 0 children")
+            self.assertEqual(raw_node["first_child"], 0, "RAW node must have first_child == 0")
+            self.assertEqual(raw_node["flags"], 0x10, "RAW node flags must be GRAM_IR_NODE_RAW (0x10)")
+
+            # Verify byte span points precisely to the raw payload in source_content
+            span_bytes = source_content.encode("utf-8")[raw_node["start"]:raw_node["start"] + raw_node["length"]]
+            span_text = span_bytes.decode("utf-8")
+            self.assertEqual(span_text, "mov eax, [rsp + 0x10]; nop;")
+
+            # 5. Foreign assembly characters ($0x80, @label, %eax) inside CaptureRaw vs outside CaptureRaw:
+            foreign_asm = "asm { mov %eax, $0x80; @label: int $0x80; }"
+            fpath_foreign = out_dir / "foreign.src"
+            gir_foreign = out_dir / "foreign.gir"
+            fpath_foreign.write_text(foreign_asm, encoding="utf-8")
+            foreign_res = subprocess.run(
+                [str(cli_exe), "compile", str(fpath_foreign), "-o", str(gir_foreign)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(foreign_res.returncode, 0, f"Foreign assembly tokens inside CaptureRaw must succeed: {foreign_res.stderr}")
+            _, f_nodes, f_strings = decode_ir(gir_foreign.read_bytes())
+            f_raw = [n for n in f_nodes if f_strings[n["symbol"]] == b"RAW"][0]
+            f_span = foreign_asm.encode("utf-8")[f_raw["start"]:f_raw["start"] + f_raw["length"]].decode("utf-8")
+            self.assertEqual(f_span, "mov %eax, $0x80; @label: int $0x80;")
+
+            # Foreign character '$' outside CaptureRaw must still fail with lexical error (exit code 2)
+            self.assertEqual(
+                check_code("asm { nop; } $0x80"),
+                2,
+                "Unrecognized lexical token outside CaptureRaw must be rejected",
+            )
+
+
+class TestCaptureRawPython(unittest.TestCase):
+    """Test CaptureRaw combinator and RawNode in Python ASTAnalyzer runtime."""
+
+    def test_capture_raw_delimiters_and_node(self) -> None:
+        class AsmBlock(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("asm"),
+                MatchToken(Token.LBRACE),
+                CaptureRaw(MatchToken(Token.RBRACE), balance_delimiters=(Token.LBRACE, Token.RBRACE)),
+                MatchToken(Token.RBRACE),
+            )
+
+        class RootRule(RuleItem):
+            nodeable = True
+            entrypoint = Alt(Ref(AsmBlock))
+
+        session = sessions.Session("AsmPythonSession", "Some")
+        session.add_keyword("asm")
+        session.entrypoint = RootRule
+
+        tokens = session.tokenize("asm { mov eax, [rbx]; { nop; } ret; }", "test")
+        ast = session.parse(tokens, "test")
+        self.assertIsNotNone(ast)
+
+        # Check RawNode properties
+        def find_raw_nodes(node):
+            found = []
+            if isinstance(node, RawNode):
+                found.append(node)
+            elif hasattr(node, "nodes"):
+                for child in node.nodes:
+                    found.extend(find_raw_nodes(child))
+            elif isinstance(node, list):
+                for child in node:
+                    found.extend(find_raw_nodes(child))
+            return found
+
+        raw_nodes = find_raw_nodes(ast)
+        self.assertEqual(len(raw_nodes), 1)
+        raw_node = raw_nodes[0]
+        self.assertGreater(len(raw_node), 0)
+        self.assertTrue(bool(raw_node))
+        self.assertEqual(raw_node.text, "mov eax, [rbx]; { nop; } ret;")
+
+    def test_capture_raw_rollback(self) -> None:
+        class AsmBlock(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("asm"),
+                MatchToken(Token.LBRACE),
+                CaptureRaw(MatchToken(Token.RBRACE)),
+                MatchToken(Token.RBRACE),
+            )
+
+        class RootRule(RuleItem):
+            nodeable = True
+            entrypoint = Alt(Ref(AsmBlock))
+
+        session = sessions.Session("AsmFailSession", "Some")
+        session.add_keyword("asm")
+        session.entrypoint = RootRule
+
+        # Missing closing brace must fail and rollback
+        tokens = session.tokenize("asm { mov eax, 1", "test")
+        with self.assertRaises(SystemExit):
+            session.parse(tokens, "test")
+
 
 
 if __name__ == "__main__":

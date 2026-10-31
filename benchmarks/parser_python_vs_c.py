@@ -23,6 +23,7 @@ import os
 import platform
 import shutil
 import statistics
+import struct
 import subprocess
 import sys
 import tempfile
@@ -347,22 +348,88 @@ def main() -> None:
             print(f"Error in C parsing: {tokens_info.stderr}")
             sys.exit(1)
 
+        # Differential AST equivalence verification between Python and Native C GIR
+        gir_file = temp_dir / "output.gir"
+        subprocess.run(
+            [str(exe_path), "compile", str(src_file), "-o", str(gir_file)],
+            check=True, capture_output=True, text=True,
+        )
+        gir_bytes = gir_file.read_bytes()
+        gir_hdr = dict(zip(
+            (
+                "magic", "major", "minor", "flags", "header_size", "grammar_id", "source_hash",
+                "source_size", "string_count", "offsets_off", "pool_off", "pool_bytes",
+                "nodes_off", "node_count", "root", "total_size",
+            ),
+            struct.unpack_from("<4sHHIIQQ8IQ", gir_bytes, 0),
+        ))
+        gir_offsets = struct.unpack_from(f"<{gir_hdr['string_count'] + 1}I", gir_bytes, gir_hdr["offsets_off"])
+        gir_pool = gir_bytes[gir_hdr["pool_off"] : gir_hdr["pool_off"] + gir_hdr["pool_bytes"]]
+        gir_strings = [
+            gir_pool[gir_offsets[i] : gir_offsets[i + 1] - 1].decode("utf-8")
+            for i in range(gir_hdr["string_count"])
+        ]
+        gir_nodes = [
+            struct.unpack_from("<HHIIIIIIIII", gir_bytes, gir_hdr["nodes_off"] + ni * 40)
+            for ni in range(gir_hdr["node_count"])
+        ]
+        py_verify_ast = session.parse(session.tokenize(source_code, "bench"), "bench", trace="off")
+        root_gir = gir_nodes[gir_hdr["root"]]
+        # root_gir is RootRule; its single child is the Many(...) ARRAY node containing all top-level statements
+        top_arr_gir = gir_nodes[root_gir[8]] if root_gir[10] == 1 and gir_strings[gir_nodes[root_gir[8]][2]] == "ARRAY" else root_gir
+        assert top_arr_gir[10] == len(py_verify_ast), (
+            f"Top-level AST node count mismatch: C={top_arr_gir[10]} vs Python={len(py_verify_ast)}"
+        )
+        cur_child_idx = top_arr_gir[8]
+        for idx, py_stmt in enumerate(py_verify_ast):
+            c_stmt_node = gir_nodes[cur_child_idx]
+            c_inner_node = gir_nodes[c_stmt_node[8]] if gir_strings[c_stmt_node[2]] == "TopLevel" and c_stmt_node[8] else c_stmt_node
+            c_rule_name = gir_strings[c_inner_node[2]]
+            py_rule_name = getattr(py_stmt, "name", None) or type(py_stmt).__name__
+            assert c_rule_name == py_rule_name, (
+                f"Statement #{idx} rule mismatch: C={c_rule_name} vs Python={py_rule_name}"
+            )
+            cur_child_idx = c_stmt_node[9]
+        print(f"      Verified differential AST equivalence ({len(py_verify_ast)} top-level declarations, {gir_hdr['node_count'] - 1:,} GIR nodes)")
+        del py_verify_ast
+
         print("\n[3/3] Executing differential benchmarks...")
 
-        # Warmup Python
+        # 1. Benchmark Python Default (trace='basic', full telemetry)
+        session.config["LEXER_ADD_INFO"] = True
+        session.config["PARSER_ADD_INFO"] = True
+        session.config["AST_ADD_INFO"] = True
         for _ in range(args.warmup):
             toks = session.tokenize(source_code, "bench")
-            session.parse(toks, "bench")
+            session.parse(toks, "bench", trace="basic")
 
-        # Benchmark Python
-        print(f"      Running Python (Lexer + Parser + AST) [{args.iterations} runs]...")
+        print(f"      Running Python Default (trace='basic') [{args.iterations} runs]...")
         py_times: list[float] = []
         for _ in range(args.iterations):
             t0 = time.perf_counter()
             toks = session.tokenize(source_code, "bench")
-            ast = session.parse(toks, "bench")
+            ast = session.parse(toks, "bench", trace="basic")
             t1 = time.perf_counter()
             py_times.append(t1 - t0)
+            del toks
+            del ast
+
+        # 2. Benchmark Python Pure Engine (trace='off', telemetry disabled)
+        session.config["LEXER_ADD_INFO"] = False
+        session.config["PARSER_ADD_INFO"] = False
+        session.config["AST_ADD_INFO"] = False
+        for _ in range(args.warmup):
+            toks = session.tokenize(source_code, "bench")
+            session.parse(toks, "bench", trace="off")
+
+        print(f"      Running Python Pure Engine (trace='off') [{args.iterations} runs]...")
+        py_notrace_times: list[float] = []
+        for _ in range(args.iterations):
+            t0 = time.perf_counter()
+            toks = session.tokenize(source_code, "bench")
+            ast = session.parse(toks, "bench", trace="off")
+            t1 = time.perf_counter()
+            py_notrace_times.append(t1 - t0)
             del toks
             del ast
 
@@ -377,29 +444,44 @@ def main() -> None:
         c_batch_exe = temp_dir / "batch_c.exe" if os.name == "nt" else temp_dir / "batch_c"
 
         batch_code = f"""
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "gram_driver.h"
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef _WIN32
 #include <windows.h>
+static double bench_now_sec(void) {{
+    LARGE_INTEGER freq, counter;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&counter);
+    return (double)counter.QuadPart / (double)freq.QuadPart;
+}}
+#else
+#include <time.h>
+static double bench_now_sec(void) {{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}}
+#endif
 
 int main(void) {{
-    LARGE_INTEGER freq, t0, t1;
-    QueryPerformanceFrequency(&freq);
-
     const int iters = {args.iterations};
     double times[{args.iterations}];
 
     for (int i = 0; i < iters; i++) {{
         GramParseResult r;
         GramDriverError err;
-        QueryPerformanceCounter(&t0);
+        double t0 = bench_now_sec();
         GramDriverStatus st = gram_parse_file("{src_file.as_posix()}", &r, &err);
-        QueryPerformanceCounter(&t1);
+        double t1 = bench_now_sec();
         if (st != GRAM_DRIVER_OK) {{
             fprintf(stderr, "Error: %s\\n", err.message);
             return 1;
         }}
-        times[i] = (double)(t1.QuadPart - t0.QuadPart) / (double)freq.QuadPart;
+        times[i] = t1 - t0;
         gram_parse_result_free(&r);
     }}
 
@@ -439,25 +521,29 @@ int main(void) {{
     # Statistics
     py_median = statistics.median(py_times)
     py_mean = statistics.mean(py_times)
+    py_nt_median = statistics.median(py_notrace_times)
+    py_nt_mean = statistics.mean(py_notrace_times)
     c_median = statistics.median(c_times)
     c_mean = statistics.mean(c_times)
 
-    speedup = py_median / c_median if c_median > 0 else float("inf")
+    speedup_default = py_median / c_median if c_median > 0 else float("inf")
+    speedup_notrace = py_nt_median / c_median if c_median > 0 else float("inf")
     py_throughput_mb = (byte_count / (1024 * 1024)) / py_median
+    py_nt_throughput_mb = (byte_count / (1024 * 1024)) / py_nt_median
     c_throughput_mb = (byte_count / (1024 * 1024)) / c_median
 
-    print("\n" + "=" * 78)
+    print("\n" + "=" * 96)
     print("  Benchmark Results Summary")
-    print("=" * 78)
-    print(f"Metric                  Python Runtime         Native C11 (AOT)       Speedup")
-    print("-" * 78)
-    print(f"Median Time:            {py_median * 1000:10.3f} ms        {c_median * 1_000_000:10.1f} µs        {speedup:8.1f}x")
-    print(f"Mean Time:              {py_mean * 1000:10.3f} ms        {c_mean * 1_000_000:10.1f} µs        {py_mean / c_mean:8.1f}x")
-    print(f"Throughput:             {py_throughput_mb:10.2f} MB/s      {c_throughput_mb:10.2f} MB/s       {speedup:8.1f}x")
-    print(f"Lines / Second:         {line_count / py_median:10.0f} l/s       {line_count / c_median:10.0f} l/s      {speedup:8.1f}x")
-    print("=" * 78)
-    print(f"\nConclusion: The native C11 AOT frontend is ~{speedup:,.0f}x faster than Python")
-    print(f"on the complete end-to-end pipeline (File -> Lexer -> Parser -> AST Arena).\n")
+    print("=" * 96)
+    print(f"Metric             Python (trace='basic')   Python (trace='off')     Native C11 (AOT)      Speedup (vs off / basic)")
+    print("-" * 96)
+    print(f"Median Time:       {py_median * 1000:14.3f} ms   {py_nt_median * 1000:14.3f} ms   {c_median * 1_000_000:13.1f} µs   {speedup_notrace:7.1f}x / {speedup_default:7.1f}x")
+    print(f"Mean Time:         {py_mean * 1000:14.3f} ms   {py_nt_mean * 1000:14.3f} ms   {c_mean * 1_000_000:13.1f} µs   {py_nt_mean / c_mean:7.1f}x / {py_mean / c_mean:7.1f}x")
+    print(f"Throughput:        {py_throughput_mb:14.2f} MB/s {py_nt_throughput_mb:14.2f} MB/s {c_throughput_mb:13.2f} MB/s  {speedup_notrace:7.1f}x / {speedup_default:7.1f}x")
+    print(f"Lines / Second:    {line_count / py_median:14.0f} l/s  {line_count / py_nt_median:14.0f} l/s  {line_count / c_median:13.0f} l/s {speedup_notrace:7.1f}x / {speedup_default:7.1f}x")
+    print("=" * 96)
+    print(f"\nConclusion: The native C11 AOT frontend is ~{speedup_notrace:,.0f}x faster than pure Python (trace='off')")
+    print(f"and ~{speedup_default:,.0f}x faster than Python default mode on the end-to-end pipeline.\n")
 
 
 if __name__ == "__main__":

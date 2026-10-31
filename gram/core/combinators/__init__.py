@@ -9,6 +9,7 @@ from __future__ import annotations
 from . import (
     alternative,
     base,
+    capture_raw,
     conditional,
     convert,
     enclosed,
@@ -48,6 +49,7 @@ from .base import (
     RuleType,
     SetCode,
 )
+from .capture_raw import CaptureRaw, RawNode
 from .conditional import If
 from .convert import Convert
 from .enclosed import Enclosed
@@ -119,6 +121,7 @@ __all__ = [
     "Alt",
     "ArithmeticExpr",
     "ArrayNode",
+    "CaptureRaw",
     # Base Classes & Metadata
     "AutoCode",
     "BacktrackSignal",
@@ -160,6 +163,7 @@ __all__ = [
     "Preprocess",
     "PredictivePlan",
     "PredictiveProfile",
+    "RawNode",
     "Ref",
     "Req",
     "RuleItem",
@@ -180,6 +184,7 @@ __all__ = [
     # Submodules
     "alternative",
     "base",
+    "capture_raw",
     "conditional",
     "convert",
     "enclosed",

@@ -354,6 +354,7 @@ class _Analyzer:
         from gram.core.combinators.tokenize import Tokenize
         from gram.core.combinators.until import Until
         from gram.core.combinators.until_indent import UntilIndent
+        from gram.core.combinators.capture_raw import CaptureRaw
 
         if isinstance(combinator, MatchKeyword):
             return _atomic(frozenset({("keyword", combinator.keyword)}))
@@ -542,7 +543,7 @@ class _Analyzer:
                 reasons=("flow-control signal changes alternative semantics",),
             )
 
-        if isinstance(combinator, (Separator, Until, UntilIndent)):
+        if isinstance(combinator, (Separator, Until, UntilIndent, CaptureRaw)):
             return _unknown(f"{combinator.type()} has variable consumption")
 
         return _unknown(f"unsupported combinator type: {combinator.type()}")

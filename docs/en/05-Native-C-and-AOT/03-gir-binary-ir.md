@@ -1,0 +1,115 @@
+# Gram Binary Intermediate Representation (GIR 1.0)
+
+> **Module:** `gram.core.parser.c_driver`  
+> **Format Version:** `1.0` (`GIR\0`)  
+> **Status:** Stable (Version `2.1.0`)
+
+Gram Binary IR (`GIR`) is a compact, relocatable, zero-copy binary serialization format for Abstract Syntax Trees produced by the native C parser. It allows compilers, linters, and analysis tools to stream, cache, and traverse parsed ASTs without paying the serialization or deserialization costs of JSON, XML, or protobufs.
+
+---
+
+## 1. Binary Layout Specification
+
+A `.gir` binary buffer consists of three contiguous, 8-byte aligned sections:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Header (72 bytes)                                        │
+│    Magic: "GIR\0" | Major: 1, Minor: 0                      │
+│    Grammar ID, Source Hash, Source Size, Offsets, Counts    │
+├─────────────────────────────────────────────────────────────┤
+│ 2. Deduplicated UTF-8 String Pool                           │
+│    Offsets Table (uint32_t[string_count + 1])               │
+│    Contiguous Null-Terminated Strings (pool_bytes)          │
+├─────────────────────────────────────────────────────────────┤
+│ 3. Dense Node Table (40 bytes per node)                     │
+│    Nodes 0..N (8-byte aligned)                              │
+│    Node 0: Reserved NULL node                               │
+│    Node 1..N: Preorder AST nodes                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. Header Structure (`GramIrHeader`, 72 bytes)
+
+```c
+typedef struct GramIrHeader {
+    char     magic[4];       /* Always "GIR\0" (0x00524947) */
+    uint16_t major;          /* Format major version (1) */
+    uint16_t minor;          /* Format minor version (0) */
+    uint32_t flags;          /* Format flags (bit 0: little-endian) */
+    uint32_t header_size;    /* Size of this header in bytes (72) */
+    uint64_t grammar_id;     /* 64-bit FNV-1a fingerprint of the grammar */
+    uint64_t source_hash;    /* 64-bit FNV-1a hash of the source text */
+    uint64_t source_size;    /* Original source size in bytes */
+    uint32_t string_count;   /* Number of unique strings in the pool */
+    uint32_t offsets_off;    /* File offset of the string offsets table */
+    uint32_t pool_off;       /* File offset of the string byte buffer */
+    uint32_t pool_bytes;     /* Total size of the string pool in bytes */
+    uint32_t nodes_off;      /* File offset of the node table (8-byte aligned) */
+    uint32_t node_count;     /* Total node count (including dummy node 0) */
+    uint32_t root_index;     /* Index of the root AST node in the node table */
+    uint64_t total_size;     /* Total file size in bytes */
+} GramIrHeader;
+```
+
+---
+
+## 3. Node Structure (`GramIrNode`, 40 bytes)
+
+Nodes use array indices rather than machine memory pointers, making the entire file relocatable across memory spaces and architectures:
+
+```c
+typedef struct GramIrNode {
+    uint16_t kind;           /* Node kind identifier */
+    uint16_t flags;          /* Classification flags (see table below) */
+    uint32_t symbol_index;   /* Index into string pool (rule name / lexeme) */
+    uint32_t value;          /* Extra metadata payload */
+    uint32_t src_start;      /* Byte offset in original UTF-8 source text */
+    uint32_t src_length;     /* Byte length in original UTF-8 source text */
+    uint32_t line;           /* 1-based line number */
+    uint32_t column;         /* 0-based column number */
+    uint32_t first_child;    /* Index of first child node (0 if none) */
+    uint32_t next_sibling;   /* Index of next sibling node (0 if none) */
+    uint32_t child_count;    /* Number of direct children */
+} GramIrNode;
+```
+
+### Node Classification Flags
+| Flag Constant | Value | Description |
+| :--- | :--- | :--- |
+| `GRAM_IR_NODE_TERMINAL` | `0x01` | Leaf terminal node (keyword, identifier, symbol, number, string). |
+| `GRAM_IR_NODE_RULE` | `0x02` | Composite grammar rule node (`ASTRef`). |
+| `GRAM_IR_NODE_EXPR` | `0x04` | Pratt expression node (`EXPR_UNARY` or `EXPR_BINARY`). |
+| `GRAM_IR_NODE_ARRAY` | `0x08` | Sequence or delimited array (`ARRAY`). |
+| `GRAM_IR_NODE_RAW` | `0x10` | Opaque raw code block captured via `CaptureRaw` (`RAW`). |
+
+---
+
+## 4. C View API (`GramIrView`)
+
+The `GramIrView` API allows reading and validating a `.gir` file without copying memory:
+
+```c
+#include "gram_ir.h"
+
+GramIrView view;
+if (gram_ir_read_file("output.gir", &view) == GRAM_IR_OK) {
+    if (gram_ir_view_matches_grammar(&view)) {
+        printf("Valid GIR for grammar 0x%llx with %u nodes\n",
+               (unsigned long long)view.header->grammar_id,
+               view.header->node_count);
+        
+        /* Dump tree structure in human-readable indented format */
+        gram_ir_dump(&view, stdout);
+    }
+    gram_ir_view_free(&view);
+}
+```
+
+### Structural Validation & Cycle Rejection
+`gram_ir_view_init()` performs comprehensive validation before accepting a binary buffer:
+- Verifies magic number, versions, and total buffer size.
+- Ensures all offsets and sizes fit within buffer bounds and follow 8-byte alignment.
+- Performs iterative preorder validation to detect corrupted child links, out-of-range sibling indices, or cyclic loops.

@@ -15,12 +15,22 @@ Combinators integrate with:
 | :--- | :--- | :--- |
 | **[01. Matching](./01-matching.md)** | `MatchToken`, `MatchKeyword`, `MatchGroup`, `MatchSeqSymbol`, `generador_expr` | Consume a single token by `Token` type, keyword string, `WordGroup`, or regex pattern. |
 | **[02. Structural](./02-structural.md)** | `Seq`, `Alt`, `Opt`, `Enclosed` | Ordered sequences (`+`), prioritized alternatives (`\|`), optional clauses ($0..1$), and bracket-delimited blocks. |
-| **[03. Repetition](./03-repetition.md)** | `Many`, `Some`, `Until`, `UntilIndent`, `Separator` | $0..n$ and $1..n$ loops, token scanning up to a target combinator or indentation level, and delimited lists (`ArrayNode`). |
+| **[03. Repetition](./03-repetition.md)** | `Many`, `Some`, `Until`, `UntilIndent`, `Separator`, `CaptureRaw` | $0..n$ and $1..n$ loops, token scanning up to a target combinator or indentation level, delimited lists (`ArrayNode`), and raw block captures (`RawNode`). |
 | **[04. Rules & Storage](./04-rules-and-storage.md)** | `RuleItem`, `Ref`, `Item`, `Literal`, `Save`, `Load` | Declarative production rules, rule references (`ASTRef`), atomic token sequences (`ItemNode`), primitive literals (`LiteralNode`), and `parser.storage` operations. |
-| **[05. Lookahead & Control](./05-lookahead-and-control.md)** | `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator` | Zero-width positive/negative lookahead, conditional branching, control-flow signals, token position tagging (`parser.tk_tags`), composite tokens, and error capture. |
+| **[05. Lookahead & Control](./05-lookahead-and-control.md)** | `Peek`, `Not`, `If`, `Skip`, `Tag`, `Tokenize`, `ErrorCombinator`, `SameLine` | Zero-width lookahead, conditional branching, control-flow signals, token tagging, composite tokens, error capture, and line continuity. |
 | **[06. Fluent Validation](./06-fluent-validation.md)** | `Req` | Chained token value validations and in-place transformations on a cloned token before AST delegation. |
 | **[08. Preprocessing and Expectations](./08-preprocessing-and-expectations.md)** | `Preprocess`, `Convert`, `Expected` | Custom validations, logical identifier conversions, and strict flow assertions. |
 | **[07. Pratt Expressions](./07-expressions.md)** | `ArithmeticExpr`, `ConditionalExpr`, `DualExpr` | Top-Down Operator Precedence (Pratt) expression parsing for prefix unary (`ASTUnaryOp`) and infix binary (`ASTBinaryOp`) operators. |
+
+---
+
+## Semantic Signatures and AOT Compilability (`CombinatorKind`)
+
+Gram provides a formal classification for all 32 native combinators in `gram.core.combinators.kinds`:
+- **`CombinatorKind`:** An enumeration identifying the combinator's formal role (`MATCH_TOKEN`, `MATCH_KEYWORD`, `SEQ`, `ALT`, `MANY`, `EXPR_PRATT`, `CAPTURE_RAW`, etc.).
+- **`COMPILABLE_COMBINATOR_KINDS`:** The strict, closed set of combinator kinds supported by the Ahead-Of-Time (AOT) C parser generator.
+- **`is_compilable_combinator(comb)`:** Returns `True` if `comb` has a compilable declarative kind in C (or `False` if it requires an arbitrary Python callback or runtime introspection).
+- Attempting to compile non-compilable combinators (like `Convert` or external unsupported combinators) raises `GrammarCompilerError` upfront during AOT export.
 
 ---
 

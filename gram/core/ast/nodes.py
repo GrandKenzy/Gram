@@ -122,6 +122,65 @@ class ArrayNode(ASTNode):
         return f"ArrayNode(items={list(self.items)!r}, trailing={self.trailing})"
 
 
+class RawNode(ASTNode):
+    """
+    AST node representing an unparsed, opaque raw block of code or text
+    (e.g., inline assembler, shader payloads, embedded DSL snippets).
+    """
+    __slots__ = ('tokens', 'text')
+
+    def __init__(self, tokens: Sequence[TokenType], text: str = "") -> None:
+        """
+        Initialize a RawNode with the captured tokens and verbatim text.
+
+        Args:
+            tokens (Sequence[TokenType]): Tokens captured within the raw block.
+            text (str): Verbatim or formatted source text of the raw block.
+        """
+        self.tokens: tuple[TokenType, ...] = tuple(tokens)
+        self.text: str = text
+
+    @property
+    def line(self) -> int:
+        """1-based starting line of the raw block (0 if empty)."""
+        return self.tokens[0].line if self.tokens else 0
+
+    @property
+    def col(self) -> int:
+        """0-based starting column of the raw block (0 if empty)."""
+        return self.tokens[0].col if self.tokens else 0
+
+    @property
+    def end_line(self) -> int:
+        """1-based ending line of the raw block (0 if empty)."""
+        return self.tokens[-1].line if self.tokens else 0
+
+    @property
+    def end_col(self) -> int:
+        """0-based ending column of the raw block (0 if empty)."""
+        return self.tokens[-1].long() if self.tokens else 0
+
+    def __len__(self) -> int:
+        return len(self.tokens)
+
+    def __iter__(self):
+        return iter(self.tokens)
+
+    def __getitem__(self, idx: int) -> TokenType:
+        return self.tokens[idx]
+
+    def __bool__(self) -> bool:
+        return True
+
+    def __repr__(self) -> str:
+        return f"RawNode(tokens={len(self.tokens)}, text={self.text!r})"
+
+    def __eq__(self, value: object) -> bool:
+        if isinstance(value, RawNode):
+            return self.tokens == value.tokens and self.text == value.text
+        return False
+
+
 __all__ = [
     'ArrayNode',
     'ASTKeyword',
@@ -132,4 +191,5 @@ __all__ = [
     'LiteralNumber',
     'LiteralString',
     'LiteralSymbol',
+    'RawNode',
 ]

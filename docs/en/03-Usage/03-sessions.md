@@ -351,3 +351,30 @@ print(f"SQL AST Nodes generated: {len(sql_ast)}")  # 1 SelectQuery node
 mixed_test = sql_session.tokenize("int score", "test.sql")
 print(mixed_test[0].token)  # Token.IDENT (not Token.KEYWORD!)
 ```
+
+---
+
+## 7. Ahead-Of-Time (AOT) C Compilation from a Session
+
+A `Session` can export its complete lexical and grammatical definition into autonomous, zero-dependency C11 source files:
+
+```python
+manifest = c_session.export_c_parser(
+    "build/c_dialect",
+    emit_driver=True,  # Emits unified driver and binary GIR serializers
+    emit_cli=True,     # Emits a standalone command-line executable (gram_cli.c)
+)
+
+print("Generated C files:", manifest["files"])
+print("Grammar fingerprint:", manifest["grammar_id"])
+```
+
+The exported directory contains:
+- `gram_ast.h`, `gram_ast.c`: Compact AST node arena and transactional undo log.
+- `gram_parser.h`, `gram_parser.c`: Recursive-descent Pratt parser with predictive branch jump tables.
+- `gram_lexer_*.c`: Static hash tables for session keywords, groups, and operators.
+- `gram_driver.h`, `gram_driver.c`: Unified driver, zero-copy file reader, and error reporter.
+- `gram_ir.h`, `gram_ir.c`: Relocatable binary intermediate representation (GIR 1.0).
+- `gram_cli.c`: Standalone command-line interface with `compile`, `check`, `ast`, and `ir` modes.
+- `gram_parser_manifest.json`: Verification manifest containing SHA-256 hashes and build metadata.
+

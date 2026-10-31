@@ -19,6 +19,7 @@ from gram.core.ast.nodes import (
     LiteralNumber,
     LiteralString,
     LiteralSymbol,
+    RawNode,
 )
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     'LiteralNumber',
     'LiteralString',
     'LiteralSymbol',
+    'RawNode',
 ]

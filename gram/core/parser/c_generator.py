@@ -61,6 +61,7 @@ from gram.core.combinators.separator import Separator
 from gram.core.combinators.sequence import Seq
 from gram.core.combinators.some import Some
 from gram.core.combinators.until import Until
+from gram.core.combinators.capture_raw import CaptureRaw
 from gram.core.lexer.tokens import Token
 
 if TYPE_CHECKING:
@@ -230,6 +231,13 @@ class CParserGenerator:
                 self._register_rule(target)
             elif isinstance(target, Combinator):
                 self._crawl_combinator(target, f"{context_path}.Ref")
+            else:
+                raise GrammarCompilerError(
+                    "InvalidRefTarget",
+                    errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                    f"El combinador 'Ref' en '{context_path}' apunta a un objetivo inválido ({target!r}).",
+                    "Use una subclase de RuleItem o una instancia de Combinator compilable.",
+                )
         elif isinstance(comb, (Seq, Alt, Item)):
             children = getattr(comb, "combinators", ()) or getattr(comb, "matchs", ())
             for i, child in enumerate(children):
@@ -247,6 +255,9 @@ class CParserGenerator:
         elif isinstance(comb, Until):
             if getattr(comb, "target", None) is not None:
                 self._crawl_combinator(comb.target, f"{context_path}.Until.target")
+        elif isinstance(comb, CaptureRaw):
+            if getattr(comb, "target", None) is not None:
+                self._crawl_combinator(comb.target, f"{context_path}.CaptureRaw.target")
         elif isinstance(comb, BaseExpr):
             if cid not in self.expr_comb_ids:
                 eid = len(self.expr_combs)
@@ -296,6 +307,7 @@ class CParserGenerator:
             "    GRAM_AST_EXPR_BINARY,",
             "    GRAM_AST_EXPR_UNARY,",
             "    GRAM_AST_ARRAY,",
+            "    GRAM_AST_RAW,",
         ]
 
         # Rule node kinds
@@ -466,6 +478,7 @@ class CParserGenerator:
             '        case GRAM_AST_EXPR_BINARY: return "EXPR_BINARY";',
             '        case GRAM_AST_EXPR_UNARY: return "EXPR_UNARY";',
             '        case GRAM_AST_ARRAY: return "ARRAY";',
+            '        case GRAM_AST_RAW: return "RAW";',
         ]
 
         for rule_cls in self.rules:
@@ -650,7 +663,7 @@ class CParserGenerator:
             '    gram_parser_skip_whitespace(p);',
             '    if (p->cursor < p->token_count) {',
             '        const GramToken *tok = &p->tokens[p->cursor];',
-            '        if (tok->length == sym_len && memcmp(p->source + tok->start, sym, sym_len) == 0) {',
+            '        if (tok->kind != GRAM_TOKEN_ERROR && tok->kind != GRAM_TOKEN_EOF && tok->length == sym_len && memcmp(p->source + tok->start, sym, sym_len) == 0) {',
             '            uint32_t tok_idx = (uint32_t)p->cursor++;',
             '            if (out_node && p->arena) {',
             '                uint32_t n = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_SYMBOL, 0, tok_idx);',
@@ -668,7 +681,7 @@ class CParserGenerator:
             '    gram_parser_skip_whitespace(p);',
             '    if (p->cursor < p->token_count) {',
             '        const GramToken *tok = &p->tokens[p->cursor];',
-            '        if (tok->kind != GRAM_TOKEN_KEYWORD && tok->kind != GRAM_TOKEN_EOF) {',
+            '        if (tok->kind != GRAM_TOKEN_KEYWORD && tok->kind != GRAM_TOKEN_EOF && tok->kind != GRAM_TOKEN_ERROR) {',
             '            uint32_t tok_idx = (uint32_t)p->cursor++;',
             '            if (out_node && p->arena) {',
             '                uint32_t n = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_LITERAL, 0, tok_idx);',
@@ -686,7 +699,7 @@ class CParserGenerator:
             '    gram_parser_skip_whitespace(p);',
             '    if (p->cursor < p->token_count) {',
             '        const GramToken *tok = &p->tokens[p->cursor];',
-            '        if (tok->kind != GRAM_TOKEN_KEYWORD && tok->kind != GRAM_TOKEN_EOF && tok->length == val_len) {',
+            '        if (tok->kind != GRAM_TOKEN_KEYWORD && tok->kind != GRAM_TOKEN_EOF && tok->kind != GRAM_TOKEN_ERROR && tok->length == val_len) {',
             '            if (memcmp(p->source + tok->start, val, val_len) == 0) {',
             '                uint32_t tok_idx = (uint32_t)p->cursor++;',
             '                if (out_node && p->arena) {',
@@ -736,6 +749,7 @@ class CParserGenerator:
             lines.append("    gram_parser_skip_whitespace(p);")
             lines.append("    if (p->cursor >= p->token_count) return false;")
             lines.append("    const GramToken *tok = &p->tokens[p->cursor];")
+            lines.append("    if (tok->kind == GRAM_TOKEN_ERROR || tok->kind == GRAM_TOKEN_EOF) return false;")
             lines.append("    const char *src = p->source + tok->start;")
             lines.append("    size_t len = tok->length;")
             lines.append("    bool matched = false;")
@@ -943,6 +957,8 @@ class CParserGenerator:
 
         if isinstance(comb, Ref):
             target = comb.rule
+            if isinstance(target, Combinator):
+                return self._compute_first_set(target, visited_rules)
             if not (isinstance(target, type) and issubclass(target, RuleItem)):
                 return (True, None, None)
             if target in visited_rules:
@@ -972,6 +988,9 @@ class CParserGenerator:
                     else:
                         acc_kws |= r_kws
             return (False, acc_toks, acc_kws)
+
+        if isinstance(comb, (Until, CaptureRaw)):
+            return (False, None, None)
 
         return (True, None, None)
 
@@ -1168,9 +1187,25 @@ class CParserGenerator:
                 return f"gram_match_literal_any(p, {out_node_expr})"
             vstr = str(lit).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
             return f'gram_match_literal_str(p, "{vstr}", {len(str(lit).encode("utf-8"))}u, {out_node_expr})'
-        if isinstance(comb, Ref) and isinstance(comb.rule, type) and issubclass(comb.rule, RuleItem):
-            return f"gram_parse_rule_{self.rule_names[comb.rule]}(p, {out_node_expr})"
+        if isinstance(comb, Ref):
+            if isinstance(comb.rule, type) and issubclass(comb.rule, RuleItem):
+                return f"gram_parse_rule_{self.rule_names[comb.rule]}(p, {out_node_expr})"
+            if isinstance(comb.rule, Combinator):
+                return self._compile_combinator_as_expr(comb.rule, out_node_expr)
         return "false"
+
+    def _compile_token_condition(self, tok_var: str, delim: Token | str) -> str:
+        """Compile a fast C token/symbol matching boolean condition for delimiter balancing."""
+        if isinstance(delim, Token):
+            return f"({tok_var}->kind == GRAM_TOKEN_{delim.name})"
+        elif isinstance(delim, str):
+            esc = delim.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+            dlen = len(delim.encode("utf-8"))
+            return f"({tok_var}->length == {dlen}u && memcmp(p->source + {tok_var}->start, \"{esc}\", {dlen}u) == 0)"
+        else:
+            s = str(delim)
+            dlen = len(s.encode("utf-8"))
+            return f"({tok_var}->length == {dlen}u && memcmp(p->source + {tok_var}->start, \"{s}\", {dlen}u) == 0)"
 
     def _compile_combinator(self, comb: Combinator, parent_node_var: str, indent: int) -> str:
         """Compile a combinator statement tree into C lines with variable `ok`."""
@@ -1260,8 +1295,15 @@ class CParserGenerator:
                     # destino del padre para insertar sus hijos directamente en él.
                     inline_target = parent_node_var if parent_node_var else "NULL"
                     lines.append(f"{pfx}ok = gram_parse_rule_{rname}(p, {inline_target});")
+            elif isinstance(target, Combinator):
+                lines.append(self._compile_combinator(target, parent_node_var, indent))
             else:
-                lines.append(f"{pfx}ok = true;")
+                raise GrammarCompilerError(
+                    "InvalidRefTarget",
+                    errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                    f"El combinador 'Ref' apunta a un objetivo no compilable ({target!r}).",
+                    "Use una subclase de RuleItem o una instancia de Combinator compilable.",
+                )
 
         elif isinstance(comb, (Seq, Item)):
             children = getattr(comb, "combinators", ()) or getattr(comb, "matchs", ())
@@ -1423,8 +1465,6 @@ class CParserGenerator:
             matched_var = f"until_matched_{indent}"
             cnt_var = f"until_count_{indent}"
             target_cp = f"target_cp_{indent}"
-            target_node = f"target_node_{indent}"
-            target_tgt = f"target_out_{indent}"
 
             lines.append(f"{pfx}{{")
             lines.append(f"{pfx}    GramParserCheckpoint {init_cp} = gram_parser_save(p);")
@@ -1440,23 +1480,19 @@ class CParserGenerator:
             lines.append(f"{pfx}    (void){cnt_var};")
             lines.append(f"{pfx}    while (p->cursor <= p->token_count && (!p->arena || !p->arena->has_error)) {{")
             lines.append(f"{pfx}        GramParserCheckpoint {target_cp} = gram_parser_save(p);")
-            lines.append(f"{pfx}        uint32_t {target_node} = 0;")
-            lines.append(f"{pfx}        uint32_t *{target_tgt} = &{target_node};")
-            lines.append(self._compile_combinator(target_comb, target_tgt, indent + 2))
+            target_parent = arr_tgt if consume_target else "NULL"
+            lines.append(self._compile_combinator(target_comb, target_parent, indent + 2))
             lines.append(f"{pfx}        if (ok) {{")
             if not consume_target:
                 lines.append(f"{pfx}            gram_parser_restore(p, {target_cp});")
-            else:
-                lines.append(f"{pfx}            if ({target_node} && {arr_var} && p->arena) {{")
-                lines.append(f"{pfx}                gram_ast_add_child(p->arena, {arr_var}, {target_node});")
-                lines.append(f"{pfx}            }}")
             lines.append(f"{pfx}            {matched_var} = true;")
             lines.append(f"{pfx}            break;")
             lines.append(f"{pfx}        }}")
             lines.append(f"{pfx}        gram_parser_restore(p, {target_cp});")
             if max_tokens is not None and max_tokens >= 0:
                 lines.append(f"{pfx}        if ({cnt_var} >= {max_tokens}u) break;")
-            lines.append(f"{pfx}        if (p->cursor >= p->token_count) break;")
+            lines.append(f"{pfx}        gram_parser_skip_whitespace(p);")
+            lines.append(f"{pfx}        if (p->cursor >= p->token_count || p->tokens[p->cursor].kind == GRAM_TOKEN_EOF || p->tokens[p->cursor].kind == GRAM_TOKEN_ERROR) break;")
             lines.append(f"{pfx}        uint32_t tok_idx_{indent} = (uint32_t)p->cursor++;")
             lines.append(f"{pfx}        if ({arr_var} && p->arena) {{")
             lines.append(f"{pfx}            uint32_t item_node_{indent} = gram_ast_arena_alloc(p->arena, GRAM_AST_TERMINAL_TOKEN, 0, tok_idx_{indent});")
@@ -1474,6 +1510,78 @@ class CParserGenerator:
             child_stmt = add_child_stmt(arr_var)
             if child_stmt:
                 lines.append(f"{pfx}        {child_stmt}")
+            lines.append(f"{pfx}    }} else {{")
+            lines.append(f"{pfx}        gram_parser_restore(p, {init_cp});")
+            lines.append(f"{pfx}        ok = false;")
+            lines.append(f"{pfx}    }}")
+            lines.append(f"{pfx}}}")
+
+        elif isinstance(comb, CaptureRaw):
+            target_comb = comb.target
+            consume_target = comb.consume_target
+            balance_delims = comb.balance_delimiters
+            max_tokens = comb.max_tokens
+
+            init_cp = f"raw_init_cp_{indent}"
+            matched_var = f"raw_matched_{indent}"
+            cnt_var = f"raw_cnt_{indent}"
+            depth_var = f"raw_depth_{indent}"
+            start_tok_var = f"raw_start_tok_{indent}"
+            target_cp = f"raw_tgt_cp_{indent}"
+            raw_node_var = f"raw_node_{indent}"
+
+            lines.append(f"{pfx}{{")
+            lines.append(f"{pfx}    GramParserCheckpoint {init_cp} = gram_parser_save(p);")
+            lines.append(f"{pfx}    uint32_t {start_tok_var} = (uint32_t)p->cursor;")
+            lines.append(f"{pfx}    size_t {depth_var} = 0;")
+            lines.append(f"{pfx}    (void){depth_var};")
+            lines.append(f"{pfx}    size_t {cnt_var} = 0;")
+            lines.append(f"{pfx}    (void){cnt_var};")
+            lines.append(f"{pfx}    bool {matched_var} = false;")
+            lines.append(f"{pfx}    while (p->cursor <= p->token_count && (!p->arena || !p->arena->has_error)) {{")
+            lines.append(f"{pfx}        if ({depth_var} == 0) {{")
+            lines.append(f"{pfx}            GramParserCheckpoint {target_cp} = gram_parser_save(p);")
+            lines.append(self._compile_combinator(target_comb, "NULL", indent + 3))
+            lines.append(f"{pfx}            if (ok) {{")
+            if not consume_target:
+                lines.append(f"{pfx}                gram_parser_restore(p, {target_cp});")
+            lines.append(f"{pfx}                {matched_var} = true;")
+            lines.append(f"{pfx}                break;")
+            lines.append(f"{pfx}            }}")
+            lines.append(f"{pfx}            gram_parser_restore(p, {target_cp});")
+            lines.append(f"{pfx}        }}")
+            if max_tokens is not None and max_tokens >= 0:
+                lines.append(f"{pfx}        if ({cnt_var} >= {max_tokens}u) break;")
+            lines.append(f"{pfx}        if (p->cursor >= p->token_count || p->tokens[p->cursor].kind == GRAM_TOKEN_EOF) break;")
+            lines.append(f"{pfx}        const GramToken *cur_tok_{indent} = &p->tokens[p->cursor++];")
+            lines.append(f"{pfx}        if (cur_tok_{indent}->kind != GRAM_TOKEN_NEWLINE && cur_tok_{indent}->kind != GRAM_TOKEN_INDENT && cur_tok_{indent}->kind != GRAM_TOKEN_DEDENT) {cnt_var}++;")
+            if balance_delims:
+                open_d, close_d = balance_delims
+                open_cond = self._compile_token_condition(f"cur_tok_{indent}", open_d)
+                close_cond = self._compile_token_condition(f"cur_tok_{indent}", close_d)
+                lines.append(f"{pfx}        if ({open_cond}) {{")
+                lines.append(f"{pfx}            {depth_var}++;")
+                lines.append(f"{pfx}        }} else if ({close_cond}) {{")
+                lines.append(f"{pfx}            if ({depth_var} > 0) {depth_var}--;")
+                lines.append(f"{pfx}        }}")
+            lines.append(f"{pfx}    }}")
+            lines.append(f"{pfx}    if ({matched_var} && (!p->arena || !p->arena->has_error)) {{")
+            lines.append(f"{pfx}        uint32_t {raw_node_var} = 0;")
+            lines.append(f"{pfx}        if (p->arena) {{")
+            lines.append(f"{pfx}            {raw_node_var} = gram_ast_arena_alloc(p->arena, GRAM_AST_RAW, 0, {start_tok_var});")
+            lines.append(f"{pfx}            if (!{raw_node_var}) {{")
+            lines.append(f"{pfx}                gram_parser_restore(p, {init_cp});")
+            lines.append(f"{pfx}                ok = false;")
+            lines.append(f"{pfx}            }} else {{")
+            lines.append(f"{pfx}                p->arena->nodes[{raw_node_var}].token_count = (uint32_t)(p->cursor - {start_tok_var});")
+            lines.append(f"{pfx}                ok = true;")
+            child_stmt = add_child_stmt(raw_node_var)
+            if child_stmt:
+                lines.append(f"{pfx}                {child_stmt}")
+            lines.append(f"{pfx}            }}")
+            lines.append(f"{pfx}        }} else {{")
+            lines.append(f"{pfx}            ok = true;")
+            lines.append(f"{pfx}        }}")
             lines.append(f"{pfx}    }} else {{")
             lines.append(f"{pfx}        gram_parser_restore(p, {init_cp});")
             lines.append(f"{pfx}        ok = false;")
@@ -1506,8 +1614,44 @@ class CParserGenerator:
         out: list[str] = []
         for i, r in enumerate(ref_vals):
             target = getattr(r, "rule", None)
-            if not (isinstance(target, type) and issubclass(target, RuleItem)):
+            if isinstance(target, Combinator):
+                expr_call = self._compile_combinator_as_expr(target, "&atom_node")
+                if expr_call != "false":
+                    out.extend([
+                        f"{pfx}/* Ref combinator spec {i} */",
+                        f"{pfx}{{",
+                        f"{pfx}    uint32_t atom_node = 0;",
+                        f"{pfx}    if ({expr_call}) {{",
+                        f"{pfx}        if (out_node) *out_node = atom_node;",
+                        f"{pfx}        return true;",
+                        f"{pfx}    }}",
+                        f"{pfx}    gram_parser_restore(p, cp);",
+                        f"{pfx}}}",
+                    ])
+                else:
+                    out.extend([
+                        f"{pfx}/* Ref compound combinator spec {i} */",
+                        f"{pfx}{{",
+                        f"{pfx}    bool ok = false;",
+                        f"{pfx}    uint32_t atom_arr = p->arena ? gram_ast_arena_alloc(p->arena, GRAM_AST_ARRAY, 0, (uint32_t)p->cursor) : 0;",
+                        f"{pfx}    uint32_t *atom_tgt = &atom_arr;",
+                        self._compile_combinator(target, "atom_tgt", indent + 1),
+                        f"{pfx}    if (ok && (!p->arena || !p->arena->has_error)) {{",
+                        f"{pfx}        if (atom_arr && p->arena) p->arena->nodes[atom_arr].token_count = (uint32_t)(p->cursor - p->arena->nodes[atom_arr].token_start);",
+                        f"{pfx}        if (out_node) *out_node = atom_arr;",
+                        f"{pfx}        return true;",
+                        f"{pfx}    }}",
+                        f"{pfx}    gram_parser_restore(p, cp);",
+                        f"{pfx}}}",
+                    ])
                 continue
+            if not (isinstance(target, type) and issubclass(target, RuleItem)):
+                raise GrammarCompilerError(
+                    "InvalidRefTarget",
+                    errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+                    f"El combinador 'Ref' en expresión apunta a un objetivo no compilable ({target!r}).",
+                    "Use una subclase de RuleItem o una instancia de Combinator compilable.",
+                )
             rname = self.rule_names[target]
             _, r_toks, _ = self._compute_first_set(r)
             if r_toks is not None and len(r_toks) > 0:
@@ -1676,8 +1820,38 @@ class CParserGenerator:
         return "\n".join(lines)
 
 
-def _export_lexer_tables(session: Session, out_path: Path) -> list[str]:
-    """Export the C lexer tables the driver links against and return their file names."""
+def _session_lexical_entropy(session: Session) -> str:
+    """Compute a deterministic canonical summary of the session's lexical specification."""
+    kws = sorted(getattr(session, "keywords", {}).keys())
+    groups_dict = getattr(session, "groups", None)
+    if groups_dict is None:
+        groups_dict = getattr(session, "word_groups", {})
+    groups = []
+    for gname, grp in sorted(groups_dict.items()):
+        items = getattr(grp, "values", None)
+        if items is None:
+            items = getattr(grp, "words", [])
+        members = sorted(w.name if hasattr(w, "name") else str(w) for w in items)
+        groups.append(f"{gname}:{','.join(members)}")
+    syms = sorted(
+        f"{k}:{getattr(v, 'name', v)}"
+        for k, v in getattr(session, "symbols", {}).items()
+    )
+    cfg = sorted(
+        f"{k}:{v!r}"
+        for k, v in getattr(session, "config", {}).items()
+    )
+    return "\n".join([
+        f"mode:{getattr(session, 'mode', 'Single')}",
+        f"keywords:{','.join(kws)}",
+        f"groups:{';'.join(groups)}",
+        f"symbols:{';'.join(syms)}",
+        f"config:{';'.join(cfg)}",
+    ])
+
+
+def _export_lexer_tables(session: Session, out_path: Path) -> dict[str, Any]:
+    """Export the C lexer tables the driver links against and return the lexer manifest."""
     try:
         from tools.export_lexer_tables import export_session_tables
     except ImportError:
@@ -1694,7 +1868,7 @@ def _export_lexer_tables(session: Session, out_path: Path) -> list[str]:
                 "No se pudo importar tools.export_lexer_tables, necesario para el driver C.",
                 "Ejecute la exportación desde el repositorio de Gram o use emit_driver=False.",
             ) from exc
-    return list(export_session_tables(session, out_path)["files"])
+    return export_session_tables(session, out_path)
 
 
 def export_session_c_parser(
@@ -1737,11 +1911,19 @@ def export_session_c_parser(
         "gram_parser.h": gen.generate_parser_header(),
         "gram_parser.c": gen.generate_parser_source(),
     }
+    lexer_manifest: dict[str, Any] | None = None
+    if emit_driver:
+        lexer_manifest = _export_lexer_tables(session, out_path)
+
     rule_names = [gen.rule_names[r] for r in gen.rules]
-    canonical_entropy = "\n".join(
+    entropy_parts = [
         f"{name}:{hashlib.sha256(code.encode('utf-8')).hexdigest()}"
         for name, code in sorted(units.items())
-    )
+    ]
+    entropy_parts.append(f"lexical:{hashlib.sha256(_session_lexical_entropy(session).encode('utf-8')).hexdigest()}")
+    if lexer_manifest is not None and "content_hash" in lexer_manifest:
+        entropy_parts.append(f"lexer_tables:{lexer_manifest['content_hash']}")
+    canonical_entropy = "\n".join(entropy_parts)
     grammar_id = c_driver.grammar_fingerprint(rule_names, extra_entropy=canonical_entropy)
 
     if emit_driver:
@@ -1764,10 +1946,10 @@ def export_session_c_parser(
         "files": list(units),
         "driver": emit_driver,
     }
-    if emit_driver:
+    if emit_driver and lexer_manifest is not None:
         manifest["ir_format"] = f"GIR {c_driver.GIR_VERSION_MAJOR}.{c_driver.GIR_VERSION_MINOR}"
         manifest["grammar_id"] = f"0x{grammar_id:016x}"
-        manifest["lexer_files"] = _export_lexer_tables(session, out_path)
+        manifest["lexer_files"] = list(lexer_manifest["files"])
 
     hasher = hashlib.sha256()
     for content in units.values():

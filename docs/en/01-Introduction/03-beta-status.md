@@ -1,34 +1,35 @@
-# Beta Status (`v2.0.0b2`)
+# Release Status & Stability (`v2.1.0`)
 
-> This page is an archive of the pre-`2.1.0` beta cycle. Gram `2.1.0` is the current stable release.
+> **Current Version:** `2.1.0` (Stable Production Release)
 
-> [!IMPORTANT]
-> **Gram `2.0.0b2` is currently in Beta.**
-> While the core lexical, syntactic, checkpointing, session, and diagnostic engines are actively used in real compiler frontends (such as domain-specific languages and custom scripting engines) and verified by an automated test suite of 179 unit and fuzz tests, minor API adjustments and behavioral refinements may still occur before the final `2.0.0` stable release.
+Gram `2.1.0` is the active, stable release of the Gram Framework. All core subsystems—lexical analysis, transactional backtracking parser combinators, Pratt expression engines, Abstract Syntax Tree construction, isolated language sessions, and the native C AOT compiler with binary IR—are fully implemented, documented, and verified by an automated test suite of **300 passing unit, differential, and fuzz tests**.
 
 ---
 
 ## 1. Subsystem Maturity Matrix
 
-The table below reflects the factual implementation status of each subsystem in the current `2.0.0b2` codebase:
+The table below reflects the implementation and stability status of each subsystem in Gram `2.1.0`:
 
 | Subsystem | Module | Status | Notes |
 | :--- | :--- | :--- | :--- |
-| **Lexer & Token Stream** | `gram.core.lexer` | **Beta (Stable Core)** | Full support for numbers (hex, bin, oct, float, scientific), strings and multiline literals, custom symbols, optional `INDENT`/`DEDENT` tracking, `Keyword`, and `WordGroup`. |
-| **Parser & Checkpoints** | `gram.core.parser` | **Beta (Stable Core)** | Transactional `Checkpoint` save/restore covering `pos`, `vpos`, `bracket_depth`, `storage`, `tk_tags`, and `replace_token_at` overrides. |
-| **Syntactic Combinators** | `gram.core.combinators` | **Beta (Stable Core)** | All available combinators and Pratt expression parsers (`ArithmeticExpr`, `ConditionalExpr`, `DualExpr`) are implemented and covered by regression tests. |
-| **AST & RayTracing** | `gram.core.ast` | **Beta (Stable Core)** | Supports `"off"`, `"basic"`, and `"detailed"` trace modes (`Trace`, `TraceRecord`, `backtracks`, `furthest`) and cursor-weighted failure staging. |
-| **Language Sessions** | `gram.sessions` | **Stable** | Owns isolated lexer catalogs and lexer/parser/AST/error-generation settings, with `load()` compatibility for legacy global readers. |
-| **Diagnostics & Errors** | `gram.utilities`, `gram.errors` | **Beta (Stable Core)** | OSGDC 5-dimension error catalog, `StackError`, `StackInfo` hierarchical telemetry, and `Diagnostics.hook_errors` (`ErrorAction`). |
-| **VSIX & LSP Tooling** | `gram.vsix` | **Beta (Experimental)** | Functional schema indexing (`VSIXAnalyzer`), 24-bit ANSI preview (`ASTColorResolver`), VS Code extension generator (`VSIXGenerator`), `.vsix` packager (`pack_vsix`, `up`), and stdio LSP server (`gram.vsix.lsp.server`). Expect ongoing improvements. |
-| **High-Level `process()` Helper** | `gram.core.process` | **Incomplete Stub** | `gram.process()` currently initializes `Lexer` and `Parser` without executing or returning the AST. Do not rely on `gram.process()` in `2.0.0b2`; use `Lexer` + `Parser` (or `Session.tokenize()` + `Session.parse()`) directly. |
+| **Lexer & Token Stream** | `gram.core.lexer` | **Stable** | Decimal, hex, bin, octal, float, and scientific numbers; prefixed strings (`u8`, `L`) and multiline docstrings; customizable operators with maximal munch; indentation tracking (`spaces`, `tabs`, `mixed`); and keywords/groups. Dual backend support (`python` or `c`). |
+| **Parser & Checkpoints** | `gram.core.parser` | **Stable** | Fully transactional `Checkpoint` save and restore covering cursor `pos`, virtual cursor `vpos`, `bracket_depth`, `storage`, `tk_tags`, in-place token replacements, and hook callbacks. |
+| **Syntactic Combinators** | `gram.core.combinators` | **Stable** | 32 native combinators with formal `CombinatorKind` signatures. Includes matching, sequence, ordered alternative, repetitions, delimiters, Pratt expression engines (`ArithmeticExpr`, `ConditionalExpr`, `DualExpr`), `SameLine`, `Until`, and `CaptureRaw`. |
+| **AST & RayTracing** | `gram.core.ast` | **Stable** | Declarative `RuleItem` hierarchy with `nodeable` transparency, typed node generation (`ASTRef`, `ArrayNode`, `RawNode`, terminals), and diagnostic `RayTracing` (`"off"`, `"basic"`, `"detailed"`). |
+| **Language Sessions** | `gram.sessions` | **Stable** | Isolated `Session` architecture owning lexer catalogs, parser instances, diagnostic settings, table exports, and AOT compilation without polluting global process state. |
+| **Diagnostics & Errors** | `gram.utilities`, `gram.errors` | **Stable** | Structured error codes, snapshot logging, memory caps (`StackLimit`), and diagnostic hooks (`Diagnostics.hook_errors` with `ErrorAction.SUPPRESS_RAISE` / `ErrorAction.OMIT`). |
+| **Native C Lexer & DiagnosticsLite** | `native/gram_lexer/` | **Stable** | Reentrant C11 lexical runtime with zero dynamic allocations per token, decoupled `DiagnosticsLite` engine, static table exporter, and differential verification. |
+| **Native C Parser & Binary IR (GIR)** | `gram.core.parser.c_generator` | **Stable** | AOT C11 parser compiler with predictive switch dispatch, contiguous `GramAstArena` with undo log, Pratt expression generation in C, relocatable GIR 1.0 binary serialization, and unified driver. |
+| **VS Code & LSP Tooling** | `gram.vsix` | **Stable** | Schema indexing (`VSIXAnalyzer`), ANSI color previews (`ASTColorResolver`), extension packaging (`pack_vsix`, `up`), and JSON-RPC stdio Language Server (`LSPServer`). |
 
 ---
 
-## 2. Important Behavioral Notes in `2.0.0b2`
+## 2. Core Behavioral Guarantees
 
-1. **`config.ERROR_EXIT_ON_ERROR` Defaults to `True`:**
-   Outside speculative combinator probes (`safe_mode()` / `failure_context()`), any unrecovered lexical, parser, or AST error prints a formatted OSGDC diagnostic box and terminates the process with `sys.exit(1)`.
-   - If you are embedding Gram inside a test runner, REPL, or custom compiler driver that catches Python exceptions or inspects `parser._errors`, either set `config.ERROR_EXIT_ON_ERROR = False` or wrap execution in `with Diagnostics.hook_errors(...):` returning `ErrorAction.SUPPRESS_RAISE` or `ErrorAction.OMIT`.
-2. **Pinning Versions in Production:**
-   Because the `main` branch receives ongoing `2.0.0b*` updates, projects requiring deterministic builds should pin Gram to a specific Git tag (such as `tag = "v2.0.0b2"` in `vnma.toml` or `git checkout v2.0.0b2`).
+1. **Zero External Runtime Dependencies:**
+   The Gram Python runtime requires only Python 3.12+ standard library modules. The generated C runtime requires standard C11 and compiles with any conforming C compiler (`gcc`, `clang`, `msvc`).
+2. **Deterministic Syntactic Invariants:**
+   - Checkpoint rollback is guaranteed: any speculative path failure in `Alt`, `Opt`, `Until`, `CaptureRaw`, or Pratt expressions completely rolls back all cursor mutations, tags, storage, and AST arena allocations.
+   - Entrypoint contract: the root grammar entrypoint is defined via a `RuleItem` whose `entrypoint` is an `Alt` composed of `Ref` branches.
+3. **Closed AOT Compilation Contract:**
+   The C parser compiler strictly verifies every combinator in the grammar rule graph against `COMPILABLE_COMBINATOR_KINDS`. Non-compilable constructs (such as arbitrary Python callbacks or uncompilable combinators) are rejected upfront at export time, preventing false syntactic successes in native code.

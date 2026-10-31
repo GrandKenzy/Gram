@@ -99,6 +99,7 @@ extern "C" {
 #define GRAM_IR_NODE_RULE     0x2u
 #define GRAM_IR_NODE_EXPR     0x4u
 #define GRAM_IR_NODE_ARRAY    0x8u
+#define GRAM_IR_NODE_RAW      0x10u
 
 typedef struct {
     char     magic[4];            /* "GIR\0" */
@@ -351,16 +352,31 @@ static bool gram_ir_is_terminal_kind(uint16_t kind) {
     return kind >= GRAM_AST_TERMINAL_TOKEN && kind <= GRAM_AST_TERMINAL_LITERAL;
 }
 
+static bool gram_ir_is_layout_token(uint32_t kind) {
+    return kind == GRAM_TOKEN_NEWLINE || kind == GRAM_TOKEN_INDENT || kind == GRAM_TOKEN_DEDENT;
+}
+
 static void gram_ir_fill_span(GramIrNode *n, const GramToken *tokens, size_t token_count,
                               uint32_t tok_start, uint32_t tok_count, size_t source_len) {
     if (tok_start >= token_count) return;
-    const GramToken *first = &tokens[tok_start];
+    size_t first_idx = (size_t)tok_start;
+    size_t end_idx = first_idx + tok_count;
+    if (end_idx > token_count) end_idx = token_count;
+    if (tok_count > 0 && end_idx > first_idx) {
+        size_t s = first_idx;
+        size_t e = end_idx;
+        while (s < e && gram_ir_is_layout_token(tokens[s].kind)) s++;
+        while (e > s && gram_ir_is_layout_token(tokens[e - 1u].kind)) e--;
+        if (s < e) {
+            first_idx = s;
+            end_idx = e;
+        }
+    }
+    const GramToken *first = &tokens[first_idx];
     uint64_t start = first->start;
     uint64_t end = start;
-    if (tok_count > 0) {
-        size_t last_idx = (size_t)tok_start + tok_count;
-        if (last_idx > token_count) last_idx = token_count;
-        const GramToken *last = &tokens[last_idx - 1u];
+    if (tok_count > 0 && end_idx > first_idx) {
+        const GramToken *last = &tokens[end_idx - 1u];
         end = (uint64_t)last->start + last->length;
     }
     if (start > source_len) start = source_len;
@@ -438,6 +454,7 @@ GramIrStatus gram_ir_build(const GramAstArena *arena, uint32_t root,
             }
         } else {
             if (an->kind == GRAM_AST_ARRAY) n->flags = GRAM_IR_NODE_ARRAY;
+            else if (an->kind == GRAM_AST_RAW) n->flags = GRAM_IR_NODE_RAW;
             else if (an->kind == GRAM_AST_EXPR_BINARY || an->kind == GRAM_AST_EXPR_UNARY) n->flags = GRAM_IR_NODE_EXPR;
             else n->flags = GRAM_IR_NODE_RULE;
             n->value = an->rule_id;
@@ -903,12 +920,7 @@ static GramDriverStatus gram_driver_lex(GramParseResult *r, GramDriverError *err
         GramToken *tok = &tokens[count];
         memset(tok, 0, sizeof(*tok));
         int status = gram_lexer_next(&lexer, tok);
-        if (status == GRAM_LEXER_TOKEN) {
-            if (tok->kind == GRAM_TOKEN_ERROR) {
-                gram_driver_fail(err, GRAM_DRIVER_ERR_LEX, tok->line, tok->column, tok->start, "invalid token");
-                free(tokens);
-                return GRAM_DRIVER_ERR_LEX;
-            }
+        if (status == GRAM_LEXER_TOKEN || (status == GRAM_LEXER_ERROR && tok->kind == GRAM_TOKEN_ERROR && tok->length > 0)) {
             count++;
             continue;
         }
@@ -929,6 +941,19 @@ static GramDriverStatus gram_driver_lex(GramParseResult *r, GramDriverError *err
     r->tokens = tokens;
     r->token_count = count;
     return GRAM_DRIVER_OK;
+}
+
+static bool gram_driver_token_in_raw_span(const GramAstArena *arena, uint32_t tok_idx) {
+    if (!arena || !arena->nodes) return false;
+    for (uint32_t i = 1u; i < arena->count; i++) {
+        const GramAstNode *an = &arena->nodes[i];
+        if (an->kind == GRAM_AST_RAW && an->token_count > 0) {
+            uint32_t start = an->token_start;
+            uint32_t end = start + an->token_count;
+            if (tok_idx >= start && tok_idx < end) return true;
+        }
+    }
+    return false;
 }
 
 static GramDriverStatus gram_driver_parse_tokens(GramParseResult *r, GramDriverError *err) {
@@ -955,12 +980,26 @@ static GramDriverStatus gram_driver_parse_tokens(GramParseResult *r, GramDriverE
         tail++;
     }
     if (ok && tail < r->token_count && r->tokens[tail].kind == GRAM_TOKEN_EOF) {
+        for (size_t i = 0; i < r->token_count; i++) {
+            if (r->tokens[i].kind == GRAM_TOKEN_ERROR && !gram_driver_token_in_raw_span(&r->arena, (uint32_t)i)) {
+                const GramToken *etok = &r->tokens[i];
+                gram_ast_arena_free(&r->arena);
+                return gram_driver_fail(err, GRAM_DRIVER_ERR_LEX, etok->line, etok->column, etok->start, "lexical error");
+            }
+        }
         r->root = root;
         return GRAM_DRIVER_OK;
     }
 
     size_t at = parser.farthest > tail ? parser.farthest : tail;
     if (at >= r->token_count) at = r->token_count - 1u;
+    for (size_t i = 0; i <= at && i < r->token_count; i++) {
+        if (r->tokens[i].kind == GRAM_TOKEN_ERROR && !gram_driver_token_in_raw_span(&r->arena, (uint32_t)i)) {
+            const GramToken *etok = &r->tokens[i];
+            gram_ast_arena_free(&r->arena);
+            return gram_driver_fail(err, GRAM_DRIVER_ERR_LEX, etok->line, etok->column, etok->start, "lexical error");
+        }
+    }
     const GramToken *tok = &r->tokens[at];
     GramDriverStatus st;
     if (tok->kind == GRAM_TOKEN_EOF) {
