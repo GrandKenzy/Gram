@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 from gram import sessions
+from gram.core.ast.nodes import ASTNode, ASTRef, ASTTokenNode, ArrayNode
 from gram.core.combinators import (
     Alt,
     CaptureRaw,
@@ -35,7 +36,7 @@ from gram.core.combinators import (
     Some,
     Until,
 )
-from gram.core.lexer.tokens import Token
+from gram.core.lexer.tokens import Token, TokenType
 from gram.core.parser.c_generator import (
     GrammarCompilerError,
     export_session_c_parser,
@@ -1144,6 +1145,137 @@ class TestCCompilerHardening(unittest.TestCase):
             fpath_fail.write_text("block : end", encoding="utf-8")
             res_fail = subprocess.run([str(cli_exe), "check", str(fpath_fail)], capture_output=True, text=True)
             self.assertEqual(res_fail.returncode, 2, "Some combinator with 0 matches must fail syntax check")
+
+    def test_differential_python_ast_vs_gir_trees(self) -> None:
+        """Differential equivalence verification between Python AST and C AOT / GIR across sequences and repetitions."""
+        from gram.ir.reader import GirNode, GirView
+
+        def norm_py(node: Any) -> Any:
+            if isinstance(node, list):
+                return ("ARRAY", [norm_py(x) for x in node])
+            if isinstance(node, ArrayNode):
+                return ("ARRAY", [norm_py(x) for x in node.items])
+            if isinstance(node, ASTRef):
+                return (node.name, [norm_py(x) for x in node.nodes])
+            if isinstance(node, ASTTokenNode):
+                return (node.token.token.name, str(node.token.value))
+            if isinstance(node, TokenType):
+                return (node.token.name, str(node.value))
+            if isinstance(node, RawNode):
+                return ("RAW", node.text)
+            return str(node)
+
+        def norm_gir(node: GirNode) -> Any:
+            if node.is_array:
+                return ("ARRAY", [norm_gir(ch) for ch in node.children])
+            if node.is_raw:
+                return ("RAW", node.text)
+            if node.is_terminal:
+                tok = Token.from_code(node.value)
+                tname = tok.name if tok else node.kind_name
+                return (tname, node.text)
+            return (node.kind_name, [norm_gir(ch) for ch in node.children])
+
+        # Grammar exercising:
+        # 1. AsmVariant with Many(Seq(IDENT, NUMBER))
+        # 2. SomeBlock with Some(Seq(IDENT, NUMBER, SEMICOLON))
+        # 3. NestedSeq with Seq(IDENT, Seq(NUMBER, NUMBER), SEMICOLON)
+        class AsmVariantRule(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchToken(Token.AT),
+                MatchKeyword("variant"),
+                Many(Seq(MatchToken(Token.IDENT), MatchToken(Token.NUMBER))),
+                MatchToken(Token.AT),
+                MatchKeyword("end"),
+            )
+            rule = entrypoint
+
+        class SomeBlockRule(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchKeyword("block"),
+                Some(Seq(MatchToken(Token.IDENT), MatchToken(Token.NUMBER), MatchToken(Token.SEMICOLON))),
+                MatchKeyword("end"),
+            )
+            rule = entrypoint
+
+        class NestedSeqRule(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchToken(Token.IDENT),
+                Seq(MatchToken(Token.NUMBER), MatchToken(Token.NUMBER)),
+                MatchToken(Token.SEMICOLON),
+            )
+            rule = entrypoint
+
+        class DiffRootRule(RuleItem):
+            nodeable = False
+            entrypoint = Alt(Ref(AsmVariantRule), Ref(SomeBlockRule), Ref(NestedSeqRule))
+            rule = entrypoint
+
+        diff_session = sessions.Session("DiffSession", "Many")
+        for kw in ("variant", "block", "end"):
+            diff_session.add_keyword(kw)
+        diff_session.entrypoint = DiffRootRule
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+            out_dir = Path(tmp_dir)
+            export_session_c_parser(diff_session, out_dir, emit_driver=True, emit_cli=True)
+
+            proj_root = Path(__file__).resolve().parent.parent
+            native_inc = proj_root / "native" / "gram_lexer" / "include"
+            native_src = proj_root / "native" / "gram_lexer" / "src"
+
+            sources = [
+                "gram_ast.c", "gram_parser.c", "gram_ir.c", "gram_driver.c",
+                "gram_lexer_keywords.c", "gram_lexer_symbols.c", "gram_lexer_groups.c",
+            ]
+            common = [str(out_dir / name) for name in sources] + [
+                str(native_src / name)
+                for name in (
+                    "lexer.c", "indentation.c", "numbers.c", "strings.c",
+                    "symbols.c", "utf8.c", "diagnostics_lite.c",
+                )
+            ]
+            cli_exe = out_dir / "gram_cli.exe"
+            flags = [
+                "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
+                str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
+            ]
+            subprocess.run(flags, check=True, capture_output=True, text=True)
+
+            def assert_trees_match(source: str, label: str) -> None:
+                # 1. Parse in Python
+                ast_py = diff_session.parse(diff_session.tokenize(source, "src"), "src")
+                py_tree = norm_py(ast_py)
+
+                # 2. Compile to GIR with C AOT
+                fpath = out_dir / f"{label}.src"
+                gir_path = out_dir / f"{label}.gir"
+                fpath.write_text(source, encoding="utf-8")
+                res = subprocess.run([str(cli_exe), "compile", str(fpath), "-o", str(gir_path)], capture_output=True, text=True)
+                self.assertEqual(res.returncode, 0, f"Compilation failed for {label}: {res.stderr}")
+
+                # 3. Read GIR and normalize
+                view = GirView(gir_path.read_bytes(), source=source.encode("utf-8"))
+                gir_tree = norm_gir(view.root)
+
+                # 4. Assert 100% exact topological equivalence
+                self.assertEqual(py_tree, gir_tree, f"Differential mismatch on '{label}' ({source}):\nPy:  {py_tree}\nGIR: {gir_tree}")
+
+            # Case A: Many(Seq(IDENT, NUMBER)) with multiple iterations
+            assert_trees_match("@ variant foo 64 bar 32 @ end", "many_seq_multiple")
+
+            # Case B: Many(Seq(...)) with 0 iterations (empty repetition)
+            assert_trees_match("@ variant @ end", "many_seq_empty")
+
+            # Case C: Some(Seq(IDENT, NUMBER, SEMICOLON)) with multiple iterations
+            assert_trees_match("block a 1 ; b 2 ; end", "some_seq_multiple")
+
+            # Case D: Nested Seq inside Seq
+            assert_trees_match("x 10 20 ;", "nested_seq_in_seq")
 
 
 class TestCaptureRawPython(unittest.TestCase):

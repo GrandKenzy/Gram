@@ -139,13 +139,30 @@ def _parse_typed_value(tok: Token | None, text: str, session: Any = None) -> Any
         lower = text.lower()
         true_name = "true"
         false_name = "false"
-        if session is not None and hasattr(session, "get_config"):
-            true_cfg = session.get_config("TOKEN_BOOL_TRUE", None)
+        if session is not None:
+            if hasattr(session, "config") and isinstance(session.config, dict):
+                true_cfg = session.config.get("TOKEN_BOOL_TRUE")
+                false_cfg = session.config.get("TOKEN_BOOL_FALSE")
+            elif hasattr(session, "get_config"):
+                true_cfg = session.get_config("TOKEN_BOOL_TRUE", None)
+                false_cfg = session.get_config("TOKEN_BOOL_FALSE", None)
+            else:
+                true_cfg = getattr(session, "TOKEN_BOOL_TRUE", None)
+                false_cfg = getattr(session, "TOKEN_BOOL_FALSE", None)
             if isinstance(true_cfg, str) and true_cfg:
                 true_name = true_cfg.lower()
-            false_cfg = session.get_config("TOKEN_BOOL_FALSE", None)
             if isinstance(false_cfg, str) and false_cfg:
                 false_name = false_cfg.lower()
+        else:
+            try:
+                from gram import config
+                if isinstance(config.TOKEN_BOOL_TRUE, str) and config.TOKEN_BOOL_TRUE:
+                    true_name = config.TOKEN_BOOL_TRUE.lower()
+                if isinstance(config.TOKEN_BOOL_FALSE, str) and config.TOKEN_BOOL_FALSE:
+                    false_name = config.TOKEN_BOOL_FALSE.lower()
+            except Exception:
+                pass
+
         if lower == true_name or lower == "1":
             return True
         if lower == false_name or lower == "0":
@@ -380,10 +397,17 @@ class GirNode:
         self._tokens = tuple(clean_toks)
         return self._tokens
 
+    @property
+    def retokenized_count(self) -> int:
+        """
+        Number of tokens reconstructed from re-tokenizing the source span.
+
+        Returns 0 if no tokens were reconstructed or if source text is unavailable.
+        """
+        return len(self.tokens)
+
     def __len__(self) -> int:
         if self.is_raw:
-            if self._tokens is not None and len(self._tokens) > 0:
-                return len(self._tokens)
             return self.child_count if self.child_count else self.value
         return len(self.children)
 

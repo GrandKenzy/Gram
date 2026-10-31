@@ -230,6 +230,14 @@ class Session:
         """Return the number of keywords owned by the session."""
         return len(self.keywords)
 
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """Return the configuration value for `key` owned by this session, or `default`."""
+        return self.config.get(key, default)
+
+    def set_config(self, key: str, value: Any) -> None:
+        """Assign a configuration key-value pair to this session's configuration."""
+        self.config[key] = value
+
     @property
     def predictive_revision(self) -> int:
         """Return the revision of session-owned predictive inputs."""

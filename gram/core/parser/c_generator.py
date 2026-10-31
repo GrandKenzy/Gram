@@ -799,7 +799,7 @@ class CParserGenerator:
             lines.append("    (void)child_target;")
 
             if rule_comb is not None:
-                comb_code = self._compile_combinator(rule_comb, "child_target", 1)
+                comb_code = self._compile_combinator(rule_comb, "child_target", 1, is_rule_root=True)
                 lines.append(comb_code)
 
             lines.append("    if (!ok) {")
@@ -1000,6 +1000,7 @@ class CParserGenerator:
         cand_indices: list[int] | tuple[int, ...],
         parent_node_var: str,
         indent: int,
+        is_rule_root: bool = False,
     ) -> str:
         """Emit PEG ordered-choice branch trial blocks for a subset of `Alt` branch indices."""
         pfx = "    " * indent
@@ -1008,7 +1009,7 @@ class CParserGenerator:
             child = children[idx]
             out.append(f"{pfx}if (!ok) {{")
             out.append(f"{pfx}    GramParserCheckpoint alt_cp_{indent}_{idx} = gram_parser_save(p);")
-            out.append(self._compile_combinator(child, parent_node_var, indent + 1))
+            out.append(self._compile_combinator(child, parent_node_var, indent + 1, is_rule_root=is_rule_root))
             out.append(f"{pfx}    if (!ok) gram_parser_restore(p, alt_cp_{indent}_{idx});")
             out.append(f"{pfx}}}")
         return "\n".join(out)
@@ -1018,6 +1019,7 @@ class CParserGenerator:
         comb: Alt,
         parent_node_var: str,
         indent: int,
+        is_rule_root: bool = False,
     ) -> str:
         """Compile an `Alt` combinator using predictive C `switch` dispatch when branches partition by lookahead."""
         pfx = "    " * indent
@@ -1037,7 +1039,7 @@ class CParserGenerator:
 
         if not can_switch:
             return f"{pfx}ok = false;\n" + self._emit_alt_branch_trials(
-                children, all_indices, parent_node_var, indent
+                children, all_indices, parent_node_var, indent, is_rule_root=is_rule_root
             )
 
         opaque_indices = [i for i, (_, b_toks, _) in enumerate(profiles) if b_toks is None]
@@ -1097,7 +1099,7 @@ class CParserGenerator:
         )
         if not narrows_any:
             return f"{pfx}ok = false;\n" + self._emit_alt_branch_trials(
-                children, all_indices, parent_node_var, indent
+                children, all_indices, parent_node_var, indent, is_rule_root=is_rule_root
             )
 
         # Group non-KEYWORD (or non-char-switched KEYWORD) tokens by identical candidate tuple
@@ -1119,7 +1121,7 @@ class CParserGenerator:
             for tname in tnames:
                 lines.append(f"{pfx}            case GRAM_TOKEN_{tname}:")
             lines.append(
-                self._emit_alt_branch_trials(children, cands, parent_node_var, indent + 4)
+                self._emit_alt_branch_trials(children, cands, parent_node_var, indent + 4, is_rule_root=is_rule_root)
             )
             lines.append(f"{pfx}                break;")
 
@@ -1133,7 +1135,7 @@ class CParserGenerator:
                     lines.append(f"{pfx}                        case '{escaped_ch}':")
                 lines.append(
                     self._emit_alt_branch_trials(
-                        children, ch_cands, parent_node_var, indent + 7
+                        children, ch_cands, parent_node_var, indent + 7, is_rule_root=is_rule_root
                     )
                 )
                 lines.append(f"{pfx}                            break;")
@@ -1141,7 +1143,7 @@ class CParserGenerator:
             if opaque_kw_cands:
                 lines.append(
                     self._emit_alt_branch_trials(
-                        children, opaque_kw_cands, parent_node_var, indent + 7
+                        children, opaque_kw_cands, parent_node_var, indent + 7, is_rule_root=is_rule_root
                     )
                 )
             lines.append(f"{pfx}                            break;")
@@ -1153,7 +1155,7 @@ class CParserGenerator:
         if opaque_indices:
             lines.append(
                 self._emit_alt_branch_trials(
-                    children, opaque_indices, parent_node_var, indent + 4
+                    children, opaque_indices, parent_node_var, indent + 4, is_rule_root=is_rule_root
                 )
             )
         lines.append(f"{pfx}                break;")
@@ -1207,7 +1209,7 @@ class CParserGenerator:
             dlen = len(s.encode("utf-8"))
             return f"({tok_var}->length == {dlen}u && memcmp(p->source + {tok_var}->start, \"{s}\", {dlen}u) == 0)"
 
-    def _compile_combinator(self, comb: Combinator, parent_node_var: str, indent: int) -> str:
+    def _compile_combinator(self, comb: Combinator, parent_node_var: str, indent: int, is_rule_root: bool = False) -> str:
         """Compile a combinator statement tree into C lines with variable `ok`."""
         pfx = "    " * indent
         lines = []
@@ -1296,7 +1298,7 @@ class CParserGenerator:
                     inline_target = parent_node_var if parent_node_var else "NULL"
                     lines.append(f"{pfx}ok = gram_parse_rule_{rname}(p, {inline_target});")
             elif isinstance(target, Combinator):
-                lines.append(self._compile_combinator(target, parent_node_var, indent))
+                lines.append(self._compile_combinator(target, parent_node_var, indent, is_rule_root=is_rule_root))
             else:
                 raise GrammarCompilerError(
                     "InvalidRefTarget",
@@ -1307,20 +1309,46 @@ class CParserGenerator:
 
         elif isinstance(comb, (Seq, Item)):
             children = getattr(comb, "combinators", ()) or getattr(comb, "matchs", ())
-            lines.append(f"{pfx}ok = true;")
-            for child in children:
-                lines.append(f"{pfx}if (ok) {{")
-                lines.append(self._compile_combinator(child, parent_node_var, indent + 1))
+            if is_rule_root or not parent_node_var or parent_node_var == "NULL":
+                lines.append(f"{pfx}ok = true;")
+                for child in children:
+                    lines.append(f"{pfx}if (ok) {{")
+                    lines.append(self._compile_combinator(child, parent_node_var, indent + 1, is_rule_root=False))
+                    lines.append(f"{pfx}}}")
+            else:
+                seq_arr = f"seq_arr_{indent}"
+                seq_tgt = f"seq_target_{indent}"
+                seq_cp = f"seq_cp_{indent}"
+                lines.append(f"{pfx}{{")
+                lines.append(f"{pfx}    GramParserCheckpoint {seq_cp} = gram_parser_save(p);")
+                lines.append(f"{pfx}    uint32_t {seq_arr} = 0;")
+                lines.append(f"{pfx}    if (p->arena) {{")
+                lines.append(f"{pfx}        {seq_arr} = gram_ast_arena_alloc(p->arena, GRAM_AST_ARRAY, 0, (uint32_t)p->cursor);")
+                lines.append(f"{pfx}    }}")
+                lines.append(f"{pfx}    uint32_t *{seq_tgt} = &{seq_arr};")
+                lines.append(f"{pfx}    ok = true;")
+                for child in children:
+                    lines.append(f"{pfx}    if (ok) {{")
+                    lines.append(self._compile_combinator(child, seq_tgt, indent + 2, is_rule_root=False))
+                    lines.append(f"{pfx}    }}")
+                lines.append(f"{pfx}    if (ok) {{")
+                lines.append(f"{pfx}        if ({seq_arr} && p->arena) p->arena->nodes[{seq_arr}].token_count = (uint32_t)(p->cursor - p->arena->nodes[{seq_arr}].token_start);")
+                child_stmt = add_child_stmt(seq_arr)
+                if child_stmt:
+                    lines.append(f"{pfx}        {child_stmt}")
+                lines.append(f"{pfx}    }} else {{")
+                lines.append(f"{pfx}        gram_parser_restore(p, {seq_cp});")
+                lines.append(f"{pfx}    }}")
                 lines.append(f"{pfx}}}")
 
         elif isinstance(comb, Alt):
-            lines.append(self._compile_alt_optimized(comb, parent_node_var, indent))
+            lines.append(self._compile_alt_optimized(comb, parent_node_var, indent, is_rule_root=is_rule_root))
 
         elif isinstance(comb, Opt):
             inner = comb.combinator
             lines.append(f"{pfx}{{")
             lines.append(f"{pfx}    GramParserCheckpoint opt_cp_{indent} = gram_parser_save(p);")
-            lines.append(self._compile_combinator(inner, parent_node_var, indent + 1))
+            lines.append(self._compile_combinator(inner, parent_node_var, indent + 1, is_rule_root=is_rule_root))
             lines.append(f"{pfx}    if (!ok) gram_parser_restore(p, opt_cp_{indent});")
             lines.append(f"{pfx}    ok = true; /* Opt always succeeds */")
             lines.append(f"{pfx}}}")
@@ -1438,7 +1466,7 @@ class CParserGenerator:
             lines.append(f"{pfx}    if (p->tokens[p->cursor].line != p->tokens[prev_idx_{indent}].line) ok = false;")
             lines.append(f"{pfx}}}")
             lines.append(f"{pfx}if (ok) {{")
-            lines.append(self._compile_combinator(inner, parent_node_var, indent + 1))
+            lines.append(self._compile_combinator(inner, parent_node_var, indent + 1, is_rule_root=is_rule_root))
             lines.append(f"{pfx}}}")
 
         elif isinstance(comb, Enclosed):
@@ -1554,7 +1582,7 @@ class CParserGenerator:
             lines.append(f"{pfx}    while (p->cursor <= p->token_count && (!p->arena || !p->arena->has_error)) {{")
             lines.append(f"{pfx}        GramParserCheckpoint {target_cp} = gram_parser_save(p);")
             target_parent = arr_tgt if consume_target else "NULL"
-            lines.append(self._compile_combinator(target_comb, target_parent, indent + 2))
+            lines.append(self._compile_combinator(target_comb, target_parent, indent + 2, is_rule_root=True))
             lines.append(f"{pfx}        if (ok) {{")
             if not consume_target:
                 lines.append(f"{pfx}            gram_parser_restore(p, {target_cp});")

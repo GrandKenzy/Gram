@@ -625,16 +625,14 @@ class TestGirPythonReader(unittest.TestCase):
         raw_str_node._text_override = r'"\u0041\t\r\b\f\v"'
         self.assertEqual(raw_str_node.typed_value, "A\t\r\b\f\v")
 
-        # 3. Configurable booleans via session
-        class MockSession:
-            def get_config(self, key: str, default: Any = None) -> Any:
-                if key == "TOKEN_BOOL_TRUE":
-                    return "si"
-                if key == "TOKEN_BOOL_FALSE":
-                    return "no"
-                return default
+        # 3. Configurable booleans via real Session
+        real_session = sessions.Session("RealBoolSession", "Some")
+        real_session.config["TOKEN_BOOL_TRUE"] = "si"
+        real_session.config["TOKEN_BOOL_FALSE"] = "no"
+        self.assertEqual(real_session.get_config("TOKEN_BOOL_TRUE"), "si")
+        self.assertEqual(real_session.get_config("TOKEN_BOOL_FALSE"), "no")
 
-        view.session = MockSession()
+        view.session = real_session
         bool_node = ir.GirNode(
             view=view, index=2, kind=1, flags=ir.reader.GIR_NODE_TERMINAL,
             symbol_id=0, value=Token.BOOL.value, src_start=0, src_length=0,
@@ -645,6 +643,46 @@ class TestGirPythonReader(unittest.TestCase):
 
         bool_node._text_override = "no"
         self.assertIs(bool_node.typed_value, False)
+
+    def test_raw_node_len_does_not_mutate_after_tokens_access(self) -> None:
+        """Verify that len(raw_node) stays strictly equal to authoritative value and does not fluctuate."""
+        source_code = "mov eax, 1;"  # 3 non-EOF tokens: mov, eax, 1
+        view = ir.GirView.__new__(ir.GirView)
+        view._source_bytes = source_code.encode("utf-8")
+        view.strings = ("RAW",)
+
+        # GIR registered value=5 consumed tokens, but re-lexing produces fewer tokens
+        raw_node = ir.GirNode(
+            view=view,
+            index=1,
+            kind=9,
+            flags=ir.reader.GIR_NODE_RAW,
+            symbol_id=0,
+            value=5,  # 5 consumed tokens recorded by parser in GIR
+            src_start=0,
+            src_length=len(source_code),
+            line=1,
+            column=0,
+            first_child_index=0,
+            next_sibling_index=0,
+            child_count=0,
+        )
+        view.nodes = (ir.GirNode(view, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), raw_node)
+        session = sessions.Session("LenStabilitySession", "Some")
+        session.add_keyword("mov")
+        view.session = session
+
+        # Before accessing .tokens:
+        self.assertEqual(len(raw_node), 5)
+        self.assertEqual(raw_node.token_count, 5)
+
+        # After accessing .tokens (retokenization):
+        toks = raw_node.tokens
+        self.assertGreater(len(toks), 0)
+        # Authoritative len must NOT change to len(toks)
+        self.assertEqual(len(raw_node), 5)
+        self.assertEqual(raw_node.token_count, 5)
+        self.assertEqual(raw_node.retokenized_count, len(toks))
 
     def test_attach_source_and_session_invalidates_tokens_cache(self) -> None:
         source_code = "mov eax, 1; nop;"
