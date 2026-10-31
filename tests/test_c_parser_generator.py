@@ -695,7 +695,11 @@ class TestCCompilerHardening(unittest.TestCase):
                 f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
                 str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
             ]
-            subprocess.run(flags, check=True, capture_output=True, text=True)
+            try:
+                subprocess.run(flags, check=True, capture_output=True, text=True)
+            except subprocess.CalledProcessError as e:
+                print("GCC ERROR:\n", e.stderr)
+                raise
 
             def check_code(code: str) -> int:
                 fpath = out_dir / "input.src"
@@ -808,7 +812,11 @@ class TestCCompilerHardening(unittest.TestCase):
                 f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
                 str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
             ]
-            subprocess.run(flags, check=True, capture_output=True, text=True)
+            try:
+                subprocess.run(flags, check=True, capture_output=True, text=True)
+            except subprocess.CalledProcessError as e:
+                print("GCC ERROR:\n", e.stderr)
+                raise
 
             def check_code(code: str) -> int:
                 fpath = out_dir / "input.src"
@@ -940,7 +948,11 @@ class TestCCompilerHardening(unittest.TestCase):
                 f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
                 str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
             ]
-            subprocess.run(flags, check=True, capture_output=True, text=True)
+            try:
+                subprocess.run(flags, check=True, capture_output=True, text=True)
+            except subprocess.CalledProcessError as e:
+                print("GCC ERROR:\n", e.stderr)
+                raise
 
             def check_code(code: str) -> int:
                 fpath = out_dir / "input.src"
@@ -1076,7 +1088,11 @@ class TestCCompilerHardening(unittest.TestCase):
                 f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
                 str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
             ]
-            subprocess.run(flags, check=True, capture_output=True, text=True)
+            try:
+                subprocess.run(flags, check=True, capture_output=True, text=True)
+            except subprocess.CalledProcessError as e:
+                print("GCC ERROR:\n", e.stderr)
+                raise
 
             # 1. AsmVariant with 3 statements:
             # Must generate an ARRAY node at index 3 with the 3 Statement children.
@@ -1209,9 +1225,33 @@ class TestCCompilerHardening(unittest.TestCase):
             )
             rule = entrypoint
 
+        class EmptyNestedSeqRule(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchToken(Token.IDENT),
+                Seq(Opt(MatchToken(Token.NUMBER))),
+                MatchToken(Token.SEMICOLON),
+            )
+            rule = entrypoint
+
+        class ZeroAdvanceManyRule(RuleItem):
+            nodeable = True
+            entrypoint = Seq(
+                MatchToken(Token.COLON),
+                Many(Seq(Opt(MatchToken(Token.NUMBER)))),
+                MatchToken(Token.SEMICOLON),
+            )
+            rule = entrypoint
+
         class DiffRootRule(RuleItem):
             nodeable = False
-            entrypoint = Alt(Ref(AsmVariantRule), Ref(SomeBlockRule), Ref(NestedSeqRule))
+            entrypoint = Alt(
+                Ref(AsmVariantRule),
+                Ref(SomeBlockRule),
+                Ref(NestedSeqRule),
+                Ref(EmptyNestedSeqRule),
+                Ref(ZeroAdvanceManyRule),
+            )
             rule = entrypoint
 
         diff_session = sessions.Session("DiffSession", "Many")
@@ -1244,7 +1284,11 @@ class TestCCompilerHardening(unittest.TestCase):
                 f"-I{native_inc}", f"-I{native_src}", f"-I{out_dir}",
                 str(out_dir / "gram_cli.c"), *common, "-o", str(cli_exe),
             ]
-            subprocess.run(flags, check=True, capture_output=True, text=True)
+            try:
+                subprocess.run(flags, check=True, capture_output=True, text=True)
+            except subprocess.CalledProcessError as e:
+                print("GCC ERROR:\n", e.stderr)
+                raise
 
             def assert_trees_match(source: str, label: str) -> None:
                 # 1. Parse in Python
@@ -1276,6 +1320,18 @@ class TestCCompilerHardening(unittest.TestCase):
 
             # Case D: Nested Seq inside Seq
             assert_trees_match("x 10 20 ;", "nested_seq_in_seq")
+
+            # Case E: Nested Seq that succeeds with 0 children (omitted from parent like Python)
+            assert_trees_match("foo ;", "empty_nested_seq_omitted")
+
+            # Case F: Nested Seq that succeeds with elements (retained as ARRAY)
+            assert_trees_match("bar 42 ;", "nested_seq_with_elements")
+
+            # Case G: Repetition with 0 token advancement (loop cleanly terminates without phantom empty matches)
+            assert_trees_match(": ;", "zero_advance_repetition_empty")
+
+            # Case H: Repetition that advances tokens normally
+            assert_trees_match(": 100 200 ;", "zero_advance_repetition_with_matches")
 
 
 class TestCaptureRawPython(unittest.TestCase):

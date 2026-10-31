@@ -99,13 +99,15 @@ class Some(Combinator):
                             publish_failure = bool(results)
                     break
 
-                results.append(res)
-                if attempt.candidate is not None and attempt.candidate[0] > parser.pos:
-                    weight, err = attempt.candidate
-                    analyzer.stage_failure(err, weight=weight)
-                analyzer.discard_staged_failure(min_weight=parser.pos)
-                if parser.pos == checkpoint.pos:
-                    break
+                if res is not None:
+                    if parser.pos == checkpoint.pos:
+                        parser.restore(checkpoint)
+                        break
+                    results.append(res)
+                    if attempt.candidate is not None and attempt.candidate[0] > parser.pos:
+                        weight, err = attempt.candidate
+                        analyzer.stage_failure(err, weight=weight)
+                    analyzer.discard_staged_failure(min_weight=parser.pos)
 
             if not results:
                 parser.restore(initial_checkpoint)

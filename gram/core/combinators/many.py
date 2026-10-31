@@ -91,13 +91,14 @@ class Many(Combinator):
                     break
 
                 if res is not None:
+                    if parser.pos == checkpoint.pos:
+                        parser.restore(checkpoint)
+                        break
                     results.append(res)
                     if attempt.candidate is not None and attempt.candidate[0] > parser.pos:
                         weight, err = attempt.candidate
                         analyzer.stage_failure(err, weight=weight)
                     analyzer.discard_staged_failure(min_weight=parser.pos)
-                    if parser.pos == checkpoint.pos:
-                        break
                 else:
                     parser.restore(checkpoint)
                     # If the iteration advanced into a branch before failing,
