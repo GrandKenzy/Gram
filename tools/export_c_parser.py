@@ -72,6 +72,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Also emit gram_cli.c, a standalone frontend (compile/check/ast/ir commands).",
     )
+    parser.add_argument(
+        "--walker",
+        action="store_true",
+        help="Also emit gram_ir_walker.h and gram_ir_walker.c for traversing GIR in C.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -84,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             out_dir,
             emit_driver=not args.no_driver,
             emit_cli=args.cli,
+            emit_walker=args.walker,
         )
         print(f"Successfully generated C Parser (ABI v{C_PARSER_ABI_VERSION}):")
         print(f"  Rules compiled: {manifest['rule_count']}")

@@ -1877,6 +1877,7 @@ def export_session_c_parser(
     *,
     emit_driver: bool = True,
     emit_cli: bool = False,
+    emit_walker: bool = False,
 ) -> dict[str, Any]:
     """
     Compile a Gram `Session` into standalone C parser and AST translation units.
@@ -1887,6 +1888,7 @@ def export_session_c_parser(
         emit_driver: Also emit the unified file opener (`gram_driver.*`), the binary IR
             (`gram_ir.*`) and the lexer tables they link against.
         emit_cli: Also emit `gram_cli.c`, a standalone frontend (requires `emit_driver`).
+        emit_walker: Also emit `gram_ir_walker.h` and `gram_ir_walker.c` for traversing GIR (requires `emit_driver`).
 
     Returns:
         Manifest dictionary with content hashes and exported rules.
@@ -1897,6 +1899,13 @@ def export_session_c_parser(
             errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
             "emit_cli=True requiere emit_driver=True.",
             "Active emit_driver o desactive emit_cli.",
+        )
+    if emit_walker and not emit_driver:
+        raise GrammarCompilerError(
+            "WalkerRequiresDriver",
+            errors.GRAMMAR_COMBINATOR_UNSUPPORTED,
+            "emit_walker=True requiere emit_driver=True.",
+            "Active emit_driver o desactive emit_walker.",
         )
 
     out_path = Path(output_dir)
@@ -1931,6 +1940,9 @@ def export_session_c_parser(
         units["gram_ir.c"] = c_driver.generate_ir_source()
         units["gram_driver.h"] = c_driver.generate_driver_header()
         units["gram_driver.c"] = c_driver.generate_driver_source()
+        if emit_walker:
+            units["gram_ir_walker.h"] = c_driver.generate_ir_walker_header()
+            units["gram_ir_walker.c"] = c_driver.generate_ir_walker_source()
     if emit_cli:
         units["gram_cli.c"] = c_driver.generate_cli_source()
 
@@ -1945,6 +1957,7 @@ def export_session_c_parser(
         "rules": rule_names,
         "files": list(units),
         "driver": emit_driver,
+        "walker": emit_walker,
     }
     if emit_driver and lexer_manifest is not None:
         manifest["ir_format"] = f"GIR {c_driver.GIR_VERSION_MAJOR}.{c_driver.GIR_VERSION_MINOR}"

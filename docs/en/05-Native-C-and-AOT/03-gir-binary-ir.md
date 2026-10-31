@@ -113,3 +113,73 @@ if (gram_ir_read_file("output.gir", &view) == GRAM_IR_OK) {
 - Verifies magic number, versions, and total buffer size.
 - Ensures all offsets and sizes fit within buffer bounds and follow 8-byte alignment.
 - Performs iterative preorder validation to detect corrupted child links, out-of-range sibling indices, or cyclic loops.
+
+---
+
+## 5. Consuming GIR in Python (`gram.ir`)
+
+Gram includes native, zero-dependency Python support for reading, traversing, and querying `.gir` files via `gram.ir`:
+
+```python
+from gram import ir
+
+# Load from file or bytes in microseconds
+view = ir.load_gir("output.gir", source_text=source_code)
+
+print(f"Nodes: {view.node_count}, Grammar: 0x{view.header.grammar_id:016x}")
+
+# 1. Preorder traversal
+for node in view.walk(order="pre"):
+    indent = "  " * node.depth
+    print(f"{indent}{node.kind_name} [{node.line}:{node.column}] -> {node.text!r}")
+
+# 2. Tree navigation
+root = view.root
+for child in root.children:
+    print("Direct child:", child.kind_name, child.span)
+
+# 3. Querying nodes
+functions = list(root.find("FunctionDecl"))
+first_ident = root.find_first("IDENT")
+```
+
+---
+
+## 6. Optional C AOT Tree Walker (`--walker` / `emit_walker=True`)
+
+When compiling a parser to C, passing `emit_walker=True` (or CLI flag `--walker`) generates `gram_ir_walker.h` and `gram_ir_walker.c`:
+
+```c
+#include "gram_ir_walker.h"
+
+static GramIrWalkAction my_visitor(
+    const GramIrView *view,
+    uint32_t node_idx,
+    uint32_t depth,
+    bool is_enter,
+    void *user_data
+) {
+    if (is_enter) {
+        const char *name = gram_ir_node_name(view, node_idx);
+        printf("%*sEntering %s\n", (int)(depth * 2), "", name);
+
+        /* Prune subtree if we do not wish to inspect its children */
+        if (strcmp(name, "IgnoredBlock") == 0) {
+            return GRAM_IR_WALK_PRUNE;
+        }
+    } else {
+        printf("%*sLeaving node %u\n", (int)(depth * 2), "", (unsigned)node_idx);
+    }
+    return GRAM_IR_WALK_CONTINUE;
+}
+
+/* Traverse tree starting from root */
+gram_ir_walk(&view, 0, my_visitor, NULL);
+
+/* Search helpers */
+uint32_t ident_idx = gram_ir_find_first(&view, 0, "IDENT");
+if (ident_idx > 0) {
+    printf("Found identifier: %s\n", gram_ir_node_text(&view, ident_idx, NULL));
+}
+```
+

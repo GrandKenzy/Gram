@@ -113,3 +113,73 @@ if (gram_ir_read_file("output.gir", &view) == GRAM_IR_OK) {
 - Verifica el número mágico, las versiones y el tamaño total del búfer.
 - Garantiza que todos los offsets y longitudes estén dentro de los límites del archivo y respeten la alineación a 8 bytes.
 - Ejecuta una validación en preorder para detectar enlaces corruptos, índices fuera de rango o referencias cíclicas.
+
+---
+
+## 5. Consumo de GIR en Python (`gram.ir`)
+
+Gram incluye soporte nativo y sin dependencias externas en Python para leer, recorrer y consultar archivos `.gir` a través de `gram.ir`:
+
+```python
+from gram import ir
+
+# Carga directa desde archivo o bytes en microsegundos
+view = ir.load_gir("output.gir", source_text=source_code)
+
+print(f"Nodos: {view.node_count}, Gramática: 0x{view.header.grammar_id:016x}")
+
+# 1. Recorrido en preorder
+for node in view.walk(order="pre"):
+    indent = "  " * node.depth
+    print(f"{indent}{node.kind_name} [{node.line}:{node.column}] -> {node.text!r}")
+
+# 2. Navegación por el árbol
+root = view.root
+for child in root.children:
+    print("Hijo directo:", child.kind_name, child.span)
+
+# 3. Búsqueda y filtrado de nodos
+funciones = list(root.find("FunctionDecl"))
+primer_ident = root.find_first("IDENT")
+```
+
+---
+
+## 6. Walker Opcional de Árbol en C AOT (`--walker` / `emit_walker=True`)
+
+Al compilar un parser hacia C, pasar `emit_walker=True` (o la bandera CLI `--walker`) genera `gram_ir_walker.h` y `gram_ir_walker.c`:
+
+```c
+#include "gram_ir_walker.h"
+
+static GramIrWalkAction mi_visitante(
+    const GramIrView *view,
+    uint32_t node_idx,
+    uint32_t depth,
+    bool is_enter,
+    void *user_data
+) {
+    if (is_enter) {
+        const char *name = gram_ir_node_name(view, node_idx);
+        printf("%*sEntrando a %s\n", (int)(depth * 2), "", name);
+
+        /* Podar subárbol si no deseamos inspeccionar sus nodos hijos */
+        if (strcmp(name, "BloqueIgnorado") == 0) {
+            return GRAM_IR_WALK_PRUNE;
+        }
+    } else {
+        printf("%*sSaliendo del nodo %u\n", (int)(depth * 2), "", (unsigned)node_idx);
+    }
+    return GRAM_IR_WALK_CONTINUE;
+}
+
+/* Recorrer árbol comenzando desde la raíz */
+gram_ir_walk(&view, 0, mi_visitante, NULL);
+
+/* Utilidades de búsqueda */
+uint32_t ident_idx = gram_ir_find_first(&view, 0, "IDENT");
+if (ident_idx > 0) {
+    printf("Identificador encontrado: %s\n", gram_ir_node_text(&view, ident_idx, NULL));
+}
+```
+

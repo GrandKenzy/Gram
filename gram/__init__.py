@@ -17,7 +17,7 @@ Exposes the top-level subpackages and metadata:
 from __future__ import annotations
 
 # System submodules
-from gram import config, errors, utilities, vsix
+from gram import config, errors, ir, utilities, vsix
 from gram.utilities.error import configure_runtime
 
 configure_runtime(
@@ -48,6 +48,7 @@ __all__ = [
     "combinators",
     "config",
     "errors",
+    "ir",
     "lexer",
     "parser",
     "process",

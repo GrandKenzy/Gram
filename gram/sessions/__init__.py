@@ -368,11 +368,19 @@ class Session:
         *,
         emit_driver: bool = True,
         emit_cli: bool = False,
+        emit_walker: bool = False,
     ) -> dict[str, Any]:
         """Compile and export this session's grammar graph into standalone C translation units.
 
         With ``emit_driver`` the output also contains the file opener, the binary IR (GIR)
-        and the lexer tables; ``emit_cli`` adds a ready-to-build command-line frontend.
+        and the lexer tables; ``emit_cli`` adds a command-line frontend; ``emit_walker`` adds
+        C tree walker functions (`gram_ir_walker.*`).
         """
         from gram.core.parser.c_generator import export_session_c_parser
-        return export_session_c_parser(self, output_dir, emit_driver=emit_driver, emit_cli=emit_cli)
+        return export_session_c_parser(
+            self,
+            output_dir,
+            emit_driver=emit_driver,
+            emit_cli=emit_cli,
+            emit_walker=emit_walker,
+        )
